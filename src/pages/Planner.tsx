@@ -52,6 +52,13 @@ export function Planner() {
     });
   }
   const [payEdit, setPayEdit] = useState<string | null>(null);
+  // "What's different this pay" starts open, and stays how you leave it (remembered on this device).
+  const [notesOpen, setNotesOpen] = useState(() => { try { return localStorage.getItem('paydays.planner.notes') !== 'closed'; } catch { return true; } });
+  function toggleNotes(open: boolean) {
+    if (open === notesOpen) return;
+    setNotesOpen(open);
+    try { localStorage.setItem('paydays.planner.notes', open ? 'open' : 'closed'); } catch { /* ignore */ }
+  }
   const [slipMsg, setSlipMsg] = useState<{ ok: boolean; text: string } | null>(null);
   // Last "Balance this pay": what changed and why, plus what to restore on Undo.
   const [optimiseOpen, setOptimiseOpen] = useState(false);
@@ -271,7 +278,7 @@ export function Planner() {
       </header>
 
       <section className="grid-2">
-        <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 16, alignSelf: 'start' }}>
+        <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           <div>
             <div className="between" style={{ flexWrap: 'nowrap', alignItems: 'flex-start', gap: 12 }}>
               <div style={{ minWidth: 0 }}>
@@ -339,7 +346,11 @@ export function Planner() {
                 </>
               )}
             </div>
-            <div className="stat"><span className="small muted">Total budgeted</span><b>{cash(totalBudgeted)}</b></div>
+            <div className="stat">
+              {/* Same height of label row as Pay (which has icons), so the two amounts line up. */}
+              <div className="row" style={{ minHeight: 32 }}><span className="small muted">Total budgeted</span></div>
+              <b>{cash(totalBudgeted)}</b>
+            </div>
           </div>
           {estimated && estOpen && <p className="small muted" role="status" style={{ marginTop: -6 }}>{estimateWhy}</p>}
           {slipMsg && <p className={`small ${slipMsg.ok ? '' : 'error'}`} role="status">{slipMsg.text}</p>}
@@ -365,7 +376,8 @@ export function Planner() {
           )}
 
           {!avg && (notes.length > 0 || usualTotal > plan.pay) && (
-            <details className="notes" open={plan.leftover < 0 || undefined}>
+            <details className="notes" open={notesOpen || plan.leftover < 0}
+              onToggle={(e) => toggleNotes((e.currentTarget as HTMLDetailsElement).open)}>
               <summary>What's different this pay{notes.length ? ` · ${notes.length}` : ''}</summary>
               <div className="notes-list">
                 {notes.map((x) => (
@@ -390,19 +402,21 @@ export function Planner() {
           )}
         </div>
 
-        {/* Sits at the top instead of stretching to the height of the card beside it. */}
-        <div className="card" style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', alignSelf: 'start', gap: 24 }}>
-          <h2 className="h2" style={{ flex: '1 1 100%' }}>Where this pay goes</h2>
-          <Donut slices={slices} size={170}>
-            <span className="small muted">Budgeted</span>
-            <b style={{ fontSize: 19 }}>{cash(plan.totalSplit, { whole: true })}</b>
-          </Donut>
-          <div style={{ flex: '1 1 220px', minWidth: 0, display: 'flex' }}>
-            <Legend slices={slices} amounts />
+        <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <h2 className="h2">Where this pay goes</h2>
+          {/* The chart sits in the middle of whatever height the card has, so both cards end level. */}
+          <div style={{ flex: 1, display: 'flex', flexWrap: 'wrap', alignItems: 'center', alignContent: 'center', gap: 24 }}>
+            <Donut slices={slices} size={170}>
+              <span className="small muted">Budgeted</span>
+              <b style={{ fontSize: 19 }}>{cash(plan.totalSplit, { whole: true })}</b>
+            </Donut>
+            <div style={{ flex: '1 1 220px', minWidth: 0, display: 'flex' }}>
+              <Legend slices={slices} amounts />
+            </div>
           </div>
           {/* Debt repayments as a share of pay, against the 20% guideline (the bar runs to twice it). */}
           {known && debtPaid > 0 && (
-            <div style={{ flex: '1 1 100%', borderTop: '1px solid var(--line)', paddingTop: 12 }}>
+            <div style={{ borderTop: '1px solid var(--line)', paddingTop: 12 }}>
               <div className="between small" style={{ flexWrap: 'nowrap' }}>
                 <span>Debt repayments <span className="muted">· guideline under {Math.round(DEBT_RATIO_GUIDE * 100)}%</span></span>
                 <span><span className="muted">{cash(debtPaid, { whole: true })}</span> <b className={debtRatio > DEBT_RATIO_GUIDE ? 'neg' : ''} style={{ marginLeft: 8 }}>{Math.round(debtRatio * 100)}%</b></span>
