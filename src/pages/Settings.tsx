@@ -232,7 +232,8 @@ function EarlierVersions() {
 function SyncCard() {
   const { sync, connectSync, disconnectSync, syncNow } = useBudget();
   const saved = readSyncConfig();
-  const [repo, setRepo] = useState(saved?.repo ?? '');
+  // On <you>.github.io, the data repo is most likely <you>/budget-data, so start with that.
+  const [repo, setRepo] = useState(saved?.repo ?? guessRepo());
   const [token, setToken] = useState('');
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
@@ -265,12 +266,12 @@ function SyncCard() {
             Keep your budget in a <b>private</b> GitHub repo, so it's the same in every browser and on your phone. Do this once in each browser.
           </p>
           <ol className="small" style={{ margin: 0, paddingLeft: 18, display: 'flex', flexDirection: 'column', gap: 4 }}>
-            <li>Make a private repo on GitHub (e.g. <i>budget-data</i>).</li>
+            {!guessRepo() && <li>Make a private repo on GitHub (e.g. <i>budget-data</i>).</li>}
             <li>
               <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noreferrer">Create a fine-grained token</a>:
               {' '}Repository access → Only select repositories → that repo. Permissions → Contents: Read and write.
             </li>
-            <li>Enter the repo and paste the token here.</li>
+            <li>Paste the token here and connect. This browser stays connected after that.</li>
           </ol>
           <label className="field">Private repo
             <input value={repo} onChange={(e) => { setRepo(e.target.value); setErr(''); }} placeholder="you/budget-data" autoComplete="off" />
@@ -296,4 +297,10 @@ function SyncCard() {
       )}
     </section>
   );
+}
+
+/** On <you>.github.io the private data repo is guessed as <you>/budget-data (you can change it). */
+function guessRepo(): string {
+  const m = location.hostname.match(/^([\w-]+)\.github\.io$/i);
+  return m ? `${m[1]}/budget-data` : '';
 }
