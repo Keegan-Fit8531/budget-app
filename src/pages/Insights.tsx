@@ -39,6 +39,9 @@ export function Insights() {
     members: perAccount.filter((x) => x.account.groupId === g.id),
   }));
 
+  const groupSlices = byGroup.map((g) => ({ label: g.group.name, value: g.amount, color: g.group.color }));
+  const accountSlices = perAccount.map((x) => ({ label: x.account.name, value: x.amount, color: x.account.color }));
+
   const byBucket = BUCKETS.map((b) => {
     const amount = byGroup.filter((g) => g.group.bucket === b.k).reduce((s, g) => s + g.amount, 0);
     return { ...b, amount, pct: pay ? (amount / pay) * 100 : 0, target: settings.rule[b.k] };
@@ -70,26 +73,30 @@ export function Insights() {
           : `The next 12 pays, ${mode === 'month' ? 'averaged per month' : 'added up for the year'}, against pay of ${money(pay)} ${per}.`}
       </p>
 
+      {/* Laid out like the Planner's "Where this pay goes": title on top, chart, then amounts and shares, largest first. */}
       <section className="grid-2">
-        <div className="card" style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 24 }}>
-          <Donut size={190} slices={byGroup.map((g) => ({ label: g.group.name, value: g.amount, color: g.group.color }))}>
-            <span className="small muted">{mode === 'period' ? 'This pay' : `Per ${mode}`}</span>
-            <b style={{ fontSize: 19 }}>{money(pay, { whole: true })}</b>
-          </Donut>
-          <div style={{ flex: '1 1 200px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 10 }}>
-            <h2 className="h2">By group</h2>
-            <Legend slices={byGroup.map((g) => ({ label: g.group.name, value: g.amount, color: g.group.color }))} />
+        <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <h2 className="h2">By group</h2>
+          <div style={{ flex: 1, display: 'flex', flexWrap: 'wrap', alignItems: 'center', alignContent: 'center', gap: 24 }}>
+            <Donut size={170} slices={groupSlices}>
+              <span className="small muted">{mode === 'period' ? 'This pay' : `Per ${mode}`}</span>
+              <b style={{ fontSize: 19 }}>{money(pay, { whole: true })}</b>
+            </Donut>
+            <div style={{ flex: '1 1 220px', minWidth: 0, display: 'flex' }}>
+              <Legend slices={groupSlices} amounts />
+            </div>
           </div>
         </div>
-
-        <div className="card" style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 24 }}>
-          <Donut size={190} slices={perAccount.map((x) => ({ label: x.account.name, value: x.amount, color: x.account.color }))}>
-            <span className="small muted">Accounts</span>
-            <b style={{ fontSize: 19 }}>{perAccount.length}</b>
-          </Donut>
-          <div style={{ flex: '1 1 200px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 10 }}>
-            <h2 className="h2">By account</h2>
-            <Legend slices={perAccount.map((x) => ({ label: x.account.name, value: x.amount, color: x.account.color }))} />
+        <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <h2 className="h2">By account</h2>
+          <div style={{ flex: 1, display: 'flex', flexWrap: 'wrap', alignItems: 'center', alignContent: 'center', gap: 24 }}>
+            <Donut size={170} slices={accountSlices}>
+              <span className="small muted">Accounts</span>
+              <b style={{ fontSize: 19 }}>{accountSlices.length}</b>
+            </Donut>
+            <div style={{ flex: '1 1 220px', minWidth: 0, display: 'flex' }}>
+              <Legend slices={accountSlices} amounts />
+            </div>
           </div>
         </div>
       </section>

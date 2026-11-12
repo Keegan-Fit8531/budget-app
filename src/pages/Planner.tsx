@@ -390,13 +390,14 @@ export function Planner() {
           {/* Debt repayments as a share of pay, against the 20% guideline (the bar runs to twice it). */}
           {!avg && known && debtPaid > 0 && (
             <div style={{ borderTop: '1px solid var(--line)', paddingTop: 12 }}>
-              <div className="between small" style={{ flexWrap: 'nowrap' }}>
-                <span>Debt repayments <span className="muted">· guideline under {Math.round(DEBT_RATIO_GUIDE * 100)}%</span></span>
-                <span><span className="muted">{cash(debtPaid, { whole: true })}</span> <b className={debtRatio > DEBT_RATIO_GUIDE ? 'neg' : ''} style={{ marginLeft: 8 }}>{Math.round(debtRatio * 100)}%</b></span>
+              {/* Same row as the rule bars on Insights: name, share, guideline, amount, then the bar with its marker. */}
+              <div className="between" style={{ fontSize: 14 }}>
+                <b>Debt repayments</b>
+                <span><b className={debtRatio > DEBT_RATIO_GUIDE ? 'neg' : ''}>{Math.round(debtRatio * 100)}%</b><span className="muted"> · guideline under {Math.round(DEBT_RATIO_GUIDE * 100)}% · {cash(debtPaid, { whole: true })}</span></span>
               </div>
-              <div className="bar" role="img" aria-label={`Debt repayments ${Math.round(debtRatio * 100)}% of pay, guideline under ${Math.round(DEBT_RATIO_GUIDE * 100)}%`} style={{ height: 8, marginTop: 6 }}>
-                <div style={{ height: 8, width: `${Math.min(100, (debtRatio / (DEBT_RATIO_GUIDE * 2)) * 100)}%`, background: debtRatio > DEBT_RATIO_GUIDE ? 'var(--bad)' : 'var(--good)' }} />
-                <div className="target" style={{ left: '50%', top: -3, height: 14 }} />
+              <div className="bar" role="img" aria-label={`Debt repayments ${Math.round(debtRatio * 100)}% of pay, guideline under ${Math.round(DEBT_RATIO_GUIDE * 100)}%`}>
+                <div style={{ width: `${Math.min(100, debtRatio * 100)}%`, background: debtRatio > DEBT_RATIO_GUIDE ? 'var(--bad)' : 'var(--good)' }} />
+                <span className="target" style={{ left: `${DEBT_RATIO_GUIDE * 100}%` }} aria-hidden="true" />
               </div>
             </div>
           )}
