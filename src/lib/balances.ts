@@ -300,10 +300,12 @@ export function billTracker(b: Budget, accountId: string, today: ISODate = today
   const paid = rows.filter((r) => r.status === 'paid').reduce((t, r) => t + r.amount, 0);
   const toCome = rows.filter((r) => r.status !== 'paid').reduce((t, r) => t + r.amount, 0);
   const deposit = depositFor(b, accountId, period, today);
-  // Balance at the start of today: a balance entered today is used as-is; an older one is rolled forward.
+  // Balance before today's bills: a balance entered today is used as-is; an older one is rolled forward
+  // to yesterday, plus today's deposit when today is payday (it lands before the bills come out).
   const entry = b.balances?.[accountId];
+  const rolled = entry && entry.asOf < today ? estimateBalance(b, accountId, addDays(today, -1), today) : undefined;
   const entered = entry && entry.asOf <= today
-    ? (entry.asOf === today ? entry.amount : estimateBalance(b, accountId, addDays(today, -1), today))
+    ? (entry.asOf === today ? entry.amount : rolled === undefined ? undefined : rolled + (today === period.start ? deposit : 0))
     : undefined;
   // Without an entered balance: assume this pay's deposit minus what's been paid so far.
   const balance = entered ?? deposit - paid;

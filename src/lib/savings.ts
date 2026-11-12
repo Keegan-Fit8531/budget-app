@@ -55,7 +55,8 @@ export function forecast(b: Budget, goal: SavingsGoal, today: ISODate): GoalFore
     if (remaining === 0) reachedBy = today;
     else if (rate > 0) {
       const n = Math.ceil(remaining / rate);
-      if (n <= 600) reachedBy = shiftPeriod(periodContaining(today, s), n - 1, s).start;
+      // The pay today falls in is already in the balance, so the nth pay from now is n paydays on.
+      if (n <= 600) reachedBy = shiftPeriod(periodContaining(today, s), n, s).start;
     }
   }
   const onTrack = goal.target !== undefined && goal.targetDate

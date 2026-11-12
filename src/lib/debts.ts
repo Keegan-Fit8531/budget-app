@@ -71,7 +71,7 @@ export function planSchedule(debt: Debt, plan: DebtPlan, s: Settings): PlanSched
     const payments = withAfter(sorted.map((i) => pay(i.date, i.amount)));
     return {
       plan, payments, paidOffBy: last(payments)?.date,
-      deadline: plan.type === 'afterpay' ? last(payments)?.date : plan.months ? addMonths(plan.purchaseDate, plan.months) : undefined,
+      deadline: plan.type === 'afterpay' ? last(payments)?.date : plan.ends ?? (plan.months ? addMonths(plan.purchaseDate, plan.months) : undefined),
       interest: 0,
     };
   }
@@ -94,11 +94,11 @@ export function planSchedule(debt: Debt, plan: DebtPlan, s: Settings): PlanSched
     const first = addMonths(plan.purchaseDate, 1);
     const periods = periodsFrom(first > plan.asOf ? first : plan.asOf, s, (_, i) => i < n);
     const payments = withAfter(periods.map((p, i) => pay(p.start, i === n - 1 ? rem - each * (n - 1) : each)));
-    return { plan, payments, paidOffBy: last(payments)?.date, deadline: addMonths(plan.purchaseDate, months), interest: 0 };
+    return { plan, payments, paidOffBy: last(payments)?.date, deadline: plan.ends ?? addMonths(plan.purchaseDate, months), interest: 0 };
   }
 
   if (plan.type === 'interest-free') {
-    const deadline = addMonths(plan.purchaseDate, plan.months ?? 6);
+    const deadline = planEnds(plan); // the exact end date if you entered one, else purchase date + months
     const start = plan.asOf > plan.purchaseDate ? plan.asOf : plan.purchaseDate;
     const periods = periodsFrom(start, s, (p) => p.start < deadline);
     if (periods.length === 0) {
@@ -181,7 +181,10 @@ function mastercardBalanceSchedules(debt: Debt, s: Settings, other: Cents, perPa
     };
     return { plan, left: x.amount, payments: [] as Payment[], interest: 0, warned: '' };
   });
-  const start = items.reduce((m, x) => (x.plan.asOf > m ? x.plan.asOf : m), items[0]?.plan.asOf ?? '');
+  // Payments start at the first payday on or after the day the balance was last checked: paydays before
+  // that are already in it (otherwise a payday that's been counted as paid would be taken off again).
+  const latest = items.reduce((m, x) => (x.plan.asOf > m ? x.plan.asOf : m), items[0]?.plan.asOf ?? '');
+  const start = debt.balance && debt.balance.asOf > latest ? debt.balance.asOf : latest;
   const monthlyRate = (debt.rate ?? 0) / 100 / 12;
   const planPayments = plans.flatMap((x) => x.payments);
   let p = firstPeriodFrom(start, s);

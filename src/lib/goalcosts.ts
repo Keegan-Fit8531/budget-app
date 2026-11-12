@@ -1,5 +1,5 @@
 import type { ISODate } from './dates';
-import { budgetPeriod, planFor, shiftPeriod } from './engine';
+import { planFor, shiftPeriod, upcomingPayPeriod } from './engine';
 import type { Budget, Cents, GoalCost, SavingsGoal } from './types';
 
 export const DEFAULT_COST_CATEGORIES = ['Venue and hire', 'Suppliers', 'Food and drink', 'Attire'];
@@ -58,14 +58,17 @@ export interface GoalCostSummary {
   byCategory: { category: string; amount: Cents }[];
 }
 
-/** Projected fund at the end of `date`: today's balance plus each pay's contribution up to then. */
+/**
+ * Projected fund at the end of `date`: today's balance plus each pay still to come up to then. (The pay
+ * today falls in has already happened, so what it sent is in the balance: same as savings.ts.)
+ */
 export function projectedAt(b: Budget, goal: SavingsGoal, date: ISODate, today: ISODate): { amount: Cents; pays: number } {
   // Expected gifts (not yet in the balance) count from their date.
   let amount = goal.balance + expectedGifts(goal, date);
   let pays = 0;
-  let p = budgetPeriod(b, today);
+  let p = upcomingPayPeriod(b, today);
   for (let i = 0; i < 400 && p.start <= date; i++) {
-    const funded = planFor(b, p).accounts.find((a) => a.account.id === goal.accountId)?.funded ?? 0;
+    const funded = planFor(b, p, today).accounts.find((a) => a.account.id === goal.accountId)?.funded ?? 0;
     amount += funded + (goal.otherPerPay ?? 0);
     pays++;
     p = shiftPeriod(p, 1, b.settings);

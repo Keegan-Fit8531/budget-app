@@ -175,7 +175,9 @@ export function Planner() {
   const debtRatio = plan.pay > 0 ? debtPaid / plan.pay : 0;
 
   function savePay() {
-    const c = payEdit === '' ? null : parseMoney(payEdit ?? '');
+    const cleared = (payEdit ?? '').trim() === '';
+    const c = cleared ? null : parseMoney(payEdit ?? '');
+    if (!cleared && (c === null || c < 0)) return; // not an amount: keep editing rather than wiping the pay
     update((b) => {
       if (c === null) delete b.payActuals[period.start]; else b.payActuals[period.start] = c;
       return b;

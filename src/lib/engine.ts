@@ -46,23 +46,14 @@ export function periodContaining(date: ISODate, s: Pick<Settings, 'paydayDay' | 
 
 function computePeriod(date: ISODate, s: Pick<Settings, 'paydayDay' | 'saturday' | 'sunday'>): Period {
   const [y, m] = monthIndex(date);
-  let start = paydayFor(y, m, s);
-  let startMonth = m;
-  if (start > date) {
-    startMonth = m - 1;
-    start = paydayFor(y, startMonth, s);
-  } else {
-    // A payday pulled back from the next month (e.g. 1st on a Sunday → Fri) could precede `date`.
-    const next = paydayFor(y, m + 1, s);
-    if (next <= date) { start = next; startMonth = m + 1; }
-  }
-  const [sy, sm] = normalise(y, startMonth);
-  const nextPayday = paydayFor(sy, sm + 1, s);
+  // The latest payday on or before `date`. Weekend rules can move a payday into the next month (the 31st
+  // on a Saturday → Monday the 2nd) or back into the one before (the 1st on a Sunday → Friday), so the
+  // months either side are checked too.
+  let startMonth = m - 2;
+  for (let k = m - 1; k <= m + 1; k++) if (paydayFor(y, k, s) <= date) startMonth = k;
+  const start = paydayFor(y, startMonth, s);
+  const nextPayday = paydayFor(y, startMonth + 1, s);
   return { start, end: addDays(nextPayday, -1), nextPayday, days: diffDays(start, nextPayday) };
-}
-
-function normalise(y: number, m0: number): [number, number] {
-  return [y + Math.floor(m0 / 12), ((m0 % 12) + 12) % 12];
 }
 
 /** The pay period the budget is on now: today's, or the one at the budget start date if that's later. */
