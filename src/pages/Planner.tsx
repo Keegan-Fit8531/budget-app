@@ -284,7 +284,7 @@ export function Planner() {
               </div>
               {/* Put what's left over to work (once the pay is balanced). */}
               {!avg && known && canOptimise && (
-                <button className="icon-btn" title={`Optimise: choose where the ${cash(plan.leftover)} left over goes`} aria-label="Optimise: choose where the leftover goes"
+                <button className="icon-btn has-tip tip-left" data-tip="Optimise: choose where the leftover goes" aria-label="Optimise: choose where the leftover goes"
                   onClick={() => setOptimiseOpen(true)} style={{ background: 'var(--brand)', color: '#fff', borderColor: 'var(--brand)' }}>
                   <Icon name="bulb" />
                 </button>
@@ -314,9 +314,9 @@ export function Planner() {
                 </span>
                 {payEdit === null && (
                   <span className="row" style={{ gap: 4, flexWrap: 'nowrap' }}>
-                    <button className="icon-btn mini" title={plan.payIsActual ? 'Change pay' : 'Type pay'} aria-label={plan.payIsActual ? 'Change pay' : 'Type pay'}
+                    <button className="icon-btn mini has-tip" data-tip={plan.payIsActual ? 'Change pay' : 'Type in your pay'} aria-label={plan.payIsActual ? 'Change pay' : 'Type pay'}
                       onClick={() => setPayEdit(centsToInput(plan.pay))}><Icon name="edit" size={16} /></button>
-                    <button className="icon-btn mini" title="Upload payslip (PDF)" aria-label="Upload payslip"
+                    <button className="icon-btn mini has-tip" data-tip="Upload payslip (PDF)" aria-label="Upload payslip"
                       onClick={() => slipRef.current?.click()}><Icon name="upload" size={16} /></button>
                   </span>
                 )}
