@@ -518,7 +518,7 @@ export function Planner() {
                 <p className="acc-name">{a.account.name}</p>
                 <div className="between" style={{ flexWrap: 'nowrap', alignItems: 'flex-end' }}>
                   <p className={`amt ${amountClass}`}>{amount}</p>
-                  <span className="acc-more" aria-hidden="true"><Icon name="right" size={16} /></span>
+                  <span className="acc-more" aria-hidden="true"><Icon name="info" size={18} stroke={2.6} /></span>
                 </div>
               </button>
               {isOpen && (
