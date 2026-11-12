@@ -1,4 +1,5 @@
-import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
+import { pullBudget, pushBudget, readSyncConfig, SyncError, writeSyncConfig, type SyncConfig } from './sync';
 import { todayISO } from './dates';
 import { debtPerPay, settleDue } from './debts';
 import { autoBalance } from './rebalance';
@@ -69,6 +70,12 @@ function keepVersion(b: Budget, force = false) {
   } catch { /* ignore */ }
 }
 
+export type SyncStatus =
+  | { state: 'off' }
+  | { state: 'syncing' }
+  | { state: 'synced'; at: string }
+  | { state: 'error'; message: string };
+
 interface Store {
   budget: Budget;
   update: (fn: (b: Budget) => Budget) => void;
@@ -76,23 +83,112 @@ interface Store {
   reset: () => void;
   /** Go back to an earlier version (the current one is kept first, so this can be undone too). */
   restoreVersion: (v: SavedVersion) => void;
+  /** Syncing with a private GitHub repo, so every browser has the same budget. */
+  sync: SyncStatus;
+  connectSync: (c: SyncConfig) => Promise<void>;
+  disconnectSync: () => void;
+  syncNow: () => void;
 }
 
 const Ctx = createContext<Store | null>(null);
 
+const stamp = (b: Budget): Budget => { b.updatedAt = new Date().toISOString(); return b; };
+const newer = (a: Budget, b: Budget) => (a.updatedAt ?? '') > (b.updatedAt ?? '');
+
 export function BudgetProvider({ children }: { children: ReactNode }) {
   const [budget, setBudget] = useState<Budget>(load);
+  const [sync, setSync] = useState<SyncStatus>(() => (readSyncConfig() ? { state: 'syncing' } : { state: 'off' }));
+  // The repo file's version and the change last saved there, so only real changes are sent.
+  const sha = useRef<string | undefined>(undefined);
+  const savedAt = useRef<string | undefined>(undefined);
+  const latest = useRef(budget);
+  latest.current = budget;
+  const busy = useRef(false);
 
   useEffect(() => {
     try { localStorage.setItem(KEY, JSON.stringify(budget)); } catch { /* ignore */ }
   }, [budget]);
 
-  const update = useCallback((fn: (b: Budget) => Budget) => setBudget((b) => { keepVersion(b); return autoBalance(fn(structuredClone(b))); }), []);
-  const replace = useCallback((b: Budget) => setBudget((cur) => { keepVersion(cur, true); return autoBalance(b); }), []);
-  const reset = useCallback(() => setBudget((cur) => { keepVersion(cur, true); return autoBalance(structuredClone(seedBudget)); }), []);
-  const restoreVersion = useCallback((v: SavedVersion) => setBudget((cur) => { keepVersion(cur, true); return autoBalance(structuredClone(v.budget)); }), []);
+  /** Bring this browser and the repo together: the newest copy wins (the other is kept in Earlier versions). */
+  const reconcile = useCallback(async () => {
+    const c = readSyncConfig();
+    if (!c) { setSync({ state: 'off' }); return; }
+    if (busy.current) return;
+    busy.current = true;
+    setSync({ state: 'syncing' });
+    try {
+      const remote = await pullBudget(c);
+      const local = latest.current;
+      if (remote && (newer(remote.budget, local) || !local.updatedAt)) {
+        sha.current = remote.sha;
+        savedAt.current = remote.budget.updatedAt;
+        if (remote.budget.updatedAt !== local.updatedAt) {
+          setBudget((cur) => { keepVersion(cur, true); return autoBalance(remote.budget); });
+        }
+      } else {
+        sha.current = remote?.sha;
+        if (!remote || local.updatedAt !== remote.budget.updatedAt) {
+          sha.current = await pushBudget(c, local, sha.current);
+        }
+        savedAt.current = local.updatedAt;
+      }
+      setSync({ state: 'synced', at: new Date().toISOString() });
+    } catch (e) {
+      setSync({ state: 'error', message: e instanceof SyncError ? e.message : 'Couldn\u2019t sync.' });
+    } finally {
+      busy.current = false;
+    }
+  }, []);
 
-  return <Ctx.Provider value={{ budget, update, replace, reset, restoreVersion }}>{children}</Ctx.Provider>;
+  // Sync when the app opens and whenever you come back to it (e.g. after using it in another browser).
+  useEffect(() => {
+    void reconcile();
+    const onShow = () => { if (document.visibilityState === 'visible') void reconcile(); };
+    document.addEventListener('visibilitychange', onShow);
+    window.addEventListener('online', onShow);
+    return () => { document.removeEventListener('visibilitychange', onShow); window.removeEventListener('online', onShow); };
+  }, [reconcile]);
+
+  // Save your changes to the repo a moment after you make them.
+  useEffect(() => {
+    const c = readSyncConfig();
+    if (!c || !budget.updatedAt || budget.updatedAt === savedAt.current) return;
+    const t = setTimeout(async () => {
+      if (busy.current) return;
+      busy.current = true;
+      setSync({ state: 'syncing' });
+      try {
+        const b = latest.current;
+        sha.current = await pushBudget(c, b, sha.current);
+        savedAt.current = b.updatedAt;
+        setSync({ state: 'synced', at: new Date().toISOString() });
+        busy.current = false;
+      } catch (e) {
+        busy.current = false;
+        // Changed in another browser since: work out which copy is newest.
+        if (e instanceof SyncError && (e.status === 409 || e.status === 422)) void reconcile();
+        else setSync({ state: 'error', message: e instanceof SyncError ? e.message : 'Couldn\u2019t sync.' });
+      }
+    }, 1500);
+    return () => clearTimeout(t);
+  }, [budget, reconcile]);
+
+  const update = useCallback((fn: (b: Budget) => Budget) => setBudget((b) => { keepVersion(b); return stamp(autoBalance(fn(structuredClone(b)))); }), []);
+  const replace = useCallback((b: Budget) => setBudget((cur) => { keepVersion(cur, true); return stamp(autoBalance(b)); }), []);
+  const reset = useCallback(() => setBudget((cur) => { keepVersion(cur, true); return stamp(autoBalance(structuredClone(seedBudget))); }), []);
+  const restoreVersion = useCallback((v: SavedVersion) => setBudget((cur) => { keepVersion(cur, true); return stamp(autoBalance(structuredClone(v.budget))); }), []);
+
+  const connectSync = useCallback(async (c: SyncConfig) => {
+    await pullBudget(c); // checks the repo and token before saving them
+    writeSyncConfig(c);
+    sha.current = undefined;
+    savedAt.current = undefined;
+    await reconcile();
+  }, [reconcile]);
+  const disconnectSync = useCallback(() => { writeSyncConfig(null); sha.current = undefined; setSync({ state: 'off' }); }, []);
+  const syncNow = useCallback(() => { void reconcile(); }, [reconcile]);
+
+  return <Ctx.Provider value={{ budget, update, replace, reset, restoreVersion, sync, connectSync, disconnectSync, syncNow }}>{children}</Ctx.Provider>;
 }
 
 export function useBudget(): Store {

@@ -6,6 +6,7 @@ import { centsToInput, money, parseMoney } from '../lib/money';
 import { nextColor } from '../lib/colors';
 import { CostCategoriesEditor } from '../components/CostCategories';
 import { newId, readVersions, useBudget } from '../lib/store';
+import { readSyncConfig, SyncError } from '../lib/sync';
 import type { Budget, RuleBucket } from '../lib/types';
 
 const RULES = [
@@ -15,7 +16,7 @@ const RULES = [
 ];
 
 export function Settings() {
-  const { budget, update, replace, reset } = useBudget();
+  const { budget, update, replace, reset, sync } = useBudget();
   const s = budget.settings;
   const [payText, setPayText] = useState(centsToInput(s.expectedPay));
   const [msg, setMsg] = useState('');
@@ -175,15 +176,17 @@ export function Settings() {
 
       <EarlierVersions />
 
+      <SyncCard />
+
       <section className="card" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
         <h2 className="h2">Your data</h2>
-        <p className="small muted">Right now your budget is saved in this browser only. Download a backup to move it to another device.</p>
+        <p className="small muted">{sync.state === 'off' ? 'Right now your budget is saved in this browser only. Download a backup to move it to another device, or sync it below.' : 'Saved in this browser and synced to your private GitHub repo. A backup file is a copy you keep yourself.'}</p>
         <div className="row" style={{ flexWrap: 'wrap' }}>
           <button className="btn" onClick={exportData}>Download backup</button>
           <button className="btn" onClick={() => fileRef.current?.click()}>Restore backup</button>
           <input ref={fileRef} type="file" accept="application/json" hidden onChange={(e) => e.target.files?.[0] && importData(e.target.files[0])} />
-          <button className="btn danger" onClick={() => { if (confirm('Replace everything with the data from your Google Sheet? This can’t be undone.')) { reset(); setMsg('Reset to sheet data.'); } }}>
-            Reset to sheet data
+          <button className="btn danger" onClick={() => { if (confirm(`Start over with a blank budget?${sync.state === 'off' ? '' : ' It syncs to every browser, but your current budget stays in Earlier versions and in the repo\u2019s history.'}`)) { reset(); setMsg('Started over with a blank budget.'); } }}>
+            Start over
           </button>
         </div>
         {msg && <p className="small" role="status">{msg}</p>}
@@ -221,6 +224,76 @@ function EarlierVersions() {
         </div>
       ))}
       {msg && <p className="small" role="status">{msg}</p>}
+    </section>
+  );
+}
+
+/** Connect this browser to a private GitHub repo, so every browser has the same budget. */
+function SyncCard() {
+  const { sync, connectSync, disconnectSync, syncNow } = useBudget();
+  const saved = readSyncConfig();
+  const [repo, setRepo] = useState(saved?.repo ?? '');
+  const [token, setToken] = useState('');
+  const [err, setErr] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  async function connect() {
+    if (!/^[\w.-]+\/[\w.-]+$/.test(repo.trim())) return setErr('Enter the repo as owner/name, e.g. you/budget-data.');
+    if (!token.trim()) return setErr('Paste the token from GitHub.');
+    setBusy(true); setErr('');
+    try {
+      await connectSync({ repo: repo.trim(), path: 'budget.json', token: token.trim() });
+      setToken('');
+    } catch (e) {
+      setErr(e instanceof SyncError ? e.message : 'Couldn\u2019t connect.');
+    } finally { setBusy(false); }
+  }
+
+  return (
+    <section className="card" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <div className="between">
+        <h2 className="h2">Sync across browsers</h2>
+        {sync.state !== 'off' && (
+          <span className={`pill ${sync.state === 'error' ? 'bad' : 'good'}`} style={{ background: sync.state === 'error' ? 'var(--bad-bg)' : 'var(--good-bg)' }} role="status">
+            {sync.state === 'syncing' ? 'Syncing\u2026' : sync.state === 'synced' ? `Synced ${new Date(sync.at).toLocaleTimeString('en-NZ', { hour: 'numeric', minute: '2-digit' })}` : 'Not synced'}
+          </span>
+        )}
+      </div>
+      {sync.state === 'off' ? (
+        <>
+          <p className="small muted">
+            Keep your budget in a <b>private</b> GitHub repo, so it's the same in every browser and on your phone. Do this once in each browser.
+          </p>
+          <ol className="small" style={{ margin: 0, paddingLeft: 18, display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <li>Make a private repo on GitHub (e.g. <i>budget-data</i>).</li>
+            <li>
+              <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noreferrer">Create a fine-grained token</a>:
+              {' '}Repository access → Only select repositories → that repo. Permissions → Contents: Read and write.
+            </li>
+            <li>Enter the repo and paste the token here.</li>
+          </ol>
+          <label className="field">Private repo
+            <input value={repo} onChange={(e) => { setRepo(e.target.value); setErr(''); }} placeholder="you/budget-data" autoComplete="off" />
+          </label>
+          <label className="field">GitHub token
+            <input type="password" value={token} onChange={(e) => { setToken(e.target.value); setErr(''); }} placeholder="github_pat_…" autoComplete="off" />
+          </label>
+          {err && <p className="small error" role="alert">{err}</p>}
+          <p className="small muted">The token is kept in this browser only, and can only read and write that one repo.</p>
+          <div className="row"><button className="btn primary" onClick={connect} disabled={busy}>{busy ? 'Connecting\u2026' : 'Connect'}</button></div>
+        </>
+      ) : (
+        <>
+          <p className="small muted">
+            Synced with <b>{saved?.repo}</b>. Changes save there a moment after you make them, and the newest copy is loaded when you open the app.
+          </p>
+          {sync.state === 'error' && <p className="small error" role="alert">{sync.message}</p>}
+          <div className="row" style={{ flexWrap: 'wrap' }}>
+            <button className="btn" onClick={syncNow} disabled={sync.state === 'syncing'}>Sync now</button>
+            <button className="btn" onClick={disconnectSync}>Disconnect this browser</button>
+          </div>
+        </>
+      )}
     </section>
   );
 }

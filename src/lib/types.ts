@@ -209,6 +209,8 @@ export interface Settings {
 
 export interface Budget {
   version: 1;
+  /** When you last changed anything (used to keep the newest copy when syncing between browsers). */
+  updatedAt?: string;
   settings: Settings;
   groups: Group[];
   accounts: Account[];
