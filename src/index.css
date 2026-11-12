@@ -109,7 +109,8 @@ h1, h2, h3, p { margin: 0; }
 
 .acc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 14px; }
 @media (max-width: 899px) { .acc-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; } }
-.acc-card { border-radius: var(--radius); padding: 18px; display: flex; flex-direction: column; gap: 4px; text-decoration: none; color: var(--ink); border: 0; text-align: left; cursor: pointer; }
+.acc-card { border-radius: var(--radius); padding: 18px; display: flex; flex-direction: column; gap: 4px; text-decoration: none; color: var(--ink); border: 0; text-align: left; }
+.acc-link { display: flex; flex-direction: column; gap: 4px; color: inherit; text-decoration: none; cursor: pointer; }
 .acc-card .amt { font-size: 24px; font-weight: 700; }
 @media (max-width: 899px) { .acc-card { padding: 14px; } .acc-card .amt { font-size: 19px; } }
 .acc-icon { width: 36px; height: 36px; border-radius: 11px; color: #fff; display: grid; place-items: center; }
@@ -190,5 +191,10 @@ select::-ms-expand { display: none; }
 .balance-mode { display: flex; width: 100%; }
 .balance-mode button { flex: 1 1 0; }
 /* Each cost in an account card (e.g. food / car gas / scooter gas) */
-.cost-split { display: flex; flex-direction: column; gap: 3px; margin-top: 8px; padding-top: 8px; border-top: 1px solid color-mix(in srgb, var(--ink) 12%, transparent); }
+.cost-split { margin-top: 8px; padding-top: 6px; border-top: 1px solid color-mix(in srgb, var(--ink) 12%, transparent); }
+.cost-split > summary { cursor: pointer; font-size: 13px; font-weight: 600; min-height: 32px; display: flex; align-items: center; gap: 6px; list-style: none; }
+.cost-split > summary::-webkit-details-marker { display: none; }
+.cost-split > summary::before { content: ''; width: 6px; height: 6px; border-right: 2px solid currentColor; border-bottom: 2px solid currentColor; transform: rotate(-45deg); transition: transform .15s; margin-right: 2px; }
+.cost-split[open] > summary::before { transform: rotate(45deg); }
+.cost-rows { display: flex; flex-direction: column; gap: 3px; padding-bottom: 2px; }
 .cost-split .num { font-variant-numeric: tabular-nums; white-space: nowrap; }

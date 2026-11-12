@@ -35,6 +35,16 @@ export function Planner() {
   const { offset, setOffset, period } = useViewPeriod();
   const [mode, setMode] = useState<Mode>('period');
   const [showAllDues, setShowAllDues] = useState(false);
+  // Which account cards have their cost list open (remembered on this device).
+  const [openCosts, setOpenCosts] = useState<string[]>(() => { try { return JSON.parse(localStorage.getItem('paydays.planner.costs') ?? '[]'); } catch { return []; } });
+  function toggleCosts(id: string, open: boolean) {
+    setOpenCosts((cur) => {
+      if (open === cur.includes(id)) return cur;
+      const next = open ? [...cur, id] : cur.filter((x) => x !== id);
+      try { localStorage.setItem('paydays.planner.costs', JSON.stringify(next)); } catch { /* ignore */ }
+      return next;
+    });
+  }
   const [payEdit, setPayEdit] = useState<string | null>(null);
   const [slipMsg, setSlipMsg] = useState<{ ok: boolean; text: string } | null>(null);
   // Last "Balance this pay": what changed and why, plus what to restore on Undo.
@@ -393,8 +403,8 @@ export function Planner() {
                     ? times
                     : `${a.dues.length} costs due · ${money(a.need)}`;
             return (
-              <a key={a.account.id} className="acc-card" href={cardHref(a.account.id)}
-                style={{ background: `${a.account.color}22` }}>
+              <div key={a.account.id} className="acc-card" style={{ background: `${a.account.color}22` }}>
+              <a className="acc-link" href={cardHref(a.account.id)}>
                 <div className="between" style={{ flexWrap: 'nowrap' }}>
                   <span className="acc-icon" style={{ background: a.account.color }}>
                     <Icon name={a.account.kind === 'external' ? 'send' : isPay ? 'wallet' : 'bank'} />
@@ -413,22 +423,6 @@ export function Planner() {
                 <p className={`amt ${funded < 0 && (known || !isPay) ? 'neg' : ''}`}>{isPay && !known ? '—' : money(funded)}{split && !(isPay && !known) && <small className="muted" style={{ fontSize: 13, fontWeight: 500 }}> /{mode === 'week' ? 'wk' : 'fn'}</small>}</p>
                 <p className="small muted">{a.usual !== undefined && a.usual !== a.funded ? `Adjusted this pay · usually ${money(a.usual)}` : detail}</p>
                 {(() => {
-                  // A few different costs (e.g. food, car gas, scooter gas): show each one, so they can be told apart.
-                  // Same account and deposit; this only splits what its costs are.
-                  const rows = a.breakdown.filter((x) => x.item.frequency !== 'once');
-                  if (longRun || isPay || rows.length < 2 || rows.length > 4 || rows.length !== a.breakdown.length) return null;
-                  return (
-                    <div className="cost-split">
-                      {rows.map(({ item, count }) => (
-                        <span key={item.id} className="between small" style={{ flexWrap: 'nowrap', gap: 8 }}>
-                          <span style={{ minWidth: 0 }}>{item.name} <span className="muted">{count} × {money(item.amount, { whole: item.amount % 100 === 0 })}</span></span>
-                          <b className="num">{money(v(item.amount * count), { whole: !split })}</b>
-                        </span>
-                      ))}
-                    </div>
-                  );
-                })()}
-                {(() => {
                   // The budget's first pay starts from what the pay before it left in the account (or left short).
                   if (avg || isPay || period.start !== firstBudgetPay(budget, today).start) return null;
                   const carry = leftoverBeforeBudget(budget, a.account.id);
@@ -436,6 +430,42 @@ export function Planner() {
                   return <p className={`small ${carry < 0 ? 'neg' : 'pos'}`}>{carry < 0 ? `Includes ${money(-carry, { whole: true })} the ${monthName(shiftPeriod(period, -1, budget.settings).start)} pay left short` : `${money(carry, { whole: true })} left from ${monthName(shiftPeriod(period, -1, budget.settings).start)} counted`}</p>;
                 })()}
               </a>
+              {(() => {
+                // Each cost this pay (e.g. food, car gas, scooter gas, or every bill in Misc bills), in a list you
+                // can open and close. Same account and deposit; this only shows what its costs are.
+                if (longRun || isPay) return null;
+                const byName = new Map<string, { name: string; amount: Cents; dates: string[] }>();
+                for (const d of a.dues) {
+                  const name = d.item.name;
+                  const r = byName.get(name) ?? { name, amount: 0, dates: [] };
+                  r.amount += d.item.amount; r.dates.push(d.date);
+                  byName.set(name, r);
+                }
+                const rows = [...byName.values()];
+                if (rows.length < 2) return null;
+                return (
+                  <details className="cost-split" open={openCosts.includes(a.account.id)}
+                    onToggle={(e) => toggleCosts(a.account.id, (e.currentTarget as HTMLDetailsElement).open)}>
+                    <summary>{rows.length} costs this pay</summary>
+                    <div className="cost-rows">
+                      {rows.map((r) => {
+                        const each = r.amount / r.dates.length;
+                        const same = r.dates.length > 1 && Number.isInteger(each);
+                        return (
+                          <span key={r.name} className="between small" style={{ flexWrap: 'nowrap', gap: 8, alignItems: 'baseline' }}>
+                            <span style={{ minWidth: 0 }}>
+                              {r.name}{' '}
+                              <span className="muted">{same ? `${r.dates.length} × ${money(each, { whole: each % 100 === 0 })}` : r.dates.length === 1 ? fmtShort(r.dates[0]) : `${r.dates.length} payments`}</span>
+                            </span>
+                            <b className="num">{money(v(r.amount), { whole: !split && r.amount % 100 === 0 })}</b>
+                          </span>
+                        );
+                      })}
+                    </div>
+                  </details>
+                );
+              })()}
+              </div>
             );
           })}
         </div>
