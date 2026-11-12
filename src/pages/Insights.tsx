@@ -1,8 +1,10 @@
+import { useState } from 'react';
 import { Donut, Legend } from '../components/Donut';
 import { Icon } from '../components/Icon';
 import { convert, planFor, plannedAverage, type View } from '../lib/engine';
 import { PayNav, useViewPeriod, ViewModes } from '../lib/period';
 import { money } from '../lib/money';
+import { DEBT_RATIO_GUIDE } from '../lib/rebalance';
 import { useBudget } from '../lib/store';
 import type { RuleBucket } from '../lib/types';
 
@@ -39,6 +41,10 @@ export function Insights() {
     members: perAccount.filter((x) => x.account.groupId === g.id),
   }));
 
+  // The piece of a rule bar being looked at (hovered, focused or tapped): its accounts show underneath.
+  const [openPart, setOpenPart] = useState<string | null>(null);
+  const pctOf = (c: number) => (pay ? Math.round((c / pay) * 100) : 0);
+  const debtAccounts = new Set((budget.debts ?? []).map((d) => d.accountId));
   const groupSlices = byGroup.map((g) => ({ label: g.group.name, value: g.amount, color: g.group.color }));
   const accountSlices = perAccount.map((x) => ({ label: x.account.name, value: x.amount, color: x.account.color }));
 
@@ -106,21 +112,64 @@ export function Insights() {
           <h2 className="h2">Compared with the {settings.rule.name} rule</h2>
           <a href="#/settings" className="btn small" style={{ textDecoration: 'none', color: 'inherit' }}>Change rule</a>
         </div>
-        {byBucket.map((b) => (
-          <div key={b.k}>
-            <div className="between" style={{ fontSize: 14 }}>
-              <b>{b.label}</b>
-              <span><b>{Math.round(b.pct)}%</b><span className="muted"> · target {b.target}% · {money(b.amount, { whole: true })}</span></span>
+        {byBucket.map((b) => {
+          // What's inside the bar: one piece per group, each made of its accounts.
+          const parts = byGroup.filter((g) => g.group.bucket === b.k && g.amount > 0);
+          const open = parts.find((g) => g.group.id === openPart);
+          return (
+            <div key={b.k}>
+              <div className="between" style={{ fontSize: 14 }}>
+                <b>{b.label}</b>
+                <span><b>{Math.round(b.pct)}%</b><span className="muted"> · target {b.target}% · {money(b.amount, { whole: true })}</span></span>
+              </div>
+              <div className="bar rule-bar">
+                <div className="rule-fill">
+                  {parts.map((g) => (
+                    <button key={g.group.id} className="rule-part" aria-expanded={openPart === g.group.id}
+                      aria-label={`${g.group.name}: ${pctOf(g.amount)}% of pay, ${money(g.amount, { whole: true })}. Show what's in it`}
+                      style={{ width: `${Math.min(100, pay ? (g.amount / pay) * 100 : 0)}%`, background: g.group.color, opacity: open && openPart !== g.group.id ? 0.45 : 1 }}
+                      onMouseEnter={() => setOpenPart(g.group.id)} onMouseLeave={() => setOpenPart(null)}
+                      onFocus={() => setOpenPart(g.group.id)} onBlur={() => setOpenPart(null)}
+                      onClick={() => setOpenPart(openPart === g.group.id ? null : g.group.id)} />
+                  ))}
+                </div>
+                <span className="target" style={{ left: `${b.target}%` }} aria-hidden="true" />
+              </div>
+              {/* Each piece by name, so the bar reads without hovering (and on a phone, where you tap). */}
+              <div className="row small" style={{ flexWrap: 'wrap', gap: '4px 14px', marginTop: 8 }}>
+                {parts.length === 0 && <span className="muted">{groups.filter((g) => g.bucket === b.k).map((g) => g.name).join(', ') || 'No groups'}: nothing this {mode === 'period' ? 'pay' : mode}</span>}
+                {parts.map((g) => (
+                  <button key={g.group.id} className="rule-key" aria-expanded={openPart === g.group.id}
+                    onMouseEnter={() => setOpenPart(g.group.id)} onMouseLeave={() => setOpenPart(null)}
+                    onClick={() => setOpenPart(openPart === g.group.id ? null : g.group.id)}>
+                    <span className="dot" style={{ background: g.group.color }} />
+                    {g.group.name} <b>{pctOf(g.amount)}%</b> <span className="muted">{money(g.amount, { whole: true })}</span>
+                  </button>
+                ))}
+              </div>
+              {open && (
+                <div className="rule-detail" role="status">
+                  <div className="between" style={{ flexWrap: 'nowrap' }}>
+                    <b>{open.group.name}</b>
+                    <span><b>{pctOf(open.amount)}%</b> <span className="muted">of pay · {money(open.amount, { whole: true })}</span></span>
+                  </div>
+                  {[...open.members].sort((x, y) => y.amount - x.amount).map((m) => (
+                    <div key={m.account.id} className="between small" style={{ flexWrap: 'nowrap' }}>
+                      <span className="row" style={{ gap: 8, minWidth: 0 }}><span className="dot" style={{ background: m.account.color }} />{m.account.name}</span>
+                      <span className="num"><span className="muted">{money(m.amount, { whole: true })}</span> <b style={{ display: 'inline-block', width: 38, textAlign: 'right' }}>{pctOf(m.amount)}%</b></span>
+                    </div>
+                  ))}
+                  {/* Debt has its own rule of thumb, separate from the savings-and-debt target above. */}
+                  {open.members.some((m) => debtAccounts.has(m.account.id)) && (() => {
+                    const debt = open.members.filter((m) => debtAccounts.has(m.account.id)).reduce((t, m) => t + m.amount, 0);
+                    const over = pay > 0 && debt / pay > DEBT_RATIO_GUIDE;
+                    return <span className={`small ${over ? 'neg' : 'muted'}`}>Debt repayments are {pctOf(debt)}% of pay: {over ? 'above' : 'under'} the usual guideline of {Math.round(DEBT_RATIO_GUIDE * 100)}%.</span>;
+                  })()}
+                </div>
+              )}
             </div>
-            <div className="bar">
-              <div style={{ width: `${Math.min(100, b.pct)}%`, background: b.color }} />
-              <span className="target" style={{ left: `${b.target}%` }} aria-hidden="true" />
-            </div>
-            <p className="small muted" style={{ marginTop: 6 }}>
-              {groups.filter((g) => g.bucket === b.k).map((g) => g.name).join(', ') || 'No groups'}
-            </p>
-          </div>
-        ))}
+          );
+        })}
       </section>
 
       {tips.length > 0 && (

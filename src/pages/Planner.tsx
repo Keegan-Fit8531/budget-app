@@ -1,6 +1,6 @@
 import { Fragment, useMemo, useRef, useState } from 'react';
 import { readPayslipPdf } from '../lib/payslip';
-import { applyBalance, autoPays, balancePay, DEBT_RATIO_GUIDE, restoreOverrides, type BalanceResult } from '../lib/rebalance';
+import { applyBalance, autoPays, balancePay, restoreOverrides, type BalanceResult } from '../lib/rebalance';
 import { accountMode, leftoverBeforeBudget, topsUp } from '../lib/balances';
 import { Donut, Legend } from '../components/Donut';
 import { Icon } from '../components/Icon';
@@ -189,9 +189,6 @@ export function Planner() {
   const passedNote = paydayPassed && adjustments.length > 0
     ? `This pay was already split on ${fmtShort(period.start)}, so make these as transfers now, before ${fmtShort(plan.dues.find((d) => d.date >= today)?.date ?? period.end)}: move the money from the accounts being trimmed (or from what's left in ${payAccountName}) to the ones being topped up.`
     : undefined;
-  const debtIds = new Set((budget.debts ?? []).map((d) => d.accountId));
-  const debtPaid = plan.accounts.filter((a) => debtIds.has(a.account.id)).reduce((t, a) => t + a.funded, 0);
-  const debtRatio = plan.pay > 0 ? debtPaid / plan.pay : 0;
 
   function savePay() {
     const cleared = (payEdit ?? '').trim() === '';
@@ -387,20 +384,6 @@ export function Planner() {
               <Legend slices={slices} amounts />
             </div>
           </div>
-          {/* Debt repayments as a share of pay, against the 20% guideline (the bar runs to twice it). */}
-          {!avg && known && debtPaid > 0 && (
-            <div style={{ borderTop: '1px solid var(--line)', paddingTop: 12 }}>
-              {/* Same row as the rule bars on Insights: name, share, guideline, amount, then the bar with its marker. */}
-              <div className="between" style={{ fontSize: 14 }}>
-                <b>Debt repayments</b>
-                <span><b className={debtRatio > DEBT_RATIO_GUIDE ? 'neg' : ''}>{Math.round(debtRatio * 100)}%</b><span className="muted"> · guideline under {Math.round(DEBT_RATIO_GUIDE * 100)}% · {cash(debtPaid, { whole: true })}</span></span>
-              </div>
-              <div className="bar" role="img" aria-label={`Debt repayments ${Math.round(debtRatio * 100)}% of pay, guideline under ${Math.round(DEBT_RATIO_GUIDE * 100)}%`}>
-                <div style={{ width: `${Math.min(100, debtRatio * 100)}%`, background: debtRatio > DEBT_RATIO_GUIDE ? 'var(--bad)' : 'var(--good)' }} />
-                <span className="target" style={{ left: `${DEBT_RATIO_GUIDE * 100}%` }} aria-hidden="true" />
-              </div>
-            </div>
-          )}
         </div>
       </section>
 

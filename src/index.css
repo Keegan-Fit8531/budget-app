@@ -184,6 +184,12 @@ select::-ms-expand { display: none; }
 .cost-group > div:last-child { border-bottom: 0 !important; }
 
 /* Balance this pay: status, what changed, debt share */
+/* Rule bars on Insights: made of one piece per group; hover or tap a piece to see its accounts */
+.rule-bar { background: var(--soft); }
+.bar > .rule-fill { display: flex; height: 12px; border-radius: 99px; overflow: hidden; gap: 2px; max-width: 100%; }
+.rule-part { height: 12px; border: 0; padding: 0; cursor: pointer; min-width: 3px; flex: 0 0 auto; transition: opacity .12s; }
+.rule-key { display: inline-flex; align-items: center; gap: 6px; background: none; border: 0; padding: 4px 0; font: inherit; font-size: 13px; color: inherit; cursor: pointer; }
+.rule-detail { margin-top: 8px; background: var(--bg); border-radius: 12px; padding: 12px 14px; display: flex; flex-direction: column; gap: 6px; font-size: 14px; }
 /* The choices in the Add menu */
 .add-choice { display: flex; align-items: center; gap: 14px; width: 100%; text-align: left; font: inherit; color: inherit; background: var(--bg); border: 1px solid transparent; border-radius: 14px; padding: 12px 14px; cursor: pointer; }
 .add-choice:hover, .add-choice:focus-visible { border-color: var(--brand-2); }
