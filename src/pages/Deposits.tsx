@@ -1,0 +1,265 @@
+import { useEffect, useState } from 'react';
+import { Icon } from '../components/Icon';
+import { ItemModal } from '../components/ItemModal';
+import { fmtShort, todayISO } from '../lib/dates';
+import { depositFor, exactNeed, modeOf, smoothAmount, topsUp } from '../lib/balances';
+import { averageNeed, convert, itemDates, periodContaining, planFor, shiftPeriod } from '../lib/engine';
+import { PayNav, useViewPeriod } from '../lib/period';
+import { centsToInput, money, parseMoney } from '../lib/money';
+import { nextColor } from '../lib/colors';
+import { newId, useBudget } from '../lib/store';
+import type { Account, Budget, Item, PaydayMode } from '../lib/types';
+
+const items0 = (b: Budget, id: string) => b.items.some((i) => i.accountId === id);
+
+const FREQ_LABEL = { once: 'one-off', weekly: 'weekly', fortnightly: 'fortnightly', monthly: 'monthly', yearly: 'yearly' };
+
+export function Deposits({ openId }: { openId?: string }) {
+  const { budget, update } = useBudget();
+  const [open, setOpen] = useState<string | null>(openId ?? null);
+  const [modal, setModal] = useState<{ item?: Item; accountId?: string } | null>(null);
+  const [showArchived, setShowArchived] = useState(false);
+  useEffect(() => { if (openId) setOpen(openId); }, [openId]);
+
+  const { period } = useViewPeriod();
+  const plan = planFor(budget, period);
+
+  function addAccount() {
+    const id = newId();
+    update((b) => {
+      b.accounts.push({ id, name: 'New account', kind: 'bank', color: nextColor(b.accounts.map((x) => x.color)), groupId: b.groups[0]?.id ?? '' });
+      b.split.push({ accountId: id, amount: 0 });
+      return b;
+    });
+    setOpen(id);
+  }
+
+  // Debts and savings goals are managed in their own tabs.
+  const managed = new Set([...(budget.debts ?? []).map((d) => d.accountId), ...(budget.savings ?? []).map((g) => g.accountId)]);
+  const shown = budget.accounts.filter((a) => !managed.has(a.id) && (showArchived || !a.archived));
+
+  return (
+    <>
+      <header className="between">
+        <div>
+          <h1 className="h1">Deposits and transfers</h1>
+          <p className="small muted">What each payday sends to your accounts, and the costs paid from each.</p>
+        </div>
+        <button className="btn primary" onClick={addAccount}><Icon name="plus" /> Add account</button>
+      </header>
+      <div className="card" style={{ padding: '10px 14px' }}><PayNav compact /></div>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        {shown.map((a) => (
+          <AccountSection key={a.id} account={a} open={open === a.id}
+            onToggle={() => setOpen(open === a.id ? null : a.id)}
+            periodNeed={plan.accounts.find((p) => p.account.id === a.id)?.need ?? 0}
+            periodDays={period.days}
+            onEditItem={(item) => setModal({ item })}
+            onAddItem={() => setModal({ accountId: a.id })} />
+        ))}
+      </div>
+      <div className="tip">
+        <Icon name="bulb" />
+        <span>Balances are in <a href="#/accounts">Accounts</a>. Cards, Afterpay and people you owe are in <a href="#/debts">Debts</a>. Wedding and other goals are in <a href="#/savings">Savings</a>.</span>
+      </div>
+      {budget.accounts.some((a) => a.archived && !managed.has(a.id)) && (
+        <button className="btn ghost small" onClick={() => setShowArchived(!showArchived)}>
+          {showArchived ? 'Hide archived' : 'Show archived accounts'}
+        </button>
+      )}
+      {modal && <ItemModal item={modal.item} accountId={modal.accountId} onClose={() => setModal(null)} />}
+    </>
+  );
+}
+
+function AccountSection({ account: a, open, onToggle, periodNeed, periodDays, onEditItem, onAddItem }: {
+  account: Account; open: boolean; onToggle: () => void; periodNeed: number; periodDays: number;
+  onEditItem: (i: Item) => void; onAddItem: () => void;
+}) {
+  const { budget, update } = useBudget();
+  const isPay = a.id === budget.settings.payAccountId;
+  const line = budget.split.find((l) => l.accountId === a.id);
+  const split = line?.amount ?? 0;
+  const mode = modeOf(line);
+  const steady = mode === 'smooth' || items0(budget, a.id) ? smoothAmount(budget, a.id) : 0;
+  const hasBalance = !!budget.balances?.[a.id];
+  const [splitText, setSplitText] = useState(centsToInput(split));
+  useEffect(() => setSplitText(centsToInput(split)), [split]);
+  const items = budget.items.filter((i) => i.accountId === a.id).sort((x, y) => x.name.localeCompare(y.name));
+  const avgNeed = averageNeed(budget, a.id);
+  const today = todayISO();
+
+  function set<K extends keyof Account>(k: K, val: Account[K]) {
+    update((b) => { const acc = b.accounts.find((x) => x.id === a.id); if (acc) acc[k] = val; return b; });
+  }
+  function setSplit(c: number) {
+    update((b) => {
+      const l = b.split.find((x) => x.accountId === a.id);
+      if (l) l.amount = c; else b.split.push({ accountId: a.id, amount: c });
+      return b;
+    });
+  }
+  function setMode(m: PaydayMode) {
+    update((b) => {
+      const l = b.split.find((x) => x.accountId === a.id);
+      if (l) { l.mode = m; delete l.auto; } else b.split.push({ accountId: a.id, amount: 0, mode: m });
+      // One-pay adjustments were worked out for the old mode, so drop them for this pay on.
+      const from = periodContaining(todayISO(), b.settings).start;
+      for (const [start, o] of Object.entries(b.overrides ?? {})) if (start >= from && o && a.id in o) delete o[a.id];
+      return b;
+    });
+  }
+  function commitSplit() {
+    const c = parseMoney(splitText);
+    if (c === null || c < 0) { setSplitText(centsToInput(split)); return; }
+    setSplit(c);
+  }
+
+  return (
+    <section className="acc-section" style={{ opacity: a.archived ? 0.6 : 1 }}>
+      <button className="acc-head" aria-expanded={open} onClick={onToggle}>
+        <span className="acc-icon" style={{ background: a.color }}><Icon name={a.kind === 'external' ? 'send' : 'bank'} /></span>
+        <span style={{ flex: 1, minWidth: 0 }}>
+          <b style={{ display: 'block' }}>{a.name}</b>
+          <span className="small muted">
+            {isPay ? 'Pay lands here' : a.kind === 'external' ? 'Sent elsewhere' : `${items.length} cost${items.length === 1 ? '' : 's'}`}
+            {a.archived ? ' · archived' : ''}
+          </span>
+        </span>
+        {!isPay && (
+          <span style={{ textAlign: 'right' }}>
+            <b>{money(mode === 'exact' ? periodNeed : mode === 'smooth' ? steady : split)}</b>
+            {mode !== 'fixed' && <span className="small muted" style={{ display: 'block' }}>{mode === 'smooth' ? 'steady' : 'exact'}</span>}
+          </span>
+        )}
+        <span style={{ transform: open ? 'rotate(180deg)' : 'none', display: 'grid' }}><Icon name="down" /></span>
+      </button>
+
+      {open && (
+        <div className="acc-body">
+          <div className="form-grid">
+            <label className="field">Name
+              <input value={a.name} onChange={(e) => set('name', e.target.value)} />
+            </label>
+            <label className="field">Type
+              <select value={a.kind} onChange={(e) => set('kind', e.target.value as Account['kind'])}>
+                <option value="bank">My bank account</option>
+                <option value="external">Sent elsewhere (card, person, fund)</option>
+              </select>
+            </label>
+            <label className="field">Group
+              <select value={a.groupId} onChange={(e) => set('groupId', e.target.value)}>
+                {budget.groups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
+              </select>
+            </label>
+            <label className="field">Colour
+              <input type="color" value={a.color} onChange={(e) => set('color', e.target.value)} style={{ padding: 4 }} />
+            </label>
+          </div>
+
+          {!isPay && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <span className="small muted">Each payday, send</span>
+              <div className="seg" role="group" aria-label="Payday amount" style={{ alignSelf: 'flex-start' }}>
+                <button aria-pressed={mode === 'fixed'} onClick={() => setMode('fixed')}>Fixed amount</button>
+                {items.length > 0 && <button aria-pressed={mode === 'smooth'} onClick={() => setMode('smooth')}>Steady</button>}
+                {items.length > 0 && <button aria-pressed={mode === 'exact'} onClick={() => setMode('exact')}>Exact each pay</button>}
+              </div>
+
+              {mode === 'fixed' && (
+                <>
+                  <label className="field" style={{ maxWidth: 260 }}>Sent here each payday (NZD)
+                    <input inputMode="decimal" value={splitText} onChange={(e) => setSplitText(e.target.value)}
+                      onBlur={commitSplit} onKeyDown={(e) => e.key === 'Enter' && commitSplit()} />
+                  </label>
+                  {items.length > 0 && (
+                    <div className="tip">
+                      <Icon name="bulb" />
+                      <span>
+                        This period ({periodDays} days) needs <b>{money(periodNeed)}</b>. On average it needs <b>{money(avgNeed)}</b> a month.
+                        {!hasBalance && periodNeed > split && ` Sending ${money(split)} leaves it ${money(periodNeed - split)} short.`}
+                      </span>
+                    </div>
+                  )}
+                  {items.length > 0 && items.every((i) => i.frequency === 'weekly') && (
+                    <div className="tip" style={{ alignItems: 'center', flexWrap: 'wrap' }}>
+                      <Icon name="bulb" />
+                      <span style={{ flex: '1 1 220px' }}>
+                        A fixed amount goes short in 5-week pays and builds up in 4-week ones. <b>Steady</b> evens it out: about <b>{money(Math.ceil(avgNeed / 100) * 100)}</b> every pay, with 4-week pays leaving enough over for the 5th week.
+                      </span>
+                      <button className="btn small primary" onClick={() => setMode('smooth')}>Even it out: use Steady</button>
+                    </div>
+                  )}
+                </>
+              )}
+
+              {mode === 'smooth' && (
+                <div className="tip">
+                  <Icon name="bulb" />
+                  <span>
+                    {steady === Math.ceil(avgNeed / 100) * 100
+                      ? <>Sends <b>{money(steady)}</b> every payday.</>
+                      : <>Sends <b>{money(steady)}</b> next payday, then usually <b>{money(Math.ceil(avgNeed / 100) * 100)}</b>. {steady > avgNeed ? 'The extra covers earlier transfers and leaves enough for the next 5-week pay, so later pays stay level.' : 'A little less while there\u2019s extra in the account.'}</>}
+                    {' '}4-week periods leave a little over that covers the 5th week, so the account never goes below $0.
+                    {hasBalance
+                      ? ' Worked out from the balance in Accounts, and it updates when you change it.'
+                      : <> Add this account's balance in <a href="#/accounts">Accounts</a> for an exact figure.</>}
+                  </span>
+                </div>
+              )}
+
+              {mode === 'exact' && (
+                <div className="tip">
+                  <Icon name="bulb" />
+                  <span>
+                    {topsUp(budget, a.id) ? (() => {
+                      const next = shiftPeriod(periodContaining(today, budget.settings), 1, budget.settings);
+                      const sends = depositFor(budget, a.id, next, today);
+                      const bills = exactNeed(budget, a.id, next);
+                      return <>Sends what each pay's bills need, <b>less whatever is already left in the account</b>. Next pay ({fmtShort(next.start)}): bills {money(bills)}{bills > sends ? `, ${money(bills - sends)} already there` : ''}, so it sends <b>{money(sends)}</b>.</>;
+                    })() : <>Sends exactly what each period needs. This period ({periodDays} days) that's <b>{money(periodNeed)}</b>, averaging <b>{money(avgNeed)}</b> a month.</>}
+                  </span>
+                </div>
+              )}
+            </div>
+          )}
+
+          {(a.kind === 'bank' || items.length > 0) && (
+            <div>
+              <div className="between" style={{ marginBottom: 4 }}>
+                <h3 style={{ fontSize: 15 }}>Costs paid from here</h3>
+                <button className="btn small" onClick={onAddItem}><Icon name="plus" size={16} /> Add cost</button>
+              </div>
+              {items.length === 0 && <p className="small muted">No costs yet.</p>}
+              {items.map((i) => {
+                const next = itemDates(i, today, '2100-01-01', budget.settings)[0];
+                return (
+                  <button key={i.id} className="list-row" onClick={() => onEditItem(i)}
+                    style={{ width: '100%', background: 'none', border: 0, borderBottom: '1px solid var(--line)', cursor: 'pointer', textAlign: 'left' }}>
+                    <span style={{ flex: 1, minWidth: 0 }}>
+                      {i.name}
+                      <span className="small muted" style={{ display: 'block' }}>
+                        {FREQ_LABEL[i.frequency]}{next ? ` · next ${fmtShort(next)}` : ' · finished'}
+                        {i.frequency !== 'once' && i.frequency !== 'monthly' ? ` · ${money(convert(i.amount, i.frequency, 'month'))}/mo avg` : ''}
+                        {i.note ? ` · ${i.note}` : ''}
+                      </span>
+                    </span>
+                    <b>{money(i.amount)}</b>
+                    <Icon name="edit" size={16} />
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          {!isPay && (
+            <div className="row">
+              <button className="btn small ghost" onClick={() => set('archived', !a.archived)}>{a.archived ? 'Restore account' : 'Archive account'}</button>
+            </div>
+          )}
+        </div>
+      )}
+    </section>
+  );
+}
