@@ -327,6 +327,14 @@ function CostRow({ goal, cost, status, due, done, open, onToggle, onEdit }: {
   onToggle: () => void; onEdit: () => void;
 }) {
   const { update } = useBudget();
+  // Undoing a spend asks whether the money goes back into the saved balance.
+  const [undo, setUndo] = useState<{ id: string; amount: number; date: string } | null>(null);
+  const undoSpend = (putBack: boolean) => {
+    if (!undo) return;
+    const id = undo.id;
+    update((b) => { const g = (b.savings ?? []).find((y) => y.id === goal.id); if (g) { removeSpend(g, cost.id, id, putBack); if (putBack) g.asOf = todayISO(); } return b; });
+    setUndo(null);
+  };
   const spent = spentOn(cost);
   const left = leftOn(cost);
   const spends = [...(cost.spends ?? [])].sort((a, b) => a.date.localeCompare(b.date));
@@ -356,13 +364,32 @@ function CostRow({ goal, cost, status, due, done, open, onToggle, onEdit }: {
               <span style={{ flex: 1, minWidth: 0 }}>{x.note || 'Spent'}</span>
               <b>{money(x.amount)}</b>
               <button className="btn small ghost" aria-label={`Remove ${money(x.amount)} spent on ${fmtShort(x.date)}`}
-                onClick={() => update((b) => { const g = (b.savings ?? []).find((y) => y.id === goal.id); if (g) { removeSpend(g, cost.id, x.id); g.asOf = todayISO(); } return b; })}>
+                onClick={() => setUndo({ id: x.id, amount: x.amount, date: x.date })}>
                 <Icon name="x" size={14} />
               </button>
             </div>
           ))}
           <div className="list-row small"><span style={{ flex: 1 }}><b>Total spent</b></span><b>{money(spent)}</b></div>
           <div className="list-row small muted"><span style={{ flex: 1 }}>Budgeted {money(cost.amount)}</span><span>{spent > cost.amount ? `${money(spent - cost.amount)} over` : `${money(cost.amount - spent)} left`}</span></div>
+        </div>
+      )}
+      {undo && (
+        <div className="modal-back" onClick={() => setUndo(null)}>
+          <div className="modal" role="dialog" aria-modal="true" aria-labelledby="undo-spend-title" onClick={(e) => e.stopPropagation()}>
+            <div className="between">
+              <h2 id="undo-spend-title" className="h2">Remove {money(undo.amount)} spent on {fmtShort(undo.date)}?</h2>
+              <button className="icon-btn" aria-label="Close" onClick={() => setUndo(null)}><Icon name="x" /></button>
+            </div>
+            <p className="small muted">
+              It comes off {cost.name} either way. Choose what happens to the saved balance, now {money(goal.balance)}.
+            </p>
+            <button className="btn primary" onClick={() => undoSpend(true)}>Put {money(undo.amount)} back: balance becomes {money(goal.balance + undo.amount)}</button>
+            <button className="btn" onClick={() => undoSpend(false)}>Leave the balance at {money(goal.balance)}</button>
+            <p className="small muted">Leave it if the balance already shows the real amount (e.g. you've updated it since, or the spend was more than was saved).</p>
+            <div className="row" style={{ justifyContent: 'flex-end' }}>
+              <button className="btn" onClick={() => setUndo(null)}>Cancel</button>
+            </div>
+          </div>
         </div>
       )}
     </div>

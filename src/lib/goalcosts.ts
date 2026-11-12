@@ -136,13 +136,13 @@ export function spendFromGoal(goal: SavingsGoal, spend: { id: string; amount: Ce
   goal.asOf = spend.date > goal.asOf ? spend.date : goal.asOf;
 }
 
-/** Undo a spend: puts the money back in the fund. */
-export function removeSpend(goal: SavingsGoal, costId: string, spendId: string): void {
+/** Undo a spend. `putBack` (the default) returns the money to the saved balance; false leaves the balance as it is. */
+export function removeSpend(goal: SavingsGoal, costId: string, spendId: string, putBack = true): void {
   const cost = goal.costs?.find((c) => c.id === costId);
   const s = cost?.spends?.find((x) => x.id === spendId);
   if (!cost || !s) return;
   cost.spends = cost.spends!.filter((x) => x.id !== spendId);
-  goal.balance += s.amount;
+  if (putBack) goal.balance += s.amount;
 }
 
 /** Your cost categories, plus any still used by a cost but no longer in the list. */

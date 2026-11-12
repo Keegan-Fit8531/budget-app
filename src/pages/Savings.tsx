@@ -155,7 +155,7 @@ function GoalCard({ f, plan, period, onEdit }: { f: ReturnType<typeof forecast>;
         {tab === 'costs' && <GoalCosts goal={g} />}
         {tab === 'money' && <GoalGifts goal={g} />}
         {tab === 'payday' && (
-          <PaydayControl accountId={g.accountId} thisPeriod={funded?.need ?? 0}
+          <PaydayControl accountId={g.accountId} sends={funded?.funded ?? 0} needs={funded?.need ?? 0}
             autoLabel="Send what's needed to hit the target date"
             autoHint={g.target && g.targetDate ? 'Works out the per-pay amount from your target and date.' : 'Needs a target and a target date.'} />
         )}
@@ -187,7 +187,6 @@ function GoalModal({ goal, onClose }: { goal?: SavingsGoal; onClose: () => void 
     if (bal === null || bal < 0) return setErr('Check the amount saved.');
     if (tgt === null || (tgt !== undefined && tgt <= 0)) return setErr('Check the target amount.');
     if (oth === null) return setErr('Check the other contributions.');
-    if (targetDate && targetDate <= today) return setErr('The target date needs to be in the future.');
     update((b) => {
       b.savings = b.savings ?? [];
       let accId = accountId;
@@ -251,6 +250,7 @@ function GoalModal({ goal, onClose }: { goal?: SavingsGoal; onClose: () => void 
         <label className="field">Note (optional)
           <input value={note} onChange={(e) => setNote(e.target.value)} />
         </label>
+        {targetDate && targetDate <= today && <p className="small muted">That target date has passed, so nothing more is planned for this goal. Pick a later date to keep saving towards it.</p>}
         <p className="small muted">Update "saved so far" whenever you check your balance. Investment fund returns aren't predicted.</p>
         {err && <p className="error" role="alert">{err}</p>}
         <div className="between">

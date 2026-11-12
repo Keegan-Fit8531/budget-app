@@ -198,8 +198,14 @@ export interface Settings {
   saturday: 'friday' | 'monday';
   sunday: 'friday' | 'monday';
   expectedPay: Cents;
-  /** Balance upcoming pays automatically whenever something changes (on unless turned off). */
+  /** Older saves: automatic balancing could be turned off. It's always on now; this is ignored. */
   autoBalance?: boolean;
+  /**
+   * Paydays that really fell on a different day than the rule gives (e.g. paid a day early before a
+   * holiday, taken from a payslip): the month of the usual payday ("YYYY-MM") → the day pay arrived.
+   * The pay before it ends the day before, and that pay starts on it.
+   */
+  paydayMoves?: Record<string, ISODate>;
   /** First payday the budget covers; earlier pay periods are ignored by the Planner. */
   budgetStart?: ISODate;
   /** The account pay lands in; it keeps whatever isn't split out. */

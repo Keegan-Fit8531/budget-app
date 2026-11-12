@@ -17,18 +17,10 @@ function load(): Budget {
     if (raw) {
       const parsed = JSON.parse(raw) as Budget;
       if (parsed.version === 1) {
-        // Lines saved before payday modes existed get an explicit mode.
-        for (const line of parsed.split) {
-          if (!line.mode) line.mode = line.auto ? 'exact' : 'fixed';
-          delete line.auto;
-        }
-        parsed.flags = parsed.flags ?? [];
-        parsed.debts = parsed.debts ?? [];
-        parsed.savings = parsed.savings ?? [];
         // Your own one-off data updates, when they're on this computer (never in the published app).
+        tidy(parsed);
         for (const m of Object.values(personal)) m.migrate(parsed);
-        settleAll(parsed);
-        return autoBalance(parsed);
+        return bringUpToDate(parsed);
       }
     }
   } catch (e) {
@@ -39,9 +31,30 @@ function load(): Budget {
     } catch { /* storage blocked */ }
     console.error('Couldn\u2019t load the saved budget', e);
   }
-  const fresh = structuredClone(seedBudget);
-  settleAll(fresh);
-  return autoBalance(fresh);
+  return bringUpToDate(structuredClone(seedBudget));
+}
+
+/** Fill in what older saves (or a backup, or the copy in the repo) may be missing. */
+function tidy(b: Budget): Budget {
+  // Lines saved before payday modes existed get an explicit mode.
+  for (const line of b.split) {
+    if (!line.mode) line.mode = line.auto ? 'exact' : 'fixed';
+    delete line.auto;
+  }
+  b.flags = b.flags ?? [];
+  b.debts = b.debts ?? [];
+  b.savings = b.savings ?? [];
+  return b;
+}
+
+/**
+ * Make a budget current as of today, wherever it came from (this browser, the repo, a backup, an
+ * earlier version): payments due before today count as paid, then upcoming pays are balanced.
+ */
+function bringUpToDate(b: Budget): Budget {
+  tidy(b);
+  settleAll(b);
+  return autoBalance(b);
 }
 
 /** Count instalments and plan payments dated before today as paid (they're automatic). */
@@ -140,7 +153,7 @@ export function BudgetProvider({ children }: { children: ReactNode }) {
         sha.current = remote.sha;
         savedAt.current = remote.budget.updatedAt;
         if (remote.budget.updatedAt !== local.updatedAt) {
-          setBudget((cur) => { keepVersion(cur, true); return autoBalance(remote.budget); });
+          setBudget((cur) => { keepVersion(cur, true); return bringUpToDate(remote.budget); });
         }
       } else {
         sha.current = remote?.sha;
@@ -165,6 +178,19 @@ export function BudgetProvider({ children }: { children: ReactNode }) {
     window.addEventListener('online', onShow);
     return () => { document.removeEventListener('visibilitychange', onShow); window.removeEventListener('online', onShow); };
   }, [reconcile]);
+
+  // Left open past midnight (or reopened another day): payments that have fallen due since count as paid.
+  useEffect(() => {
+    let day = todayISO();
+    const check = () => {
+      if (todayISO() === day) return;
+      day = todayISO();
+      setBudget((cur) => bringUpToDate(structuredClone(cur)));
+    };
+    const t = setInterval(check, 60_000);
+    document.addEventListener('visibilitychange', check);
+    return () => { clearInterval(t); document.removeEventListener('visibilitychange', check); };
+  }, []);
 
   // Save your changes to the repo a moment after you make them.
   useEffect(() => {
@@ -191,9 +217,9 @@ export function BudgetProvider({ children }: { children: ReactNode }) {
   }, [budget, reconcile, retry]);
 
   const update = useCallback((fn: (b: Budget) => Budget) => setBudget((b) => { keepVersion(b); return stamp(autoBalance(fn(structuredClone(b)))); }), []);
-  const replace = useCallback((b: Budget) => setBudget((cur) => { keepVersion(cur, true); return stamp(autoBalance(b)); }), []);
+  const replace = useCallback((b: Budget) => setBudget((cur) => { keepVersion(cur, true); return stamp(bringUpToDate(structuredClone(b))); }), []);
   const reset = useCallback(() => setBudget((cur) => { keepVersion(cur, true); return stamp(autoBalance(structuredClone(seedBudget))); }), []);
-  const restoreVersion = useCallback((v: SavedVersion) => setBudget((cur) => { keepVersion(cur, true); return stamp(autoBalance(structuredClone(v.budget))); }), []);
+  const restoreVersion = useCallback((v: SavedVersion) => setBudget((cur) => { keepVersion(cur, true); return stamp(bringUpToDate(structuredClone(v.budget))); }), []);
 
   const connectSync = useCallback(async (c: SyncConfig) => {
     await pullBudget(c); // checks the repo and token before saving them

@@ -8,8 +8,19 @@ import type { Account, Budget, Cents, Frequency, Item, Settings } from './types'
 
 // ---------- Paydays and pay periods ----------
 
-/** The actual pay date for a given month, after weekend adjustment. */
-export function paydayFor(year: number, month0: number, s: Pick<Settings, 'paydayDay' | 'saturday' | 'sunday'>): ISODate {
+/** What sets the paydays: the day of the month, the weekend rules, and any paydays that really moved. */
+export type PayRules = Pick<Settings, 'paydayDay' | 'saturday' | 'sunday'> & Pick<Partial<Settings>, 'paydayMoves'>;
+
+function monthKey(year: number, month0: number): string {
+  const y = year + Math.floor(month0 / 12);
+  const m = ((month0 % 12) + 12) % 12;
+  return `${y}-${String(m + 1).padStart(2, '0')}`;
+}
+
+/** The actual pay date for a given month, after weekend adjustment (or the day it really arrived, if recorded). */
+export function paydayFor(year: number, month0: number, s: PayRules): ISODate {
+  const moved = s.paydayMoves?.[monthKey(year, month0)];
+  if (moved) return moved;
   const nominal = dateInMonth(year, month0, s.paydayDay);
   const wd = weekday(nominal);
   if (wd === 6) return addDays(nominal, s.saturday === 'friday' ? -1 : 2);
@@ -34,8 +45,8 @@ function monthIndex(iso: ISODate): [number, number] {
 const periodCache = new Map<string, Period>();
 
 /** The pay period (payday → day before next payday) that contains `date`. */
-export function periodContaining(date: ISODate, s: Pick<Settings, 'paydayDay' | 'saturday' | 'sunday'>): Period {
-  const key = `${date}|${s.paydayDay}|${s.saturday}|${s.sunday}`;
+export function periodContaining(date: ISODate, s: PayRules): Period {
+  const key = `${date}|${s.paydayDay}|${s.saturday}|${s.sunday}|${s.paydayMoves ? JSON.stringify(s.paydayMoves) : ''}`;
   const hit = periodCache.get(key);
   if (hit) return hit;
   if (periodCache.size > 50_000) periodCache.clear();
@@ -44,7 +55,7 @@ export function periodContaining(date: ISODate, s: Pick<Settings, 'paydayDay' | 
   return p;
 }
 
-function computePeriod(date: ISODate, s: Pick<Settings, 'paydayDay' | 'saturday' | 'sunday'>): Period {
+function computePeriod(date: ISODate, s: PayRules): Period {
   const [y, m] = monthIndex(date);
   // The latest payday on or before `date`. Weekend rules can move a payday into the next month (the 31st
   // on a Saturday → Monday the 2nd) or back into the one before (the 1st on a Sunday → Friday), so the
@@ -82,12 +93,59 @@ export function upcomingPayPeriod(b: Pick<Budget, 'settings'>, today: ISODate): 
 }
 
 /** Move `n` pay periods forward (or back, if negative). */
-export function shiftPeriod(p: Period, n: number, s: Pick<Settings, 'paydayDay' | 'saturday' | 'sunday'>): Period {
+export function shiftPeriod(p: Period, n: number, s: PayRules): Period {
   let cur = p;
   for (let i = 0; i < Math.abs(n); i++) {
     cur = n > 0 ? periodContaining(cur.nextPayday, s) : periodContaining(addDays(cur.start, -1), s);
   }
   return cur;
+}
+
+// ---------- Paydays that moved ----------
+
+/** A payslip dated within this many days of the usual payday is that payday, arriving early or late. */
+const MOVE_DAYS = 6;
+
+/** Move everything kept for one pay (its pay, payslip and one-pay adjustments) to that pay's new start date. */
+function rekeyPay(b: Budget, from: ISODate, to: ISODate): void {
+  if (from === to) return;
+  for (const map of [b.payActuals, b.payslips, b.overrides, b.autoBalanced] as (Record<ISODate, unknown> | undefined)[]) {
+    if (!map || !(from in map)) continue;
+    if (!(to in map)) map[to] = map[from];
+    delete map[from];
+  }
+  if (b.settings.budgetStart === from) b.settings.budgetStart = to;
+}
+
+/**
+ * Pay arrived on `payDay`. If that's a few days off the usual payday (e.g. the 18th, before a holiday on
+ * the 19th), that payday moves to it: the pay before ends a day sooner and this one starts a day sooner,
+ * and both are worked out on their real dates from then on. Returns the start of the pay it belongs to.
+ */
+export function recordPayday(b: Budget, payDay: ISODate): ISODate {
+  const s = b.settings;
+  const p = periodContaining(payDay, s);
+  if (p.start === payDay) return payDay;
+  const usual = diffDays(payDay, p.nextPayday) <= MOVE_DAYS ? p.nextPayday : diffDays(p.start, payDay) <= MOVE_DAYS ? p.start : undefined;
+  if (!usual) return p.start; // nowhere near a payday: counts for the pay it falls in
+  const [y, m] = monthIndex(usual);
+  for (let k = m - 1; k <= m + 1; k++) {
+    if (paydayFor(y, k, s) !== usual) continue;
+    s.paydayMoves = { ...(s.paydayMoves ?? {}), [monthKey(y, k)]: payDay };
+    rekeyPay(b, usual, payDay);
+    return payDay;
+  }
+  return p.start;
+}
+
+/** Forget that a payday moved (e.g. its payslip was removed): it goes back to the usual day. */
+export function clearPaydayMove(b: Budget, start: ISODate): void {
+  const s = b.settings;
+  const key = Object.keys(s.paydayMoves ?? {}).find((k) => s.paydayMoves![k] === start);
+  if (!key) return;
+  delete s.paydayMoves![key];
+  const [y, m] = key.split('-').map(Number);
+  rekeyPay(b, start, paydayFor(y, m - 1, s));
 }
 
 // ---------- Occurrences ----------

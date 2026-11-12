@@ -7,9 +7,6 @@ export interface BalanceAdjustment { id: string; name: string; color: string; fr
 interface Props {
   /** This pay is looked after by automatic balancing. */
   auto: boolean;
-  /** Automatic balancing is turned on (for the next 12 pays). */
-  autoOn: boolean;
-  onToggleAuto: (on: boolean) => void;
   leftover: Cents;
   payAccountName: string;
   needsBalance: boolean;
@@ -34,10 +31,6 @@ export function BalanceBox(p: Props) {
     ? short
       ? { tone: 'bad', title: `Still ${money(-p.leftover)} short`, sub: 'Every safe trim has been made. The rest needs a bigger change, like lower rent or bills.' }
       : { tone: 'good', title: 'Balanced automatically', sub: n ? `${n} amount${n === 1 ? '' : 's'} adjusted for this pay · ${spending}` : `Nothing needed adjusting · ${spending}` }
-    : !p.autoOn
-      ? p.needsBalance
-        ? { tone: 'warn', title: 'Using your normal amounts', sub: `${short ? `${money(-p.leftover)} short overall` : p.shortAccounts.length ? p.shortAccounts.map((x) => `${x.name} needs ${money(x.short)} more`).join(' and ') : spending}. Switch to Auto to balance it.` }
-        : { tone: 'good', title: 'Using your normal amounts', sub: `Nothing needs adjusting · ${spending}` }
     : !p.needsBalance
       ? { tone: 'good', title: 'Balanced', sub: n ? `${n} amount${n === 1 ? '' : 's'} adjusted for this pay · ${spending}` : `Nothing to adjust · ${spending}` }
       : {
@@ -53,10 +46,6 @@ export function BalanceBox(p: Props) {
 
   return (
     <div className="balance-box">
-      <div className="seg balance-mode" role="group" aria-label="Payday amounts">
-        <button aria-pressed={p.autoOn} onClick={() => p.onToggleAuto(true)} title="Balance the next 12 pays automatically whenever something changes">Auto-balance</button>
-        <button aria-pressed={!p.autoOn} onClick={() => p.onToggleAuto(false)} title="Your normal payday amounts, nothing adjusted">Defaults</button>
-      </div>
       <div className="row" style={{ gap: 10, alignItems: 'flex-start', minWidth: 0 }}>
         <span className={`status-icon ${status.tone}`} aria-hidden="true"><Icon name={status.tone === 'good' ? 'check' : 'alert'} size={18} /></span>
         <span style={{ minWidth: 0 }}>
@@ -65,13 +54,13 @@ export function BalanceBox(p: Props) {
         </span>
       </div>
 
-      {manual && p.autoOn && (p.needsBalance || (p.canReset && n > 0)) && (
+      {manual && (p.needsBalance || (p.canReset && n > 0)) && (
         <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
           {p.needsBalance && <button className="btn small primary" onClick={p.onBalance}>{n ? 'Re-balance' : 'Balance this pay'}</button>}
           {p.canReset && <button className="btn small" onClick={p.onReset}>Reset to defaults</button>}
         </div>
       )}
-      {manual && p.autoOn && <p className="small muted" style={{ margin: 0 }}>This pay is already split (or more than 12 pays away), so it isn't balanced automatically.</p>}
+      {manual && <p className="small muted" style={{ margin: 0 }}>This pay is already split (or more than 12 pays away), so it isn't balanced automatically.</p>}
 
       {(n > 0 || p.modeChanges.length > 0) && (
         <details className="changes">
@@ -104,7 +93,7 @@ export function BalanceBox(p: Props) {
                 {p.notSpare.map((x) => <p key={x.accountId} className="muted" style={{ margin: '4px 0 0' }}><b style={{ color: 'var(--ink)' }}>{x.name}:</b> {x.reason}</p>)}
               </details>
             )}
-            <p className="small muted" style={{ margin: 0 }}>For this pay only: your normal amounts stay the same for other pays.{p.auto ? ' Choose Defaults to put them back.' : ''}</p>
+            <p className="small muted" style={{ margin: 0 }}>For this pay only: your normal amounts stay the same for other pays.</p>
           </div>
         </details>
       )}

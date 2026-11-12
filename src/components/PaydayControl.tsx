@@ -5,8 +5,10 @@ import type { PaydayMode } from '../lib/types';
 import { useBudget } from '../lib/store';
 
 /** "Sent each payday": a fixed amount, or worked out from plans/goals each pay. */
-export function PaydayControl({ accountId, autoLabel, autoHint, thisPeriod }: {
-  accountId: string; autoLabel: string; autoHint: string; thisPeriod: number;
+export function PaydayControl({ accountId, autoLabel, autoHint, sends, needs }: {
+  accountId: string; autoLabel: string; autoHint: string;
+  /** What this pay sends (the Planner's figure) and what its costs come to. */
+  sends: number; needs: number;
 }) {
   const { budget, update } = useBudget();
   const line = budget.split.find((l) => l.accountId === accountId);
@@ -38,7 +40,7 @@ export function PaydayControl({ accountId, autoLabel, autoHint, thisPeriod }: {
         </span>
       </label>
       {auto ? (
-        <p className="small">This pay sends <b>{money(thisPeriod)}</b>.</p>
+        <p className="small">This pay sends <b>{money(sends)}</b>.{sends !== needs && <span className="muted"> Its costs come to {money(needs)}; the amount was adjusted for this pay.</span>}</p>
       ) : (
         <label className="field" style={{ maxWidth: 260 }}>Sent each payday (NZD)
           <input inputMode="decimal" value={text} onChange={(e) => setText(e.target.value)}

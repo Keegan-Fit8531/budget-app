@@ -331,6 +331,9 @@ export interface Applied { planId: string; planName: string; date: ISODate; amou
  */
 export function applyPayment(debt: Debt, amount: Cents, s: Settings, date: ISODate): { applied: Applied[]; leftover: Cents } {
   if (debt.rules === 'gem') return gemApply(debt, amount, date);
+  // Paid on a payday: that's the payday's own payment, so the next one planned is the payday after
+  // (dated the day after, the same way a payslip's loan deduction is, so it isn't counted twice).
+  const asOf = periodContaining(date, s).start === date ? addDays(date, 1) : date;
   const due = debtSchedules(debt, s)
     .flatMap((sch) => sch.payments.map((p) => ({ plan: sch.plan, date: p.date, amount: p.amount })))
     .sort((a, b) => a.date.localeCompare(b.date) || a.plan.name.localeCompare(b.plan.name));
@@ -348,11 +351,11 @@ export function applyPayment(debt: Debt, amount: Cents, s: Settings, date: ISODa
       p.remaining = p.instalments.reduce((t, i) => t + i.amount, 0);
     } else {
       p.remaining = Math.max(0, p.remaining - take);
-      p.asOf = date;
+      p.asOf = asOf;
     }
     applied.push({ planId: p.id, planName: p.name, date: d.date, amount: take, cleared: take === d.amount });
   }
-  if (debt.balance) debt.balance = { amount: Math.max(0, debt.balance.amount - amount), asOf: date };
+  if (debt.balance) debt.balance = { amount: Math.max(0, debt.balance.amount - amount), asOf };
   debt.plans = debt.plans.filter((p) => p.remaining > 0);
   recordHistory(debt, date);
   return { applied, leftover: left };

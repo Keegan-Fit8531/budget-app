@@ -8,6 +8,7 @@ import { PayNav, useViewPeriod } from '../lib/period';
 import { centsToInput, money, parseMoney } from '../lib/money';
 import { nextColor } from '../lib/colors';
 import { newId, useBudget } from '../lib/store';
+import { balancedMode } from '../lib/rebalance';
 import type { Account, Budget, Item, PaydayMode } from '../lib/types';
 
 const items0 = (b: Budget, id: string) => b.items.some((i) => i.accountId === id);
@@ -54,6 +55,7 @@ export function Deposits({ openId }: { openId?: string }) {
           <AccountSection key={a.id} account={a} open={open === a.id}
             onToggle={() => setOpen(open === a.id ? null : a.id)}
             periodNeed={plan.accounts.find((p) => p.account.id === a.id)?.need ?? 0}
+            periodSends={plan.accounts.find((p) => p.account.id === a.id)?.funded ?? 0}
             periodDays={period.days}
             onEditItem={(item) => setModal({ item })}
             onAddItem={() => setModal({ accountId: a.id })} />
@@ -73,8 +75,10 @@ export function Deposits({ openId }: { openId?: string }) {
   );
 }
 
-function AccountSection({ account: a, open, onToggle, periodNeed, periodDays, onEditItem, onAddItem }: {
-  account: Account; open: boolean; onToggle: () => void; periodNeed: number; periodDays: number;
+function AccountSection({ account: a, open, onToggle, periodNeed, periodSends, periodDays, onEditItem, onAddItem }: {
+  account: Account; open: boolean; onToggle: () => void; periodNeed: number;
+  /** What the pay being viewed sends here: the same figure the Planner shows. */
+  periodSends: number; periodDays: number;
   onEditItem: (i: Item) => void; onAddItem: () => void;
 }) {
   const { budget, update } = useBudget();
@@ -82,6 +86,8 @@ function AccountSection({ account: a, open, onToggle, periodNeed, periodDays, on
   const line = budget.split.find((l) => l.accountId === a.id);
   const split = line?.amount ?? 0;
   const mode = modeOf(line);
+  // Balancing picks the payday amount for accounts with costs, so only the choices that stick are offered.
+  const balanced = balancedMode(budget, a.id);
   const steady = mode === 'smooth' || items0(budget, a.id) ? smoothAmount(budget, a.id) : 0;
   const hasBalance = !!budget.balances?.[a.id];
   const [splitText, setSplitText] = useState(centsToInput(split));
@@ -129,7 +135,7 @@ function AccountSection({ account: a, open, onToggle, periodNeed, periodDays, on
         </span>
         {!isPay && (
           <span style={{ textAlign: 'right' }}>
-            <b>{money(mode === 'exact' ? periodNeed : mode === 'smooth' ? steady : split)}</b>
+            <b>{money(periodSends)}</b>
             {mode !== 'fixed' && <span className="small muted" style={{ display: 'block' }}>{mode === 'smooth' ? 'steady' : 'exact'}</span>}
           </span>
         )}
@@ -162,10 +168,18 @@ function AccountSection({ account: a, open, onToggle, periodNeed, periodDays, on
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               <span className="small muted">Each payday, send</span>
               <div className="seg" role="group" aria-label="Payday amount" style={{ alignSelf: 'flex-start' }}>
-                <button aria-pressed={mode === 'fixed'} onClick={() => setMode('fixed')}>Fixed amount</button>
+                {!balanced && <button aria-pressed={mode === 'fixed'} onClick={() => setMode('fixed')}>Fixed amount</button>}
                 {items.length > 0 && <button aria-pressed={mode === 'smooth'} onClick={() => setMode('smooth')}>Steady</button>}
-                {items.length > 0 && <button aria-pressed={mode === 'exact'} onClick={() => setMode('exact')}>Exact each pay</button>}
+                {items.length > 0 && balanced !== 'smooth' && <button aria-pressed={mode === 'exact'} onClick={() => setMode('exact')}>Exact each pay</button>}
               </div>
+              {balanced && (
+                <p className="small muted">
+                  {balanced === 'smooth'
+                    ? 'Every cost here is weekly, so it gets a steady amount: the same most pays, with 4-week pays covering the 5th week.'
+                    : 'This account has bills on set dates, so each pay is worked out from them rather than a fixed amount.'}
+                  {periodSends !== (mode === 'smooth' ? steady : periodNeed) && mode !== 'fixed' ? ` The pay being viewed sends ${money(periodSends)}.` : ''}
+                </p>
+              )}
 
               {mode === 'fixed' && (
                 <>

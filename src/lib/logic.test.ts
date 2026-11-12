@@ -1,12 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { billTracker } from './balances';
 import { addDays } from './dates';
-import { debtSchedules, planSchedule, recordHistory, settleDue } from './debts';
-import { periodContaining } from './engine';
-import { projectedAt } from './goalcosts';
+import { applyPayment, debtSchedules, planSchedule, recordHistory, settleDue } from './debts';
+import { clearPaydayMove, periodContaining, recordPayday, shiftPeriod } from './engine';
+import { projectedAt, removeSpend, spendFromGoal } from './goalcosts';
+import { autoBalance, balancedMode } from './rebalance';
 import { forecast } from './savings';
 import { seedBudget } from './seed';
-import type { Budget, Debt } from './types';
+import type { Budget, Debt, SavingsGoal } from './types';
 
 /** A blank budget paid on the 19th, with automatic balancing off so amounts are exactly as set. */
 function budget(): Budget {
@@ -110,5 +111,90 @@ describe('bill tracker', () => {
     expect(payday.spare).toBe(6000);
     expect(payday.rows[0].covered).toBe(true);
     expect(billTracker(b, 'bills', '2026-11-20').balance).toBe(31000);
+  });
+});
+
+describe('a payday that moved', () => {
+  it('pay arriving a day early moves that payday: the pay before ends sooner and this one starts sooner', () => {
+    const b = budget();
+    b.overrides = { '2026-11-19': { everyday: 100 } };
+    // Usual payday Thu 19 Nov 2026; the payslip says Wed 18 Nov.
+    expect(recordPayday(b, '2026-11-18')).toBe('2026-11-18');
+    const s = b.settings;
+    expect(periodContaining('2026-11-17', s)).toMatchObject({ start: '2026-10-19', end: '2026-11-17', days: 30 });
+    expect(periodContaining('2026-11-18', s)).toMatchObject({ start: '2026-11-18', end: '2026-12-17', days: 30 });
+    // Later paydays are untouched, and what was kept for that pay follows it to its new date.
+    expect(shiftPeriod(periodContaining('2026-11-18', s), 1, s).start).toBe('2026-12-18');
+    expect(b.overrides).toEqual({ '2026-11-18': { everyday: 100 } });
+    // Recording it again changes nothing; removing it puts the payday back.
+    expect(recordPayday(b, '2026-11-18')).toBe('2026-11-18');
+    clearPaydayMove(b, '2026-11-18');
+    expect(periodContaining('2026-11-18', b.settings).start).toBe('2026-10-19');
+    expect(b.overrides).toEqual({ '2026-11-19': { everyday: 100 } });
+  });
+
+  it('a payslip on the usual day, or nowhere near a payday, moves nothing', () => {
+    const b = budget();
+    expect(recordPayday(b, '2026-11-19')).toBe('2026-11-19');
+    expect(recordPayday(b, '2026-11-02')).toBe('2026-10-19');
+    expect(b.settings.paydayMoves).toBeUndefined();
+  });
+});
+
+describe('recording a debt payment', () => {
+  it('a payment made on payday is that payday\'s payment, not an extra one', () => {
+    const s = budget().settings;
+    const debt: Debt = {
+      id: 'd', name: 'Loan', kind: 'loan', accountId: 'd',
+      plans: [{ id: 'p', name: 'Car', type: 'balance', original: 100000, remaining: 100000, asOf: '2026-11-01', purchaseDate: '2026-11-01', payment: 20000 }],
+    };
+    applyPayment(debt, 20000, s, '2026-11-19');
+    expect(debt.plans[0].remaining).toBe(80000);
+    expect(settleDue(debt, s, '2026-11-20')).toBe(false);
+    expect(debt.plans[0].remaining).toBe(80000);
+    expect(planSchedule(debt, debt.plans[0], s).payments[0].date).toBe('2026-12-18');
+  });
+
+  it('a payment between paydays leaves the next payday\'s payment in place', () => {
+    const s = budget().settings;
+    const debt: Debt = {
+      id: 'd', name: 'Loan', kind: 'loan', accountId: 'd',
+      plans: [{ id: 'p', name: 'Car', type: 'balance', original: 100000, remaining: 100000, asOf: '2026-11-01', purchaseDate: '2026-11-01', payment: 20000 }],
+    };
+    applyPayment(debt, 5000, s, '2026-11-10');
+    expect(planSchedule(debt, debt.plans[0], s).payments[0]).toMatchObject({ date: '2026-11-19', amount: 20000 });
+  });
+});
+
+describe('undoing a spend from a goal', () => {
+  const goal = (): SavingsGoal => ({ id: 'g', name: 'G', accountId: 'sv', balance: 10000, asOf: '2026-11-01', costs: [{ id: 'c', name: 'C', amount: 50000, category: 'x' }] });
+
+  it('can put the money back', () => {
+    const g = goal();
+    spendFromGoal(g, { id: 's', amount: 4000, date: '2026-11-12' }, { costId: 'c' });
+    removeSpend(g, 'c', 's');
+    expect(g.balance).toBe(10000);
+  });
+
+  it('can leave the balance alone (e.g. the spend was more than was saved)', () => {
+    const g = goal();
+    spendFromGoal(g, { id: 's', amount: 30000, date: '2026-11-12' }, { costId: 'c' });
+    expect(g.balance).toBe(0);
+    removeSpend(g, 'c', 's', false);
+    expect(g.balance).toBe(0);
+    expect(g.costs?.[0].spends).toEqual([]);
+  });
+});
+
+describe('automatic balancing', () => {
+  it('always runs, and says which payday amount it gives an account', () => {
+    const b = budget();
+    b.accounts.push({ id: 'bills', name: 'Bills', kind: 'bank', color: '#000', groupId: 'needs' }, { id: 'food', name: 'Food', kind: 'bank', color: '#000', groupId: 'needs' }, { id: 'spare', name: 'Spare', kind: 'bank', color: '#000', groupId: 'needs' });
+    b.split.push({ accountId: 'bills', amount: 30000, mode: 'fixed' }, { accountId: 'food', amount: 90000, mode: 'fixed' }, { accountId: 'spare', amount: 5000, mode: 'fixed' });
+    b.items.push({ id: 'i1', name: 'Power', amount: 20000, frequency: 'monthly', start: '2026-01-25', accountId: 'bills' });
+    b.items.push({ id: 'i2', name: 'Food', amount: 20000, frequency: 'weekly', start: '2026-01-05', accountId: 'food' });
+    expect([balancedMode(b, 'bills'), balancedMode(b, 'food'), balancedMode(b, 'spare')]).toEqual(['not-fixed', 'smooth', undefined]);
+    autoBalance(b, '2026-11-12'); // settings.autoBalance is false in this budget: it's ignored now
+    expect(b.split.map((l) => l.mode)).toEqual(['exact', 'smooth', 'fixed']);
   });
 });

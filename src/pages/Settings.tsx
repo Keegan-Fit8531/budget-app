@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import QRCode from 'qrcode';
 import { Icon } from '../components/Icon';
 import { fmtDay, monthName, todayISO } from '../lib/dates';
-import { periodContaining, shiftPeriod } from '../lib/engine';
+import { clearPaydayMove, periodContaining, shiftPeriod } from '../lib/engine';
 import { centsToInput, money, parseMoney } from '../lib/money';
 import { nextColor } from '../lib/colors';
 import { CostCategoriesEditor } from '../components/CostCategories';
@@ -115,7 +115,7 @@ export function Settings() {
               </span>
               <b>{money(net)}</b>
               <button className="btn small ghost" aria-label={`Remove ${monthName(start)} pay`}
-                onClick={() => update((b) => { delete b.payActuals[start]; if (b.payslips) delete b.payslips[start]; return b; })}>
+                onClick={() => update((b) => { delete b.payActuals[start]; if (b.payslips) delete b.payslips[start]; clearPaydayMove(b, start); return b; })}>
                 <Icon name="x" size={16} />
               </button>
             </div>

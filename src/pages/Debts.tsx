@@ -247,7 +247,7 @@ export function Debts() {
             </div>
 
             {!d.payroll && <div style={{ borderTop: '1px solid var(--line)', paddingTop: 12 }}>
-              <PaydayControl accountId={d.accountId} thisPeriod={funded?.need ?? 0}
+              <PaydayControl accountId={d.accountId} sends={funded?.funded ?? 0} needs={funded?.need ?? 0}
                 autoLabel="Pay exactly what's due each payday"
                 autoHint="Adds up this pay's plan payments and Afterpay instalments." />
               {funded && funded.diff !== null && funded.diff < 0 && (

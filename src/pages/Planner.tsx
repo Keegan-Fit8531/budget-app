@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState } from 'react';
 import { readPayslipPdf } from '../lib/payslip';
-import { applyBalance, autoBalanceOn, autoPays, balancePay, DEBT_RATIO_GUIDE, restoreOverrides, stopAutoBalance, type BalanceResult } from '../lib/rebalance';
+import { applyBalance, autoPays, balancePay, DEBT_RATIO_GUIDE, restoreOverrides, type BalanceResult } from '../lib/rebalance';
 import { BalanceBox } from '../components/BalanceBox';
 import { accountMode, leftoverBeforeBudget, topsUp } from '../lib/balances';
 import { Donut, Legend } from '../components/Donut';
@@ -12,7 +12,7 @@ import { undoAllocation } from '../lib/allocate';
 import { applyPayrollDeduction } from '../lib/debts';
 import { fmtShort, monthName, todayISO } from '../lib/dates';
 import {
-  averageSplit, convert, firstBudgetPay, isAuto, periodContaining, planFor, plannedAverage, shiftPeriod, type View,
+  averageSplit, convert, firstBudgetPay, isAuto, planFor, plannedAverage, recordPayday, shiftPeriod, upcomingPayPeriod, type View,
 } from '../lib/engine';
 import { centsToInput, money, moneyParts, parseMoney } from '../lib/money';
 import { useBudget } from '../lib/store';
@@ -85,6 +85,28 @@ export function Planner() {
     .filter((x) => x.extra > 2000)
     .sort((x, y) => y.extra - x.extra)
     .slice(0, 3);
+  // Notes on what's unusual this pay: each account sending noticeably more or less than normal, and why
+  // (an extra week, a yearly or one-off cost falling in it, or an adjustment made for this pay only).
+  const realItems = new Set(budget.items.map((i) => i.id));
+  const notes = plan.accounts
+    .filter((a) => a.account.id !== budget.settings.payAccountId)
+    .map((a) => {
+      const usual = usualOf(a.account.id);
+      const why: string[] = [];
+      for (const x of a.breakdown) {
+        if (!realItems.has(x.item.id)) continue;
+        const f = x.item.frequency;
+        if (f === 'yearly' || f === 'once') why.push(`${x.item.name} (${f === 'yearly' ? 'yearly' : 'one-off'}, ${money(x.item.amount * x.count)}) falls in this pay`);
+        else if (f === 'weekly' && x.count >= 5) why.push(`${x.count} weeks of ${x.item.name} instead of 4`);
+        else if (f === 'fortnightly' && x.count >= 3) why.push(`${x.count} lots of ${x.item.name} instead of 2`);
+      }
+      if (a.usual !== undefined && a.usual !== a.funded) {
+        why.push(budget.autoBalanced?.[period.start]?.[a.account.id]?.reason ?? `Adjusted for this pay only (normally ${money(a.usual)}).`);
+      }
+      return { a, usual, extra: a.funded - usual, why };
+    })
+    .filter((x) => Math.abs(x.extra) > 2000 || x.why.length > 0)
+    .sort((x, y) => Math.abs(y.extra) - Math.abs(x.extra));
   const usualTotal = plan.accounts.filter((a) => a.account.id !== budget.settings.payAccountId)
     .reduce((t, a) => t + usualOf(a.account.id), 0);
   // Average views (week, fortnight, month, year): what's really planned over the next 12 pays, averaged.
@@ -163,13 +185,8 @@ export function Planner() {
   const undoHere = optUndo?.periodStart === period.start ? optUndo : null;
   const canOptimise = !avg && !needsBalance && plan.leftover > 5000;
   // Automatic balancing looks after the next 12 pays; a pay already split (or further out) is done by hand.
-  const autoOn = autoBalanceOn(budget);
-  const autoHere = autoOn && autoPays(budget, today).some((p) => p.start === period.start);
+  const autoHere = autoPays(budget, today).some((p) => p.start === period.start);
   const hasModeChanges = (() => { try { return !!JSON.parse(localStorage.getItem(MODES_KEY) ?? '{}')[period.start]; } catch { return false; } })();
-  function toggleAuto(on: boolean) {
-    update((b) => { if (on) b.settings.autoBalance = true; else stopAutoBalance(b); return b; });
-    setBalanced(null);
-  }
   const debtIds = new Set((budget.debts ?? []).map((d) => d.accountId));
   const debtPaid = plan.accounts.filter((a) => debtIds.has(a.account.id)).reduce((t, a) => t + a.funded, 0);
   const debtRatio = plan.pay > 0 ? debtPaid / plan.pay : 0;
@@ -190,23 +207,31 @@ export function Planner() {
     try {
       const slip = await readPayslipPdf(file);
       if (!slip) { setSlipMsg({ ok: false, text: 'Couldn’t find a pay day and net pay in that PDF. Is it a payslip?' }); return; }
-      const p = periodContaining(slip.payDay, budget.settings);
-      let loan = false;
-      update((b) => {
-        b.payActuals[p.start] = slip.net;
-        b.payslips = { ...(b.payslips ?? {}), [p.start]: slip };
+      // Paid a day or so off the usual payday (e.g. early, before a holiday)? That payday moves to the
+      // day pay really arrived, so this pay and the one before it are both worked out on their real dates.
+      const record = (b: typeof budget) => {
+        const start = recordPayday(b, slip.payDay);
+        b.payActuals[start] = slip.net;
+        b.payslips = { ...(b.payslips ?? {}), [start]: slip };
         // The student loan comes out before pay: count the payslip's deduction against the loan.
-        if (slip.studentLoan) loan = !!applyPayrollDeduction(b, p.start, slip.studentLoan);
-        return b;
-      });
+        const loan = slip.studentLoan ? !!applyPayrollDeduction(b, start, slip.studentLoan) : false;
+        return { start, loan };
+      };
+      // Worked out on a copy first, for the message and to show that pay.
+      const after = structuredClone(budget);
+      const { start, loan } = record(after);
+      const moved = JSON.stringify(after.settings.paydayMoves ?? {}) !== JSON.stringify(budget.settings.paydayMoves ?? {});
+      const p = { start };
+      update((b) => { record(b); return b; });
       const diff = slip.net - budget.settings.expectedPay;
       setSlipMsg({
         ok: true,
         text: `${monthName(p.start)} pay recorded: ${money(slip.net)}` +
           (diff === 0 ? ', exactly as expected.' : `, ${money(Math.abs(diff))} ${diff > 0 ? 'more' : 'less'} than expected.`) +
+          (moved ? ` Paid on ${fmtShort(start)}, not the usual day, so that pay now starts then and the one before it ends the day before.` : '') +
           (loan && slip.studentLoan ? ` Student loan: ${money(slip.studentLoan)} taken off what you owe.` : ''),
       });
-      setOffset(offset + periodsBetween(period.start, p.start));
+      setOffset(offsetOf(after, start));
     } catch {
       setSlipMsg({ ok: false, text: 'That file couldn’t be read as a PDF.' });
     } finally {
@@ -214,12 +239,13 @@ export function Planner() {
     }
   }
 
-  function periodsBetween(from: string, to: string): number {
+  /** How many pays after the next one to come a pay is (negative = before it), in budget `b`. */
+  function offsetOf(b: typeof budget, start: string): number {
     let n = 0;
-    let p = period;
-    const dir = to > from ? 1 : -1;
-    while (p.start !== to && Math.abs(n) < 240) { p = shiftPeriod(p, dir, budget.settings); n += dir; }
-    return n;
+    let p = upcomingPayPeriod(b, today);
+    const dir = start > p.start ? 1 : -1;
+    while (p.start !== start && Math.abs(n) < 240) { p = shiftPeriod(p, dir, b.settings); n += dir; }
+    return p.start === start ? n : offset;
   }
 
   return (
@@ -319,7 +345,7 @@ export function Planner() {
 
           {!avg && known && (
             <BalanceBox
-              auto={autoHere} autoOn={autoOn} onToggleAuto={toggleAuto}
+              auto={autoHere}
               leftover={plan.leftover} payAccountName={payAccountName}
               needsBalance={needsBalance} shortAccounts={shortAccounts}
               adjustments={adjustments.map((a) => ({
@@ -367,6 +393,26 @@ export function Planner() {
             )}
           </span>
         </div>
+      )}
+
+      {!avg && notes.length > 0 && (
+        <details className="card">
+          <summary style={{ cursor: 'pointer', fontWeight: 600, minHeight: 32 }}>What's different this pay ({notes.length})</summary>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 10 }}>
+            {notes.map((x) => (
+              <div key={x.a.account.id} className="small">
+                <span className="row" style={{ gap: 8 }}>
+                  <span className="dot" style={{ background: x.a.account.color }} />
+                  <span>
+                    <b>{x.a.account.name}</b>: {money(x.a.funded)} this pay
+                    {Math.abs(x.extra) > 2000 ? `, usually about ${money(x.usual, { whole: true })} (${x.extra > 0 ? '+' : '−'}${money(Math.abs(x.extra), { whole: true })})` : ''}
+                  </span>
+                </span>
+                {x.why.map((w) => <span key={w} className="muted" style={{ display: 'block', paddingLeft: 18 }}>{w}</span>)}
+              </div>
+            ))}
+          </div>
+        </details>
       )}
 
       <section style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>

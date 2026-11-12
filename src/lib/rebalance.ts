@@ -51,7 +51,7 @@ const dollarsUp = (c: Cents) => Math.ceil(c / 100) * 100;
  * Never cut: rent, bills, food and gas, weekly transfers, or any debt's required payment.
  */
 /** `keep`: accounts with an amount you set yourself this pay; never trimmed or changed (except a top-up if it's short). */
-export function balancePay(input: Budget, period: Period, keep: Set<string> = new Set()): BalanceResult {
+export function balancePay(input: Budget, period: Period, today: ISODate = todayISO(), keep: Set<string> = new Set()): BalanceResult {
   // Even out first: accounts with weekly costs that aren't on Steady go up and down between 4- and
   // 5-week pays, so balancing moves them to Steady (and works everything else out from there).
   const items = (id: string) => input.items.filter((i) => i.accountId === id);
@@ -73,7 +73,7 @@ export function balancePay(input: Budget, period: Period, keep: Set<string> = ne
     const l = b.split.find((x) => x.accountId === t.accountId);
     if (l) { l.mode = t.to; delete l.auto; } else b.split.push({ accountId: t.accountId, amount: 0, mode: t.to });
   }
-  const plan = planFor(b, period);
+  const plan = planFor(b, period, today);
   const debts = b.debts ?? [];
   const debtIds = new Set(debts.map((d) => d.accountId));
   const funded = (id: string) => plan.accounts.find((a) => a.account.id === id)?.funded ?? 0;
@@ -112,7 +112,7 @@ export function balancePay(input: Budget, period: Period, keep: Set<string> = ne
       if (id === b.settings.payAccountId || debtIds.has(id) || a.account.kind !== 'bank' || savingGroupIds.has(a.account.groupId)) continue;
       if (!b.items.some((i) => i.accountId === id)) continue;
       const name = a.account.name;
-      const info = spareInfo(b, id, period);
+      const info = spareInfo(b, id, period, 12, today);
       if (!info) { notSpare.push({ accountId: id, name, reason: 'No balance entered in Accounts, so the app can\u2019t tell if it has spare money.' }); continue; }
       if (protectedIds.has(id)) { notSpare.push({ accountId: id, name, reason: 'It\u2019s short this pay, so it was topped up instead.' }); continue; }
       const spare = info.spare;
@@ -160,7 +160,7 @@ export function balancePay(input: Budget, period: Period, keep: Set<string> = ne
     const id = a.account.id;
     if (id === b.settings.payAccountId || accountMode(b, id) !== 'smooth' || changes.some((c) => c.accountId === id) || keep.has(id)) continue;
     if (!allWeekly(id)) continue;
-    const level = levelAmount(b, id, period);
+    const level = levelAmount(b, id, period, today);
     if (level === undefined || level <= a.funded) continue;
     const add = Math.min(level - a.funded, Math.floor(spare / 100) * 100);
     if (add <= 0) continue;
@@ -207,7 +207,19 @@ const fmt = (c: Cents) => `$${(c / 100).toLocaleString('en-NZ', { minimumFractio
 /** How many upcoming pays automatic balancing looks after. */
 export const AUTO_PAYS = 12;
 
-export const autoBalanceOn = (b: Budget) => b.settings.autoBalance !== false;
+/**
+ * The payday amount balancing always gives an account, whatever you pick: Steady when every cost is a
+ * weekly transfer, and never a fixed amount for an account with bills on set dates ('not-fixed').
+ * Undefined when the choice is yours (no costs, set-asides, sent elsewhere, debts and savings goals).
+ */
+export function balancedMode(b: Budget, accountId: string): 'smooth' | 'not-fixed' | undefined {
+  const a = b.accounts.find((x) => x.id === accountId);
+  const items = b.items.filter((i) => i.accountId === accountId);
+  if (!a || a.archived || a.kind !== 'bank' || a.id === b.settings.payAccountId || !items.length) return undefined;
+  if ((b.savings ?? []).some((g) => g.accountId === a.id) || (b.debts ?? []).some((d) => d.accountId === a.id)) return undefined;
+  if (items.every((i) => i.frequency === 'weekly')) return 'smooth';
+  return items.every((i) => /set.?aside/i.test(`${i.name} ${i.note ?? ''}`)) ? undefined : 'not-fixed';
+}
 
 /** The pays automatic balancing covers: from the next payday on (a pay already split is left as it is). */
 export function autoPays(b: Budget, today: ISODate = todayISO()): Period[] {
@@ -237,12 +249,11 @@ export function clearAuto(b: Budget, start: ISODate): void {
  * Same inputs give the same result, so it's safe to run after every change.
  */
 export function autoBalance(b: Budget, today: ISODate = todayISO()): Budget {
-  if (!autoBalanceOn(b)) return b;
   b.autoBalanced = b.autoBalanced ?? {};
   for (const p of autoPays(b, today)) {
     clearAuto(b, p.start);
     // Whatever is still adjusted now is yours: balancing builds around it.
-    const r = balancePay(b, p, new Set(Object.keys(b.overrides?.[p.start] ?? {})));
+    const r = balancePay(b, p, today, new Set(Object.keys(b.overrides?.[p.start] ?? {})));
     if (!r.changes.length && !r.toSteady.length) continue;
     const before = b.overrides?.[p.start] ?? {};
     const mine: NonNullable<Budget['autoBalanced']>[string] = {};
@@ -250,12 +261,5 @@ export function autoBalance(b: Budget, today: ISODate = todayISO()): Budget {
     applyBalance(b, p, r);
     if (Object.keys(mine).length) b.autoBalanced[p.start] = mine;
   }
-  return b;
-}
-
-/** Turn automatic balancing off: every upcoming pay goes back to its normal amounts. */
-export function stopAutoBalance(b: Budget, today: ISODate = todayISO()): Budget {
-  for (const p of autoPays(b, today)) clearAuto(b, p.start);
-  b.settings.autoBalance = false;
   return b;
 }
