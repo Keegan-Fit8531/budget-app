@@ -131,9 +131,12 @@ export function Planner() {
   const cards = plan.accounts.filter((a) =>
     a.account.id !== budget.settings.payAccountId && (a.funded !== 0 || a.need !== 0));
 
+  // The chart follows the view: this pay, this pay per week / fortnight, or the average of the next 12 pays
+  // per month / added up for the year (the same amounts the cards and Total budgeted show).
   const slices = plan.accounts
-    .filter((a) => a.account.id !== budget.settings.payAccountId && a.funded > 0)
-    .map((a) => ({ label: a.account.name, value: a.funded, color: a.account.color }));
+    .filter((a) => a.account.id !== budget.settings.payAccountId)
+    .map((a) => ({ label: a.account.name, value: longRun ? v(planned?.get(a.account.id)?.sent ?? 0) : v(a.funded), color: a.account.color }))
+    .filter((x) => x.value > 0);
 
   const debtAccounts = new Set((budget.debts ?? []).map((d) => d.accountId));
   const goalAccounts = new Set((budget.savings ?? []).map((g) => g.accountId));
@@ -394,19 +397,19 @@ export function Planner() {
         </div>
 
         <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-          <h2 className="h2">Where this pay goes</h2>
+          <h2 className="h2">{split ? `Where this pay goes, per ${mode}` : mode === 'month' ? 'Where pay goes, per month' : mode === 'year' ? 'Where pay goes over a year' : 'Where this pay goes'}</h2>
           {/* The chart sits in the middle of whatever height the card has, so both cards end level. */}
           <div style={{ flex: 1, display: 'flex', flexWrap: 'wrap', alignItems: 'center', alignContent: 'center', gap: 24 }}>
             <Donut slices={slices} size={170}>
               <span className="small muted">Budgeted</span>
-              <b style={{ fontSize: 19 }}>{cash(plan.totalSplit, { whole: true })}</b>
+              <b style={{ fontSize: 19 }}>{cash(totalBudgeted, { whole: true })}</b>
             </Donut>
             <div style={{ flex: '1 1 220px', minWidth: 0, display: 'flex' }}>
               <Legend slices={slices} amounts />
             </div>
           </div>
           {/* Debt repayments as a share of pay, against the 20% guideline (the bar runs to twice it). */}
-          {known && debtPaid > 0 && (
+          {!avg && known && debtPaid > 0 && (
             <div style={{ borderTop: '1px solid var(--line)', paddingTop: 12 }}>
               <div className="between small" style={{ flexWrap: 'nowrap' }}>
                 <span>Debt repayments <span className="muted">· guideline under {Math.round(DEBT_RATIO_GUIDE * 100)}%</span></span>
