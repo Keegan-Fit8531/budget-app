@@ -26,7 +26,7 @@ const NAV = [
   { id: 'accounts', label: 'Accounts', icon: 'wallet' },
   { id: 'deposits', label: 'Deposits', icon: 'transfer' },
   { id: 'debts', label: 'Debts', icon: 'card' },
-  { id: 'savings', label: 'Savings', icon: 'target' },
+  { id: 'savings', label: 'Savings', icon: 'piggy' },
   { id: 'insights', label: 'Insights', icon: 'pie' },
 ];
 const byId = (id: string) => NAV.find((n) => n.id === id)!;
