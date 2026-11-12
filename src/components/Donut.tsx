@@ -54,15 +54,19 @@ export function Donut({ slices, size = 200, children }: { slices: Slice[]; size?
   );
 }
 
-export function Legend({ slices }: { slices: Slice[] }) {
+/** Each slice's name and share; with `amounts`, its amount too (largest first, so the big ones are read first). */
+export function Legend({ slices, amounts }: { slices: Slice[]; amounts?: boolean }) {
   const total = slices.reduce((s, x) => s + Math.max(0, x.value), 0) || 1;
+  const shown = slices.filter((s) => s.value > 0);
+  if (amounts) shown.sort((a, b) => b.value - a.value);
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8, fontSize: 14, flex: '1 1 180px', minWidth: 0 }}>
-      {slices.filter((s) => s.value > 0).map((s) => (
+      {shown.map((s) => (
         <div key={s.label} className="row" style={{ gap: 10 }}>
           <span className="dot" style={{ background: s.color }} />
           <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.label}</span>
-          <b>{Math.round((s.value / total) * 100)}%</b>
+          {amounts && <span className="num muted">{money(s.value, { whole: true })}</span>}
+          <b className="num" style={amounts ? { width: 38, textAlign: 'right' } : undefined}>{Math.round((s.value / total) * 100)}%</b>
         </div>
       ))}
     </div>

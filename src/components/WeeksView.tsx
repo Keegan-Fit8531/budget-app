@@ -4,7 +4,7 @@ import { debtPaymentsIn } from '../lib/debts';
 import type { Period, PeriodPlan } from '../lib/engine';
 import { accountMode, balanceOn } from '../lib/balances';
 import { averageNeed, itemDates, shiftPeriod } from '../lib/engine';
-import { money } from '../lib/money';
+import { cash } from '../lib/money';
 import type { Budget } from '../lib/types';
 import { calendarWeeks, weeklyCoverage } from '../lib/weeks';
 
@@ -81,32 +81,32 @@ export function WeeksView({ budget, period, plan }: { budget: Budget; period: Pe
                   const chips = inPeriod ? byDate.get(d) ?? [] : [];
                   const day = toDate(d).getUTCDate();
                   return (
-                    <td key={d} aria-label={`${fmtDay(d)}${isPay ? ', payday' : ''}${isNext ? ', next payday' : ''}${chips.map((c) => `, ${c.name} ${money(c.amount)}${c.skipped ? ' skipped' : ''}`).join('')}`}
+                    <td key={d} className="wk-day" aria-label={`${fmtDay(d)}${isPay ? ', payday' : ''}${isNext ? ', next payday' : ''}${chips.map((c) => `, ${c.name} ${cash(c.amount)}${c.skipped ? ' skipped' : ''}`).join('')}`}
                       style={{
-                        verticalAlign: 'top', height: 56, padding: 4, borderRadius: 10,
+                        verticalAlign: 'top', height: 60, borderRadius: 10,
                         background: isPay ? 'var(--brand)' : inPeriod ? 'var(--bg)' : 'transparent',
                         color: isPay ? '#fff' : 'var(--ink)',
                         outline: isNext ? '2px dashed var(--brand-2)' : d === today ? '2px solid var(--ink)' : 'none', outlineOffset: -2,
                         opacity: inPeriod || isNext ? 1 : 0.4,
                       }}>
-                      <div style={{ fontSize: 12, fontWeight: isPay || isNext ? 700 : 500 }}>{day === 1 || d === w[0] ? fmtShort(d) : day}</div>
+                      <div style={{ fontSize: 13, fontWeight: isPay || isNext ? 700 : 600 }}>{day === 1 || d === w[0] ? fmtShort(d) : day}</div>
                       {isPay && <div style={{ fontSize: 11 }}>Payday</div>}
                       {isNext && <div style={{ fontSize: 11, color: 'var(--brand-2)', fontWeight: 600 }}>Next pay</div>}
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 2, marginTop: 2 }}>
                         {chips.map((c) => (
                           <span key={c.key} style={{ position: 'relative' }}>
-                            <button type="button" aria-label={`${c.name}, ${money(c.amount)}, ${c.account}`}
+                            <button type="button" className="wk-chip" aria-label={`${c.name}, ${cash(c.amount)}, ${c.account}`}
                               onMouseEnter={() => setTip(c.key)} onMouseLeave={() => setTip((t) => (t === c.key ? null : t))}
                               onFocus={() => setTip(c.key)} onBlur={() => setTip((t) => (t === c.key ? null : t))}
                               onClick={() => setTip((t) => (t === c.key ? null : c.key))}
                               style={{
                                 display: 'flex', alignItems: 'center', gap: 3, width: '100%', padding: 0, border: 0, background: 'none', cursor: 'pointer', textAlign: 'left',
                                 color: isPay ? '#fff' : c.main ? 'var(--ink)' : 'var(--muted)', font: 'inherit',
-                                fontSize: c.main ? 11 : 10, fontWeight: c.main ? 700 : 400, lineHeight: 1.2, opacity: c.skipped ? 0.7 : 1,
+                                fontSize: c.main ? 12 : 11, fontWeight: c.main ? 700 : 500, lineHeight: 1.25, opacity: c.skipped ? 0.7 : 1,
                               }}>
-                              <span aria-hidden="true" style={{ width: c.main ? 7 : 5, height: c.main ? 7 : 5, borderRadius: c.main ? 2 : 99, background: c.skipped ? 'transparent' : c.color, border: c.skipped ? `1px solid ${c.color}` : 'none', flex: '0 0 auto', opacity: c.main ? 1 : 0.75 }} />
+                              <span aria-hidden="true" className="wk-dot" style={{ width: c.main ? 7 : 5, height: c.main ? 7 : 5, borderRadius: c.main ? 2 : 99, background: c.skipped ? 'transparent' : c.color, border: c.skipped ? `1px solid ${c.color}` : 'none', flex: '0 0 auto', opacity: c.main ? 1 : 0.75 }} />
                               <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                {c.skipped ? <s>{money(c.amount, { whole: true })}</s> : money(c.amount, { whole: true })}
+                                {c.skipped ? <s>{cash(c.amount, { whole: true })}</s> : cash(c.amount, { whole: true })}
                               </span>
                             </button>
                             {tip === c.key && (
@@ -119,7 +119,7 @@ export function WeeksView({ budget, period, plan }: { budget: Budget; period: Pe
                                   <span style={{ width: 8, height: 8, borderRadius: 2, background: c.color }} />
                                   <b>{c.name}</b>
                                 </span>
-                                <span style={{ display: 'block' }}>{money(c.amount)} · {fmtDay(d)}</span>
+                                <span style={{ display: 'block' }}>{cash(c.amount)} · {fmtDay(d)}</span>
                                 <span style={{ display: 'block', opacity: 0.8 }}>{c.account} · {c.what}{c.skipped ? ' · skipped' : ''}</span>
                                 {c.note && <span style={{ display: 'block', opacity: 0.8 }}>{c.note}</span>}
                               </span>
@@ -161,44 +161,42 @@ export function WeeksView({ budget, period, plan }: { budget: Budget; period: Pe
         const prevPay = `the ${monthName(shiftPeriod(period, -1, budget.settings).start)} pay`;
         // Every weekly cost from this account (e.g. food + gas), not just the ones shown on the calendar.
         const weekly = budget.items.filter((i) => i.accountId === acc.id && i.frequency === 'weekly');
-        const what = (weekly.length ? weekly : items).map((i) => `${i.name} ${money(i.amount, { whole: true })}`).join(' + ');
+        const what = (weekly.length ? weekly : items).map((i) => `${i.name} ${cash(i.amount, { whole: true })}`).join(' + ');
         const message = mode === 'exact'
-          ? { text: `Sends all ${count}: ${money(ap.need)}`, tone: 'muted' }
+          ? { text: `Sends all ${count}: ${cash(ap.need)}`, tone: 'muted' }
           : mode === 'smooth'
             ? known
               ? after! >= before!
                 ? shortBefore && after! - before! <= shortBefore
-                  ? { text: `Makes up ${money(shortBefore)} short`, tone: 'pos' }
-                  : { text: `${money(after! - Math.max(0, before!))} goes into the buffer`, tone: 'pos' }
-                : { text: `Buffer covers the extra ${money(before! - after!)}`, tone: 'pos' }
+                  ? { text: `Makes up ${cash(shortBefore)} short`, tone: 'pos' }
+                  : { text: `${cash(after! - Math.max(0, before!))} goes into the buffer`, tone: 'pos' }
+                : { text: `Buffer covers the extra ${cash(before! - after!)}`, tone: 'pos' }
               : diff >= 0
-                ? { text: `${money(diff)} goes into the buffer`, tone: 'pos' }
-                : { text: `Buffer covers the extra ${money(-diff)}`, tone: 'pos' }
+                ? { text: `${cash(diff)} goes into the buffer`, tone: 'pos' }
+                : { text: `Buffer covers the extra ${cash(-diff)}`, tone: 'pos' }
             : diff >= 0
-              ? { text: `${money(diff)} spare`, tone: 'pos' }
-              : { text: `${money(-diff)} short`, tone: 'neg' };
+              ? { text: `${cash(diff)} spare`, tone: 'pos' }
+              : { text: `${cash(-diff)} short`, tone: 'neg' };
         return (
-          <div key={acc.id} className="between small" style={{ borderTop: '1px solid var(--line)', paddingTop: 10, flexWrap: 'nowrap', alignItems: 'flex-start' }}>
-            <span className="row" style={{ gap: 8, alignItems: 'flex-start' }}>
-              <span className="dot" style={{ background: acc.color, marginTop: 5 }} />
-              <span>
-                <b>{acc.name}</b>{' '}
-                <span className="muted">
-                  {(() => {
-                    const usual = Math.ceil(averageNeed(budget, acc.id) / 100) * 100;
-                    return <>
-                      {count} {day}s × ({what}) = {money(ap.need)} this pay.
-                      {' '}{mode === 'smooth'
-                        ? ap.funded === usual ? `Steady ${money(ap.funded)} each pay.` : `Sends ${money(ap.funded)} this pay (usually ${money(usual)})${shortBefore ? `, including ${money(shortBefore)} ${prevPay} left short` : ap.funded > usual ? ', leaving enough for the next 5-week pay' : ''}.`
-                        : mode === 'fixed' ? `Sending ${money(ap.funded)}.` : ''}
-                    </>;
-                  })()}
-                </span>
+          // Name and the result on top (what you scan for), how it's worked out underneath.
+          <div key={acc.id} className="small" style={{ borderTop: '1px solid var(--line)', paddingTop: 10, display: 'flex', flexDirection: 'column', gap: 3 }}>
+            <span className="between" style={{ flexWrap: 'nowrap', gap: 8, alignItems: 'baseline' }}>
+              <span className="row" style={{ gap: 8, minWidth: 0, fontSize: 14 }}>
+                <span className="dot" style={{ background: acc.color }} />
+                <b>{acc.name}</b>
               </span>
+              <b className={message.tone} style={{ whiteSpace: 'nowrap', fontSize: 14 }}>{message.text}</b>
             </span>
-            <span style={{ textAlign: 'right' }}>
-              <b className={message.tone} style={{ whiteSpace: 'nowrap', display: 'block' }}>{message.text}</b>
-
+            <span className="muted" style={{ paddingLeft: 18 }}>
+              {(() => {
+                const usual = Math.ceil(averageNeed(budget, acc.id) / 100) * 100;
+                return <>
+                  {count} {day}s × ({what}) = {cash(ap.need)} this pay.
+                  {' '}{mode === 'smooth'
+                    ? ap.funded === usual ? `Steady ${cash(ap.funded)} each pay.` : `Sends ${cash(ap.funded)} this pay (usually ${cash(usual)})${shortBefore ? `, including ${cash(shortBefore)} ${prevPay} left short` : ap.funded > usual ? ', leaving enough for the next 5-week pay' : ''}.`
+                    : mode === 'fixed' ? `Sending ${cash(ap.funded)}.` : ''}
+                </>;
+              })()}
             </span>
           </div>
         );

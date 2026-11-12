@@ -10,6 +10,11 @@ export function money(c: Cents, opts: { whole?: boolean; sign?: boolean } = {}):
   return opts.sign && c > 0 ? `+${s}` : s;
 }
 
+/** Like money(), but leaves off ".00" on whole-dollar amounts ($520, $19.99), so lists read faster. */
+export function cash(c: Cents, opts: { whole?: boolean; sign?: boolean } = {}): string {
+  return money(c, { ...opts, whole: opts.whole || c % 100 === 0 });
+}
+
 /** Split into dollars and cents parts for the big-number display. */
 export function moneyParts(c: Cents): { main: string; cents: string } {
   const s = money(c);
