@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Icon } from './components/Icon';
-import { ItemModal } from './components/ItemModal';
+import { AddMenu } from './components/AddMenu';
 import { Accounts } from './pages/Accounts';
 import { Insights } from './pages/Insights';
 import { Planner } from './pages/Planner';
@@ -21,21 +21,22 @@ function useHash(): string[] {
   return parts;
 }
 
-const NAV = [
+// The same two groups on a computer and a phone: the pages you use day to day (the sidebar's first group,
+// the phone's bottom bar), then the ones for setting things up (after the line, the phone's top bar).
+const MAIN = [
   { id: 'planner', label: 'Planner', icon: 'home' },
   { id: 'accounts', label: 'Accounts', icon: 'wallet' },
-  { id: 'deposits', label: 'Deposits', icon: 'transfer' },
   { id: 'debts', label: 'Debts', icon: 'card' },
   { id: 'savings', label: 'Savings', icon: 'piggy' },
-  { id: 'insights', label: 'Insights', icon: 'pie' },
 ];
-const byId = (id: string) => NAV.find((n) => n.id === id)!;
-const MOBILE_LEFT = ['planner', 'accounts'].map(byId);
-const MOBILE_RIGHT = ['debts', 'savings'].map(byId);
+const SETUP = [
+  { id: 'deposits', label: 'Deposits', icon: 'transfer' },
+  { id: 'insights', label: 'Insights', icon: 'pie' },
+  { id: 'settings', label: 'Settings', icon: 'settings' },
+];
 
 export default function App() {
   const [page = 'planner', sub] = useHash();
-  const [adding, setAdding] = useState(false);
 
   const content =
     page === 'accounts' ? <Accounts /> :
@@ -50,14 +51,18 @@ export default function App() {
     <div className="app">
       <nav className="sidebar" aria-label="Main">
         <div className="logo"><span className="logo-mark">$</span>Paydays</div>
-        {NAV.map((n) => (
+        {MAIN.map((n) => (
           <a key={n.id} href={`#/${n.id}`} className={`nav-link ${page === n.id ? 'active' : ''}`} aria-current={page === n.id ? 'page' : undefined}>
             <Icon name={n.icon} />{n.label}
           </a>
         ))}
         <div className="nav-sep" />
-        <a href="#/settings" className={`nav-link ${page === 'settings' ? 'active' : ''}`}><Icon name="settings" />Settings</a>
-        <button className="btn side-add" onClick={() => setAdding(true)}><Icon name="plus" /> Add a cost</button>
+        {SETUP.map((n) => (
+          <a key={n.id} href={`#/${n.id}`} className={`nav-link ${page === n.id ? 'active' : ''}`} aria-current={page === n.id ? 'page' : undefined}>
+            <Icon name={n.icon} />{n.label}
+          </a>
+        ))}
+        <AddMenu render={(open) => <button className="btn side-add" onClick={open}><Icon name="plus" /> Add</button>} />
       </nav>
 
       <PeriodProvider>
@@ -65,29 +70,28 @@ export default function App() {
         <div className="mobile-top">
           <span className="logo-mark" aria-hidden="true">$</span>
           <span style={{ flex: 1, fontWeight: 700 }}>Paydays</span>
-          <a href="#/deposits" className="icon-btn" aria-label="Deposits and transfers"><Icon name="transfer" /></a>
-          <a href="#/insights" className="icon-btn" aria-label="Insights"><Icon name="pie" /></a>
-          <a href="#/settings" className="icon-btn" aria-label="Settings"><Icon name="settings" /></a>
+          {SETUP.map((n) => (
+            <a key={n.id} href={`#/${n.id}`} className={`icon-btn ${page === n.id ? 'active' : ''}`} aria-label={n.label} aria-current={page === n.id ? 'page' : undefined}><Icon name={n.icon} /></a>
+          ))}
         </div>
         {content}
       </main>
       </PeriodProvider>
 
       <nav className="bottom-nav" aria-label="Main">
-        {MOBILE_LEFT.map((n) => (
+        {MAIN.slice(0, 2).map((n) => (
           <a key={n.id} href={`#/${n.id}`} className={page === n.id ? 'active' : ''} aria-current={page === n.id ? 'page' : undefined}>
             <Icon name={n.icon} size={22} />{n.label}
           </a>
         ))}
-        <button className="fab" aria-label="Add a cost" onClick={() => setAdding(true)}><Icon name="plus" size={26} stroke={2.4} /></button>
-        {MOBILE_RIGHT.map((n) => (
+        <AddMenu render={(open) => <button className="fab" aria-label="Add" onClick={open}><Icon name="plus" size={26} stroke={2.4} /></button>} />
+        {MAIN.slice(2).map((n) => (
           <a key={n.id} href={`#/${n.id}`} className={page === n.id ? 'active' : ''} aria-current={page === n.id ? 'page' : undefined}>
             <Icon name={n.icon} size={22} />{n.label}
           </a>
         ))}
       </nav>
 
-      {adding && <ItemModal onClose={() => setAdding(false)} />}
     </div>
   );
 }

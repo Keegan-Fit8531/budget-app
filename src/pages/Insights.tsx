@@ -1,6 +1,7 @@
 import { Donut, Legend } from '../components/Donut';
 import { Icon } from '../components/Icon';
-import { plannedAverage } from '../lib/engine';
+import { convert, planFor, plannedAverage, type View } from '../lib/engine';
+import { PayNav, useViewPeriod, ViewModes } from '../lib/period';
 import { money } from '../lib/money';
 import { useBudget } from '../lib/store';
 import type { RuleBucket } from '../lib/types';
@@ -14,11 +15,19 @@ const BUCKETS: { k: RuleBucket; label: string; color: string }[] = [
 export function Insights() {
   const { budget } = useBudget();
   const { settings, accounts, groups } = budget;
-  const pay = settings.expectedPay;
+  // Same views as the Planner: this pay, this pay per week / fortnight, or the next 12 pays averaged
+  // per month / added up for the year.
+  const { period, mode } = useViewPeriod();
+  const plan = planFor(budget, period);
+  const perPeriod = mode === 'period' || mode === 'week' || mode === 'fortnight';
+  const scale = (c: number) => (mode === 'week' ? Math.round((c * 7) / period.days) : mode === 'fortnight' ? Math.round((c * 14) / period.days)
+    : mode === 'period' ? c : convert(c, 'monthly', mode as View));
+  const pay = scale(plan.pay);
   const live = accounts.filter((a) => !a.archived);
-  // Average money per account per pay over the next 12 pays (leftover counts for the pay account).
-  const sent = new Map(live.filter((a) => a.id !== settings.payAccountId).map((a) => [a.id, plannedAverage(budget, a.id).sent]));
+  const sent = new Map(live.filter((a) => a.id !== settings.payAccountId).map((a) => [a.id,
+    scale(perPeriod ? plan.accounts.find((x) => x.account.id === a.id)?.funded ?? 0 : plannedAverage(budget, a.id).sent)]));
   const leftover = pay - [...sent.values()].reduce((t, x) => t + x, 0);
+  const per = mode === 'period' ? 'this pay' : mode === 'week' ? 'a week' : mode === 'fortnight' ? 'a fortnight' : mode === 'month' ? 'a month' : 'a year';
   const perAccount = live.map((a) => ({
     account: a,
     amount: a.id === settings.payAccountId ? Math.max(0, leftover) : sent.get(a.id) ?? 0,
@@ -43,23 +52,28 @@ export function Insights() {
       .filter((x) => groups.find((g) => g.id === x.account.groupId)?.bucket === b.k)
       .sort((x, y) => y.amount - x.amount)[0];
     if (diff > 0) {
-      tips.push(`${b.label} is ${Math.round(b.pct)}% of pay, ${Math.round(b.pct - b.target)} points over the ${b.target}% target (${money(diff, { whole: true })} a month).${top ? ` The biggest part is ${top.account.name} at ${money(top.amount, { whole: true })}.` : ''}`);
+      tips.push(`${b.label} is ${Math.round(b.pct)}% of pay, ${Math.round(b.pct - b.target)} points over the ${b.target}% target (${money(diff, { whole: true })} ${per}).${top ? ` The biggest part is ${top.account.name} at ${money(top.amount, { whole: true })}.` : ''}`);
     } else {
-      tips.push(`${b.label} is ${Math.round(b.pct)}% of pay, under the ${b.target}% target by ${money(-diff, { whole: true })} a month.`);
+      tips.push(`${b.label} is ${Math.round(b.pct)}% of pay, under the ${b.target}% target by ${money(-diff, { whole: true })} ${per}.`);
     }
   }
 
   return (
     <>
-      <header>
-        <h1 className="h1">Insights</h1>
-        <p className="small muted">Based on your payday split and expected pay of {money(pay)}.</p>
+      <header className="between">
+        <PayNav title="Insights" />
+        <ViewModes />
       </header>
+      <p className="small muted" style={{ marginTop: -12 }}>
+        {mode === 'period' ? `Where the ${money(pay)} pay goes.`
+          : perPeriod ? `This pay's ${money(plan.pay)} as ${per}: ${money(pay)}.`
+          : `The next 12 pays, ${mode === 'month' ? 'averaged per month' : 'added up for the year'}, against pay of ${money(pay)} ${per}.`}
+      </p>
 
       <section className="grid-2">
         <div className="card" style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 24 }}>
           <Donut size={190} slices={byGroup.map((g) => ({ label: g.group.name, value: g.amount, color: g.group.color }))}>
-            <span className="small muted">Per pay</span>
+            <span className="small muted">{mode === 'period' ? 'This pay' : `Per ${mode}`}</span>
             <b style={{ fontSize: 19 }}>{money(pay, { whole: true })}</b>
           </Donut>
           <div style={{ flex: '1 1 200px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 10 }}>

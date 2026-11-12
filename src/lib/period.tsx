@@ -1,11 +1,25 @@
 import { createContext, useContext, useMemo, useState, type ReactNode } from 'react';
 import { Icon } from '../components/Icon';
 import { fmtDay, monthName, todayISO } from './dates';
-import { budgetPeriod, shiftPeriod, upcomingPayPeriod, type Period } from './engine';
+import { budgetPeriod, shiftPeriod, upcomingPayPeriod, type Period, type View } from './engine';
 import { useBudget } from './store';
 
 /** The pay period being viewed — shared by Planner, Debts, Savings and Deposits. */
+/** How amounts are shown: this pay, or as a week, fortnight, month (average) or year. */
+export type ViewMode = 'period' | View;
+const MODES: { v: ViewMode; label: string }[] = [
+  { v: 'period', label: 'This period' },
+  { v: 'week', label: 'Week' },
+  { v: 'fortnight', label: 'Fortnight' },
+  { v: 'month', label: 'Month avg' },
+  { v: 'year', label: 'Year' },
+];
+const MODE_KEY = 'paydays.viewMode';
+
 interface PeriodState {
+  /** Shared by the Planner and Insights, so both show the same view. */
+  mode: ViewMode;
+  setMode: (m: ViewMode) => void;
   offset: number;
   setOffset: (n: number) => void;
   period: Period;
@@ -32,14 +46,30 @@ export function PeriodProvider({ children }: { children: ReactNode }) {
     setOffsetState(v);
     try { sessionStorage.setItem(KEY, String(v)); } catch { /* ignore */ }
   };
+  const [mode, setModeState] = useState<ViewMode>(() => {
+    try { const m = sessionStorage.getItem(MODE_KEY); return MODES.some((x) => x.v === m) ? (m as ViewMode) : 'period'; } catch { return 'period'; }
+  });
+  const setMode = (m: ViewMode) => { setModeState(m); try { sessionStorage.setItem(MODE_KEY, m); } catch { /* ignore */ } };
   const period = useMemo(() => shiftPeriod(firstPeriod, Math.max(minOffset, offset), budget.settings), [firstPeriod, offset, minOffset, budget.settings]);
-  return <Ctx.Provider value={{ offset: Math.max(minOffset, offset), setOffset, period, firstPeriod, earliest }}>{children}</Ctx.Provider>;
+  return <Ctx.Provider value={{ mode, setMode, offset: Math.max(minOffset, offset), setOffset, period, firstPeriod, earliest }}>{children}</Ctx.Provider>;
 }
 
 export function useViewPeriod(): PeriodState {
   const s = useContext(Ctx);
   if (!s) throw new Error('useViewPeriod must be inside PeriodProvider');
   return s;
+}
+
+/** This period · Week · Fortnight · Month avg · Year */
+export function ViewModes() {
+  const { mode, setMode } = useViewPeriod();
+  return (
+    <div className="seg seg-modes" role="group" aria-label="Show amounts as">
+      {MODES.map((m) => (
+        <button key={m.v} aria-pressed={mode === m.v} onClick={() => setMode(m.v)}>{m.label}</button>
+      ))}
+    </div>
+  );
 }
 
 /** ‹ November pay › — moves every page that follows the selected pay. */

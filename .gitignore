@@ -25,3 +25,6 @@ dist-ssr
 
 # Your own data and the tests that use it: kept on this computer, never published
 src/lib/personal/
+
+# The text-recognition engine, copied in from node_modules when the app is built
+public/ocr/

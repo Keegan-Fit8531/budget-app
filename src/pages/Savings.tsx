@@ -164,7 +164,7 @@ function GoalCard({ f, plan, period, onEdit }: { f: ReturnType<typeof forecast>;
   );
 }
 
-function GoalModal({ goal, onClose }: { goal?: SavingsGoal; onClose: () => void }) {
+export function GoalModal({ goal, onClose }: { goal?: SavingsGoal; onClose: () => void }) {
   const { budget, update } = useBudget();
   const today = todayISO();
   const usedByGoals = new Set((budget.savings ?? []).filter((g) => g.id !== goal?.id).map((g) => g.accountId));

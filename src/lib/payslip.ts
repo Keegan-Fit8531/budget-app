@@ -40,8 +40,8 @@ export function parsePayslipText(raw: string): Payslip | null {
   };
 }
 
-/** Read a PDF file in the browser (nothing is uploaded anywhere) and parse it. */
-export async function readPayslipPdf(file: File): Promise<Payslip | null> {
+/** The text of a PDF file, read in the browser (nothing is uploaded anywhere). */
+export async function readPdfText(file: File): Promise<string> {
   const pdfjs = await import('pdfjs-dist');
   const worker = await import('pdfjs-dist/build/pdf.worker.min.mjs?url');
   pdfjs.GlobalWorkerOptions.workerSrc = worker.default;
@@ -52,5 +52,10 @@ export async function readPayslipPdf(file: File): Promise<Payslip | null> {
     const content = await page.getTextContent();
     text += content.items.map((it) => ('str' in it ? it.str : '')).join(' ') + '\n';
   }
-  return parsePayslipText(text);
+  return text;
+}
+
+/** Read a PDF payslip in the browser and parse it. */
+export async function readPayslipPdf(file: File): Promise<Payslip | null> {
+  return parsePayslipText(await readPdfText(file));
 }

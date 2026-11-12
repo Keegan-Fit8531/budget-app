@@ -57,6 +57,7 @@ h1, h2, h3, p { margin: 0; }
   .mobile-top { display: flex; align-items: center; gap: 10px; margin: -4px 0 -4px; }
   .mobile-top .logo-mark { background: var(--brand); color: #fff; width: 30px; height: 30px; }
   .mobile-top .icon-btn { color: var(--ink); }
+  .mobile-top .icon-btn.active { background: var(--brand); color: #fff; border-color: var(--brand); }
   .bottom-nav {
     display: flex; position: fixed; left: 0; right: 0; bottom: 0; z-index: 20; background: var(--card);
     border-top: 1px solid var(--line); justify-content: space-around; align-items: flex-start;
@@ -183,6 +184,10 @@ select::-ms-expand { display: none; }
 .cost-group > div:last-child { border-bottom: 0 !important; }
 
 /* Balance this pay: status, what changed, debt share */
+/* The choices in the Add menu */
+.add-choice { display: flex; align-items: center; gap: 14px; width: 100%; text-align: left; font: inherit; color: inherit; background: var(--bg); border: 1px solid transparent; border-radius: 14px; padding: 12px 14px; cursor: pointer; }
+.add-choice:hover, .add-choice:focus-visible { border-color: var(--brand-2); }
+.add-choice-icon { width: 40px; height: 40px; border-radius: 12px; background: var(--brand); color: #fff; display: grid; place-items: center; flex: 0 0 auto; }
 /* A label that appears straight away when you hover (or tab to) an icon button */
 .has-tip { position: relative; }
 .has-tip::after {

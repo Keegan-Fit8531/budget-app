@@ -5,28 +5,19 @@ import { accountMode, leftoverBeforeBudget, topsUp } from '../lib/balances';
 import { Donut, Legend } from '../components/Donut';
 import { Icon } from '../components/Icon';
 import { WeeksView } from '../components/WeeksView';
-import { PayNav, useViewPeriod } from '../lib/period';
+import { PayNav, useViewPeriod, ViewModes } from '../lib/period';
 import { clearOptimiseUndo, OptimiseModal, readOptimiseUndo, type OptimiseUndo } from '../components/OptimiseModal';
 import { undoAllocation } from '../lib/allocate';
-import { applyPayrollDeduction } from '../lib/debts';
+import { recordPayslip } from '../lib/documents';
 import { addDays, fmtDay, fmtShort, monthName, todayISO } from '../lib/dates';
 import {
-  averageSplit, convert, firstBudgetPay, isAuto, planFor, plannedAverage, recordPayday, shiftPeriod, upcomingPayPeriod, type View,
+  averageSplit, convert, firstBudgetPay, isAuto, planFor, plannedAverage, shiftPeriod, upcomingPayPeriod, type View,
 } from '../lib/engine';
 import { cash, centsToInput, moneyParts, parseMoney } from '../lib/money';
 import { useBudget } from '../lib/store';
 import type { Cents, PaydayMode } from '../lib/types';
 
 const MODES_KEY = 'paydays.balance.modes';
-
-type Mode = 'period' | View;
-const MODES: { v: Mode; label: string }[] = [
-  { v: 'period', label: 'This period' },
-  { v: 'week', label: 'Week' },
-  { v: 'fortnight', label: 'Fortnight' },
-  { v: 'month', label: 'Month avg' },
-  { v: 'year', label: 'Year' },
-];
 
 /** Payments in date order, grouped by day. */
 function dayGroups<T extends { date: string }>(list: T[]): [string, T[]][] {
@@ -38,8 +29,7 @@ function dayGroups<T extends { date: string }>(list: T[]): [string, T[]][] {
 export function Planner() {
   const { budget, update } = useBudget();
   const today = todayISO();
-  const { offset, setOffset, period } = useViewPeriod();
-  const [mode, setMode] = useState<Mode>('period');
+  const { offset, setOffset, period, mode } = useViewPeriod();
   const [showAllDues, setShowAllDues] = useState(false);
   // The account card whose details pop-up is open.
   const [openCard, setOpenCard] = useState<string | null>(null);
@@ -221,14 +211,7 @@ export function Planner() {
       if (!slip) { setSlipMsg({ ok: false, text: 'Couldn’t find a pay day and net pay in that PDF. Is it a payslip?' }); return; }
       // Paid a day or so off the usual payday (e.g. early, before a holiday)? That payday moves to the
       // day pay really arrived, so this pay and the one before it are both worked out on their real dates.
-      const record = (b: typeof budget) => {
-        const start = recordPayday(b, slip.payDay);
-        b.payActuals[start] = slip.net;
-        b.payslips = { ...(b.payslips ?? {}), [start]: slip };
-        // The student loan comes out before pay: count the payslip's deduction against the loan.
-        const loan = slip.studentLoan ? !!applyPayrollDeduction(b, start, slip.studentLoan) : false;
-        return { start, loan };
-      };
+      const record = (b: typeof budget) => recordPayslip(b, slip);
       // Worked out on a copy first, for the message and to show that pay.
       const after = structuredClone(budget);
       const { start, loan } = record(after);
@@ -264,11 +247,7 @@ export function Planner() {
     <>
       <header className="between">
         <PayNav />
-        <div className="seg seg-modes" role="group" aria-label="Show amounts as">
-          {MODES.map((m) => (
-            <button key={m.v} aria-pressed={mode === m.v} onClick={() => setMode(m.v)}>{m.label}</button>
-          ))}
-        </div>
+        <ViewModes />
       </header>
 
       <section className="grid-2">

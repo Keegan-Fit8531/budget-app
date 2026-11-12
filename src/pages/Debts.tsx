@@ -419,7 +419,7 @@ function PlanModal({ debt, plan, prefill, onClose }: { debt: Debt; plan?: DebtPl
   );
 }
 
-function DebtModal({ debt, onClose, onDelete }: { debt?: Debt; onClose: () => void; onDelete: (d: Debt) => void }) {
+export function DebtModal({ debt, onClose, onDelete }: { debt?: Debt; onClose: () => void; onDelete: (d: Debt) => void }) {
   const { update } = useBudget();
   const [name, setName] = useState(debt?.name ?? '');
   const [kind, setKind] = useState<Debt['kind']>(debt?.kind ?? 'card');

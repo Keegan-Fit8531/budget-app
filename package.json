@@ -4,17 +4,22 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
+    "ocr": "node scripts/copy-ocr.mjs",
+    "predev": "npm run ocr",
     "dev": "vite",
+    "prebuild": "npm run ocr",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
     "test": "vitest run"
   },
   "dependencies": {
+    "@tesseract.js-data/eng": "^1.0.0",
     "pdfjs-dist": "^4.10.38",
     "qrcode": "^1.5.4",
     "react": "^19.1.0",
-    "react-dom": "^19.1.0"
+    "react-dom": "^19.1.0",
+    "tesseract.js": "^7.0.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.25.0",
