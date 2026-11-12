@@ -176,20 +176,17 @@ select::-ms-expand { display: none; }
 .cost-group > div:last-child { border-bottom: 0 !important; }
 
 /* Balance this pay: status, what changed, debt share */
-.balance-box { background: var(--soft); border-radius: 16px; padding: 14px 16px; display: flex; flex-direction: column; gap: 12px; font-size: 14px; }
-.status-icon { width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center; flex: 0 0 32px; }
-.status-icon.good { background: var(--good-bg); color: var(--good); }
-.status-icon.bad { background: var(--bad-bg); color: var(--bad); }
-.status-icon.warn { background: var(--card); color: var(--brand); }
-.balance-box details.changes > summary { cursor: pointer; font-weight: 600; min-height: 32px; display: flex; align-items: center; gap: 6px; list-style: none; }
-.balance-box details.changes > summary::-webkit-details-marker { display: none; }
-.balance-box details.changes > summary::before { content: ''; width: 7px; height: 7px; border-right: 2px solid currentColor; border-bottom: 2px solid currentColor; transform: rotate(-45deg); transition: transform .15s; margin-right: 2px; }
-.balance-box details.changes[open] > summary::before { transform: rotate(45deg); }
-.change-list { display: flex; flex-direction: column; gap: 10px; margin-top: 6px; }
-.change-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 4px 10px; align-items: center; }
-.change-row .num { font-variant-numeric: tabular-nums; white-space: nowrap; }
-.balance-mode { display: flex; width: 100%; }
-.balance-mode button { flex: 1 1 0; }
+.icon-btn.mini { width: 32px; height: 32px; border-radius: 9px; color: var(--muted); }
+/* "What's different this pay": an accordion inside the pay card */
+details.notes { border-top: 1px solid var(--line); padding-top: 4px; font-size: 14px; }
+details.notes > summary { cursor: pointer; font-weight: 600; min-height: 40px; display: flex; align-items: center; gap: 8px; list-style: none; }
+details.notes > summary::-webkit-details-marker { display: none; }
+details.notes > summary::before { content: ''; width: 7px; height: 7px; border-right: 2px solid currentColor; border-bottom: 2px solid currentColor; transform: rotate(-45deg); transition: transform .15s; margin: 0 4px 0 2px; }
+details.notes[open] > summary::before { transform: rotate(45deg); }
+.notes-list { display: flex; flex-direction: column; gap: 12px; padding: 4px 0 2px; }
+.notes-row { display: grid; grid-template-columns: 10px minmax(0, 1fr) auto; gap: 2px 10px; align-items: start; line-height: 1.35; }
+.notes-row .dot { margin-top: 6px; }
+.notes-row .num { font-variant-numeric: tabular-nums; white-space: nowrap; }
 /* Each cost in an account card (e.g. food / car gas / scooter gas) */
 .cost-split { margin-top: 8px; padding-top: 6px; border-top: 1px solid color-mix(in srgb, var(--ink) 12%, transparent); }
 .cost-split > summary { cursor: pointer; font-size: 13px; font-weight: 600; min-height: 32px; display: flex; align-items: center; gap: 6px; list-style: none; }

@@ -16,6 +16,7 @@ const PATHS: Record<string, string> = {
   bank: 'M3 10l9-6 9 6 M5 10v8 M9.5 10v8 M14.5 10v8 M19 10v8 M3 20h18',
   send: 'M4 12h14 M13 6l6 6-6 6',
   check: 'M5 12l5 5 9-10',
+  upload: 'M12 16V4 M7 9l5-5 5 5 M4 20h16',
   transfer: 'M4 8h14 M14 4l4 4-4 4 M20 16H6 M10 12l-4 4 4 4',
 };
 

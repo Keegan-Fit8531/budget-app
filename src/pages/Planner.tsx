@@ -1,7 +1,6 @@
 import { useMemo, useRef, useState } from 'react';
 import { readPayslipPdf } from '../lib/payslip';
 import { applyBalance, autoPays, balancePay, DEBT_RATIO_GUIDE, restoreOverrides, type BalanceResult } from '../lib/rebalance';
-import { BalanceBox } from '../components/BalanceBox';
 import { accountMode, leftoverBeforeBudget, topsUp } from '../lib/balances';
 import { Donut, Legend } from '../components/Donut';
 import { Icon } from '../components/Icon';
@@ -85,13 +84,6 @@ export function Planner() {
   // What each account usually gets a month (worked out once per change, not per card).
   const usualSplit = useMemo(() => new Map(plan.accounts.map((a) => [a.account.id, averageSplit(budget, a.account.id)])), [budget, plan]);
   const usualOf = (id: string) => usualSplit.get(id) ?? 0;
-  // What makes this pay different from a normal one: accounts sending well above their usual amount.
-  const drivers = plan.accounts
-    .filter((a) => a.account.id !== budget.settings.payAccountId)
-    .map((a) => ({ a, usual: usualOf(a.account.id), extra: a.funded - usualOf(a.account.id) }))
-    .filter((x) => x.extra > 2000)
-    .sort((x, y) => y.extra - x.extra)
-    .slice(0, 3);
   // Notes on what's unusual this pay: each account sending noticeably more or less than normal, and why
   // (an extra week, a yearly or one-off cost falling in it, or an adjustment made for this pay only).
   const realItems = new Set(budget.items.map((i) => i.id));
@@ -108,7 +100,9 @@ export function Planner() {
         else if (f === 'fortnightly' && x.count >= 3) why.push(`${x.count} lots of ${x.item.name} instead of 2`);
       }
       if (a.usual !== undefined && a.usual !== a.funded) {
-        why.push(budget.autoBalanced?.[period.start]?.[a.account.id]?.reason ?? `Adjusted for this pay only (normally ${cash(a.usual)}).`);
+        why.push(budget.autoBalanced?.[period.start]?.[a.account.id]?.reason
+          ?? (balanced?.periodStart === period.start ? balanced.result.changes.find((c) => c.accountId === a.account.id)?.reason : undefined)
+          ?? `Adjusted for this pay only (normally ${cash(a.usual)}).`);
       }
       return { a, usual, extra: a.funded - usual, why };
     })
@@ -194,6 +188,11 @@ export function Planner() {
   // Automatic balancing looks after the next 12 pays; a pay already split (or further out) is done by hand.
   const autoHere = autoPays(budget, today).some((p) => p.start === period.start);
   const hasModeChanges = (() => { try { return !!JSON.parse(localStorage.getItem(MODES_KEY) ?? '{}')[period.start]; } catch { return false; } })();
+  const canReset = adjustments.length > 0 || hasModeChanges;
+  // A pay that's already been split can't be re-sent, so changes to it are made as transfers.
+  const passedNote = paydayPassed && adjustments.length > 0
+    ? `This pay was already split on ${fmtShort(period.start)}, so make these as transfers now, before ${fmtShort(plan.dues.find((d) => d.date >= today)?.date ?? period.end)}: move the money from the accounts being trimmed (or from what's left in ${payAccountName}) to the ones being topped up.`
+    : undefined;
   const debtIds = new Set((budget.debts ?? []).map((d) => d.accountId));
   const debtPaid = plan.accounts.filter((a) => debtIds.has(a.account.id)).reduce((t, a) => t + a.funded, 0);
   const debtRatio = plan.pay > 0 ? debtPaid / plan.pay : 0;
@@ -267,113 +266,121 @@ export function Planner() {
       </header>
 
       <section className="grid-2">
-        <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-          {known ? (
-            <div>
-              <p className="eyebrow">{split
-                ? `Left after plan, per ${mode} · this pay's ${period.days} days are ${(period.days / spanDays).toFixed(1)} ${mode}s`
-                : mode === 'month' ? 'Left after plan, per month (average of the next 12 pays)'
-                : mode === 'year' ? 'Left after plan over the next 12 pays'
-                : 'Left after your plan'}</p>
-              <p className={`big ${leftover < 0 ? 'neg' : ''}`} style={{ marginTop: 6 }}>
-                {parts.main}<small>{parts.cents}</small>
-              </p>
-              <p className="small muted" style={{ marginTop: 10 }}>
-                {plan.leftover < 0
-                  ? `You've budgeted ${cash(-plan.leftover)} more than this pay.`
-                  : `Stays in ${payAccountName} for spending.`}
-              </p>
-              {!avg && plan.leftover < 0 && (
-                <div className="small" style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 4 }}>
-                  <b>Why</b>
-                  {drivers.map((x) => (
-                    <span key={x.a.account.id} className="row" style={{ gap: 8 }}>
-                      <span className="dot" style={{ background: x.a.account.color }} />
-                      <span>{x.a.account.name}: {cash(x.a.funded)} this pay, usually about {cash(x.usual, { whole: true })} (+{cash(x.extra, { whole: true })})</span>
-                    </span>
-                  ))}
-                  {usualTotal > plan.pay && (
-                    <span className="muted">Even in a normal pay your budget is {cash(usualTotal - plan.pay, { whole: true })} more than your pay.</span>
-                  )}
-                  {drivers.length === 0 && usualTotal <= plan.pay && <span className="muted">A few small extras this pay add up.</span>}
-                </div>
-              )}
-              {estimated && (
-                <p className="small" style={{ marginTop: 8, display: 'flex', gap: 6, alignItems: 'center' }}>
-                  <span className="pill" style={{ background: 'var(--soft)', color: 'var(--muted)' }}>Estimate</span>
-                  <span className="muted">
-                    Using {monthName(plan.payEstimateFrom!)}'s pay of {cash(plan.pay)}.{' '}
-                    {paydayPassed ? 'Payday has passed: upload the payslip to make it exact.' : `Upload the payslip when it arrives on ${fmtShort(period.start)}.`}
-                  </span>
+        <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 16, alignSelf: 'start' }}>
+          <div>
+            <div className="between" style={{ flexWrap: 'nowrap', alignItems: 'flex-start', gap: 12 }}>
+              <div style={{ minWidth: 0 }}>
+                <p className="eyebrow">{!known ? 'Total budgeted' : split
+                  ? `Left after plan, per ${mode} · this pay's ${period.days} days are ${(period.days / spanDays).toFixed(1)} ${mode}s`
+                  : mode === 'month' ? 'Left after plan, per month (average of the next 12 pays)'
+                  : mode === 'year' ? 'Left after plan over the next 12 pays'
+                  : 'Left after your plan'}</p>
+                <p className={`big ${known && leftover < 0 ? 'neg' : ''}`} style={{ marginTop: 6 }}>
+                  {known ? parts.main : splitParts.main}<small>{known ? parts.cents : splitParts.cents}</small>
                 </p>
+              </div>
+              {/* Put what's left over to work (once the pay is balanced). */}
+              {!avg && known && canOptimise && (
+                <button className="icon-btn" title={`Optimise: choose where the ${cash(plan.leftover)} left over goes`} aria-label="Optimise: choose where the leftover goes"
+                  onClick={() => setOptimiseOpen(true)} style={{ background: 'var(--brand)', color: '#fff', borderColor: 'var(--brand)' }}>
+                  <Icon name="bulb" />
+                </button>
               )}
             </div>
-          ) : (
-            <div>
-              <p className="eyebrow">Total budgeted</p>
-              <p className="big" style={{ marginTop: 6 }}>{splitParts.main}<small>{splitParts.cents}</small></p>
-              <p className="small muted" style={{ marginTop: 10 }}>
-                Upload your payslip or type your pay to see what's left.
+            {(!known || plan.leftover < 0) && (
+              <p className="small muted" style={{ marginTop: 8 }}>
+                {!known ? 'Add your pay to see what\u2019s left.' : `You've budgeted ${cash(-plan.leftover)} more than this pay.`}
               </p>
-            </div>
-          )}
+            )}
+            {!avg && undoHere && (
+              <p className="small" style={{ marginTop: 6 }}>
+                Leftover put to work ({undoHere.label}). <button className="btn small ghost" style={{ minHeight: 28, padding: '0 8px' }} onClick={undoOptimise}>Undo</button>
+              </p>
+            )}
+          </div>
+
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0,1fr))', gap: 12 }}>
             <div className="stat">
-              <span className="small muted">{plan.payIsActual ? 'Pay received' : estimated ? 'Pay (estimated)' : 'Pay'}</span>
+              <div className="between" style={{ flexWrap: 'nowrap', gap: 6 }}>
+                <span className="small muted row" style={{ gap: 6, flexWrap: 'nowrap' }}>
+                  {plan.payIsActual ? 'Pay received' : 'Pay'}
+                  {estimated && (() => {
+                    const why = `Using ${monthName(plan.payEstimateFrom!)}'s pay of ${cash(plan.pay)}. ${paydayPassed ? 'Payday has passed: upload the payslip to make it exact.' : `Upload the payslip when it arrives on ${fmtShort(period.start)}.`}`;
+                    return <span className="pill" tabIndex={0} title={why} aria-label={`Estimate. ${why}`} style={{ background: 'var(--card)', color: 'var(--muted)', cursor: 'help' }}>Estimate</span>;
+                  })()}
+                </span>
+                {payEdit === null && (
+                  <span className="row" style={{ gap: 4, flexWrap: 'nowrap' }}>
+                    <button className="icon-btn mini" title={plan.payIsActual ? 'Change pay' : 'Type pay'} aria-label={plan.payIsActual ? 'Change pay' : 'Type pay'}
+                      onClick={() => setPayEdit(centsToInput(plan.pay))}><Icon name="edit" size={16} /></button>
+                    <button className="icon-btn mini" title="Upload payslip (PDF)" aria-label="Upload payslip"
+                      onClick={() => slipRef.current?.click()}><Icon name="upload" size={16} /></button>
+                  </span>
+                )}
+              </div>
+              <input ref={slipRef} type="file" accept="application/pdf" hidden
+                onChange={(e) => e.target.files?.[0] && uploadPayslip(e.target.files[0])} />
               {payEdit === null ? (
                 <b className={known ? '' : 'muted'}>{known ? cash(v(plan.pay)) : 'Not in yet'}</b>
               ) : (
-                <input aria-label="Actual pay" inputMode="decimal" autoFocus value={payEdit} onChange={(e) => setPayEdit(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && savePay()}
-                  style={{ marginTop: 4, width: '100%', minHeight: 36, borderRadius: 8, border: '1px solid var(--line)', padding: '0 8px', background: 'var(--card)' }} />
+                <>
+                  <input aria-label="Actual pay" inputMode="decimal" autoFocus value={payEdit} onChange={(e) => setPayEdit(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') savePay(); if (e.key === 'Escape') setPayEdit(null); }}
+                    style={{ marginTop: 4, width: '100%', minHeight: 36, borderRadius: 8, border: '1px solid var(--line)', padding: '0 8px', background: 'var(--card)' }} />
+                  <span className="row" style={{ gap: 6, marginTop: 6 }}>
+                    <button className="btn small primary" onClick={savePay}>Save</button>
+                    <button className="btn small" onClick={() => setPayEdit(null)}>Cancel</button>
+                  </span>
+                </>
               )}
             </div>
             <div className="stat"><span className="small muted">Total budgeted</span><b>{cash(totalBudgeted)}</b></div>
           </div>
-          <div className="row" style={{ flexWrap: 'wrap' }}>
-            {payEdit === null ? (
-              <>
-                <button className="btn" onClick={() => slipRef.current?.click()}>Upload payslip</button>
-                <button className="btn" onClick={() => setPayEdit(centsToInput(plan.pay))}>
-                  {plan.payIsActual ? 'Change pay' : 'Type pay'}
-                </button>
-                <input ref={slipRef} type="file" accept="application/pdf" hidden
-                  onChange={(e) => e.target.files?.[0] && uploadPayslip(e.target.files[0])} />
-              </>
-            ) : (
-              <>
-                <button className="btn primary" onClick={savePay}>Save pay</button>
-                <button className="btn" onClick={() => setPayEdit(null)}>Cancel</button>
-              </>
-            )}
-            <a className="btn" href="#/deposits" style={{ textDecoration: 'none', color: 'inherit' }}>Edit payday split</a>
-          </div>
           {slipMsg && <p className={`small ${slipMsg.ok ? '' : 'error'}`} role="status">{slipMsg.text}</p>}
 
-          {!avg && known && (
-            <BalanceBox
-              auto={autoHere}
-              leftover={plan.leftover} payAccountName={payAccountName}
-              needsBalance={needsBalance} shortAccounts={shortAccounts}
-              adjustments={adjustments.map((a) => ({
-                id: a.account.id, name: a.account.name, color: a.account.color, from: a.usual!, to: a.funded,
-                reason: budget.autoBalanced?.[period.start]?.[a.account.id]?.reason
-                  ?? (balanced?.periodStart === period.start ? balanced.result.changes.find((c) => c.accountId === a.account.id)?.reason : undefined),
-              }))}
-              modeChanges={balanced?.periodStart === period.start ? balanced.result.toSteady : []}
-              notSpare={balanced?.periodStart === period.start ? balanced.result.notSpare : []}
-              canReset={adjustments.length > 0 || hasModeChanges}
-              onBalance={balanceThisPay} onReset={resetToDefaults}
-              passedNote={paydayPassed && adjustments.length > 0
-                ? `This pay was already split on ${fmtShort(period.start)}, so make these as transfers now, before ${fmtShort(plan.dues.find((d) => d.date >= today)?.date ?? period.end)}: move the money from the accounts being trimmed (or from what's left in ${payAccountName}) to the ones being topped up.`
-                : undefined}
-              optimise={undoHere || canOptimise ? {
-                label: undoHere ? `Leftover put to work (${undoHere.label}).` : undefined,
-                onUndo: undoHere ? undoOptimise : undefined,
-                onOpen: canOptimise ? () => setOptimiseOpen(true) : undefined,
-              } : undefined}
-              debt={{ ratio: debtRatio, paid: debtPaid, guide: DEBT_RATIO_GUIDE }}
-            />
+          {/* Balancing is automatic, so it only speaks up when there's something left to do. */}
+          {!avg && known && (autoHere ? plan.leftover < 0 : needsBalance || adjustments.length > 0) && (
+            <div className={autoHere || plan.leftover < 0 ? 'alert small' : 'tip small'} role="status" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 8 }}>
+              <span>
+                {autoHere
+                  ? <><b>Still {cash(-plan.leftover)} short.</b> Every safe trim has been made; the rest needs a bigger change, like lower rent or bills.</>
+                  : needsBalance
+                    ? <><b>{adjustments.length ? 'Needs re-balancing' : 'Not balanced yet'}.</b> This pay is already split (or more than 12 pays away), so it isn't balanced automatically.{shortAccounts.length ? ` ${shortAccounts.map((x) => `${x.name} needs ${cash(x.short)} more`).join(' and ')}.` : ''}</>
+                    : passedNote ?? 'Adjusted by hand for this pay.'}
+              </span>
+              {!autoHere && (needsBalance || canReset) && (
+                <span className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+                  {needsBalance && <button className="btn small primary" onClick={balanceThisPay}>{adjustments.length ? 'Re-balance' : 'Balance this pay'}</button>}
+                  {canReset && <button className="btn small" onClick={resetToDefaults}>Reset to defaults</button>}
+                </span>
+              )}
+              {!autoHere && needsBalance && passedNote && <span>{passedNote}</span>}
+            </div>
+          )}
+
+          {!avg && (notes.length > 0 || usualTotal > plan.pay) && (
+            <details className="notes" open={plan.leftover < 0 || undefined}>
+              <summary>What's different this pay{notes.length ? ` · ${notes.length}` : ''}</summary>
+              <div className="notes-list">
+                {notes.map((x) => (
+                  <div key={x.a.account.id} className="notes-row">
+                    <span className="dot" style={{ background: x.a.account.color }} />
+                    <span style={{ minWidth: 0 }}>
+                      <b>{x.a.account.name}</b>
+                      {x.why.map((w) => <span key={w} className="small muted" style={{ display: 'block' }}>{w}</span>)}
+                      {x.why.length === 0 && <span className="small muted" style={{ display: 'block' }}>Usually about {cash(x.usual, { whole: true })}</span>}
+                    </span>
+                    <span className="num" style={{ textAlign: 'right' }}>
+                      <b>{cash(x.a.funded)}</b>
+                      {Math.abs(x.extra) > 2000 && <span className={`small ${x.extra > 0 ? 'neg' : 'pos'}`} style={{ display: 'block' }}>{x.extra > 0 ? '+' : '−'}{cash(Math.abs(x.extra), { whole: true })}</span>}
+                    </span>
+                  </div>
+                ))}
+                {usualTotal > plan.pay && (
+                  <span className="small muted">Even in a normal pay your budget is {cash(usualTotal - plan.pay, { whole: true })} more than your pay.</span>
+                )}
+              </div>
+            </details>
           )}
         </div>
 
@@ -387,6 +394,19 @@ export function Planner() {
           <div style={{ flex: '1 1 220px', minWidth: 0, display: 'flex' }}>
             <Legend slices={slices} amounts />
           </div>
+          {/* Debt repayments as a share of pay, against the 20% guideline (the bar runs to twice it). */}
+          {known && debtPaid > 0 && (
+            <div style={{ flex: '1 1 100%', borderTop: '1px solid var(--line)', paddingTop: 12 }}>
+              <div className="between small" style={{ flexWrap: 'nowrap' }}>
+                <span>Debt repayments <span className="muted">· guideline under {Math.round(DEBT_RATIO_GUIDE * 100)}%</span></span>
+                <span><span className="muted">{cash(debtPaid, { whole: true })}</span> <b className={debtRatio > DEBT_RATIO_GUIDE ? 'neg' : ''} style={{ marginLeft: 8 }}>{Math.round(debtRatio * 100)}%</b></span>
+              </div>
+              <div className="bar" role="img" aria-label={`Debt repayments ${Math.round(debtRatio * 100)}% of pay, guideline under ${Math.round(DEBT_RATIO_GUIDE * 100)}%`} style={{ height: 8, marginTop: 6 }}>
+                <div style={{ height: 8, width: `${Math.min(100, (debtRatio / (DEBT_RATIO_GUIDE * 2)) * 100)}%`, background: debtRatio > DEBT_RATIO_GUIDE ? 'var(--bad)' : 'var(--good)' }} />
+                <div className="target" style={{ left: '50%', top: -3, height: 14 }} />
+              </div>
+            </div>
+          )}
         </div>
       </section>
 
@@ -401,26 +421,6 @@ export function Planner() {
             )}
           </span>
         </div>
-      )}
-
-      {!avg && notes.length > 0 && (
-        <details className="card">
-          <summary style={{ cursor: 'pointer', fontWeight: 600, minHeight: 32 }}>What's different this pay ({notes.length})</summary>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 10 }}>
-            {notes.map((x) => (
-              <div key={x.a.account.id} className="small">
-                <span className="row" style={{ gap: 8 }}>
-                  <span className="dot" style={{ background: x.a.account.color }} />
-                  <span>
-                    <b>{x.a.account.name}</b>: {cash(x.a.funded)} this pay
-                    {Math.abs(x.extra) > 2000 ? `, usually about ${cash(x.usual, { whole: true })} (${x.extra > 0 ? '+' : '−'}${cash(Math.abs(x.extra), { whole: true })})` : ''}
-                  </span>
-                </span>
-                {x.why.map((w) => <span key={w} className="muted" style={{ display: 'block', paddingLeft: 18 }}>{w}</span>)}
-              </div>
-            ))}
-          </div>
-        </details>
       )}
 
       <section style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
