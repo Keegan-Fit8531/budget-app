@@ -81,6 +81,11 @@ export function Planner() {
   const estimated = !plan.payIsActual && !!plan.payEstimateFrom;
   const known = plan.payIsActual || estimated;
   const paydayPassed = plan.period.start <= today;
+  // Why the pay is an estimate: on hover, and shown under the pay when the pill is tapped.
+  const [estOpen, setEstOpen] = useState(false);
+  const estimateWhy = estimated
+    ? `Using ${monthName(plan.payEstimateFrom!)}'s pay of ${cash(plan.pay)}. ${paydayPassed ? 'Payday has passed: upload the payslip to make it exact.' : `Upload the payslip when it arrives on ${fmtShort(period.start)}.`}`
+    : '';
   // What each account usually gets a month (worked out once per change, not per card).
   const usualSplit = useMemo(() => new Map(plan.accounts.map((a) => [a.account.id, averageSplit(budget, a.account.id)])), [budget, plan]);
   const usualOf = (id: string) => usualSplit.get(id) ?? 0;
@@ -299,15 +304,15 @@ export function Planner() {
             )}
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0,1fr))', gap: 12 }}>
+          <div className="pay-stats">
             <div className="stat">
-              <div className="between" style={{ flexWrap: 'nowrap', gap: 6 }}>
+              <div className="between" style={{ flexWrap: 'nowrap', gap: 6, minHeight: 32 }}>
                 <span className="small muted row" style={{ gap: 6, flexWrap: 'nowrap' }}>
                   {plan.payIsActual ? 'Pay received' : 'Pay'}
-                  {estimated && (() => {
-                    const why = `Using ${monthName(plan.payEstimateFrom!)}'s pay of ${cash(plan.pay)}. ${paydayPassed ? 'Payday has passed: upload the payslip to make it exact.' : `Upload the payslip when it arrives on ${fmtShort(period.start)}.`}`;
-                    return <span className="pill" tabIndex={0} title={why} aria-label={`Estimate. ${why}`} style={{ background: 'var(--card)', color: 'var(--muted)', cursor: 'help' }}>Estimate</span>;
-                  })()}
+                  {estimated && (
+                    <button className="pill" title={estimateWhy} aria-expanded={estOpen} aria-label={`Estimate. ${estimateWhy}`} onClick={() => setEstOpen(!estOpen)}
+                      style={{ background: 'var(--card)', color: 'var(--muted)', cursor: 'pointer', border: 0, font: 'inherit', fontSize: 12, fontWeight: 600 }}>Estimate</button>
+                  )}
                 </span>
                 {payEdit === null && (
                   <span className="row" style={{ gap: 4, flexWrap: 'nowrap' }}>
@@ -336,6 +341,7 @@ export function Planner() {
             </div>
             <div className="stat"><span className="small muted">Total budgeted</span><b>{cash(totalBudgeted)}</b></div>
           </div>
+          {estimated && estOpen && <p className="small muted" role="status" style={{ marginTop: -6 }}>{estimateWhy}</p>}
           {slipMsg && <p className={`small ${slipMsg.ok ? '' : 'error'}`} role="status">{slipMsg.text}</p>}
 
           {/* Balancing is automatic, so it only speaks up when there's something left to do. */}

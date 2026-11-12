@@ -176,6 +176,9 @@ select::-ms-expand { display: none; }
 .cost-group > div:last-child { border-bottom: 0 !important; }
 
 /* Balance this pay: status, what changed, debt share */
+/* Pay and Total budgeted, side by side (stacked on a narrow phone so the pay's icons fit) */
+.pay-stats { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 12px; }
+@media (max-width: 520px) { .pay-stats { grid-template-columns: minmax(0, 1fr); gap: 8px; } }
 .icon-btn.mini { width: 32px; height: 32px; border-radius: 9px; color: var(--muted); }
 /* "What's different this pay": an accordion inside the pay card */
 details.notes { border-top: 1px solid var(--line); padding-top: 4px; font-size: 14px; }
