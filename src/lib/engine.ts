@@ -1,7 +1,7 @@
 import {
   addDays, dateInMonth, diffDays, toDate, todayISO, weekday, type ISODate,
 } from './dates';
-import { balanceOn, depositFor, modeOf, smoothAmount, topsUp } from './balances';
+import { balanceOn, depositFor, exactNeed, modeOf, topsUp } from './balances';
 import { accountHasPlans, debtPaymentsIn } from './debts';
 import { accountHasGoals, savingsNeedIn } from './savings';
 import type { Account, Budget, Cents, Frequency, Item, Settings } from './types';
@@ -289,7 +289,9 @@ export function averageNeed(b: Budget, accountId: string): Cents {
   }
   // Debts: average of the next 12 pays' plan payments. Savings: the per-pay amount goals need.
   let extra = 0;
-  if (accountHasPlans(b, accountId) || accountHasGoals(b, accountId)) {
+  // (A card balance with no payment plans still gets paid off, e.g. a Mastercard balance.)
+  const hasDebt = (b.debts ?? []).some((d) => d.accountId === accountId && !d.payroll);
+  if (hasDebt || accountHasPlans(b, accountId) || accountHasGoals(b, accountId)) {
     let p = periodContaining(todayISO(), b.settings);
     let total = 0;
     for (let i = 0; i < 12; i++) {
@@ -307,12 +309,23 @@ export function averageSplit(b: Budget, accountId: string): Cents {
   const line = b.split.find((l) => l.accountId === accountId);
   if (!line) return 0;
   const mode = modeOf(line);
-  return mode === 'exact' ? averageNeed(b, accountId) : mode === 'smooth' ? smoothAmount(b, accountId) : line.amount;
+  // Steady: its usual amount (not the next pay's, which can include a one-off catch-up).
+  return mode === 'exact' ? averageNeed(b, accountId) : mode === 'smooth' ? Math.ceil(averageNeed(b, accountId) / 100) * 100 : line.amount;
 }
 
-/** Average total budgeted per month across all live accounts except the pay account. */
-export function averageTotalSplit(b: Budget): Cents {
-  return b.accounts
-    .filter((a) => !a.archived && a.id !== b.settings.payAccountId)
-    .reduce((s, a) => s + averageSplit(b, a.id), 0);
+/**
+ * Per pay (≈ per month), averaged over the next 12 pays: what's planned to be sent to an account and what
+ * its costs take. Counts everything that's really planned: catch-ups, one-pay adjustments, goals that
+ * stop at their date, debts that get paid off. Used by the Week / Fortnight / Month avg / Year views.
+ */
+export function plannedAverage(b: Budget, accountId: string, today: ISODate = todayISO()): { sent: Cents; need: Cents } {
+  let p = upcomingPayPeriod(b, today);
+  let sent = 0, need = 0;
+  for (let i = 0; i < 12; i++) {
+    sent += depositFor(b, accountId, p, today);
+    need += exactNeed(b, accountId, p);
+    p = shiftPeriod(p, 1, b.settings);
+  }
+  return { sent: Math.round(sent / 12), need: Math.round(need / 12) };
 }
+

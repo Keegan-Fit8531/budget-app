@@ -12,7 +12,7 @@ import { undoAllocation } from '../lib/allocate';
 import { applyPayrollDeduction } from '../lib/debts';
 import { fmtShort, monthName, todayISO } from '../lib/dates';
 import {
-  averageNeed, averageSplit, convert, firstBudgetPay, isAuto, periodContaining, planFor, shiftPeriod, type View,
+  averageSplit, convert, firstBudgetPay, isAuto, periodContaining, planFor, plannedAverage, shiftPeriod, type View,
 } from '../lib/engine';
 import { centsToInput, money, moneyParts, parseMoney } from '../lib/money';
 import { useBudget } from '../lib/store';
@@ -72,9 +72,14 @@ export function Planner() {
     .slice(0, 3);
   const usualTotal = plan.accounts.filter((a) => a.account.id !== budget.settings.payAccountId)
     .reduce((t, a) => t + usualOf(a.account.id), 0);
-  // In average views, auto accounts use their long-run average instead of this period's exact need.
-  const totalBudgeted = avg ? v(usualTotal) : plan.totalSplit;
-  const leftover = avg ? v(plan.pay - usualTotal) : plan.leftover;
+  // Average views (week, fortnight, month, year): what's really planned over the next 12 pays, averaged.
+  const planned = useMemo(() => (avg
+    ? new Map(plan.accounts.map((a) => [a.account.id, plannedAverage(budget, a.account.id, today)]))
+    : null), [avg, budget, plan, today]);
+  const plannedTotal = planned ? plan.accounts.filter((a) => a.account.id !== budget.settings.payAccountId)
+    .reduce((t, a) => t + (planned.get(a.account.id)?.sent ?? 0), 0) : 0;
+  const totalBudgeted = avg ? v(plannedTotal) : plan.totalSplit;
+  const leftover = avg ? v(plan.pay - plannedTotal) : plan.leftover;
   const parts = moneyParts(leftover);
   const splitParts = moneyParts(totalBudgeted);
   const payAccountName = budget.accounts.find((a) => a.id === budget.settings.payAccountId)?.name ?? 'your main account';
@@ -354,8 +359,8 @@ export function Planner() {
             const isPay = a.account.id === budget.settings.payAccountId;
             const auto = isAuto(budget, a.account.id);
             const steadyMode = accountMode(budget, a.account.id) === 'smooth';
-            const funded = !avg ? a.funded : isPay ? leftover : v(usualOf(a.account.id));
-            const need = avg ? v(averageNeed(budget, a.account.id)) : a.need;
+            const funded = !avg ? a.funded : isPay ? leftover : v(planned?.get(a.account.id)?.sent ?? 0);
+            const need = avg ? v(planned?.get(a.account.id)?.need ?? 0) : a.need;
             // With a balance entered, the pill shows what the account ends the period with.
             const ends = !avg ? a.endBalance : undefined;
             const diff = ends !== undefined ? null : a.diff === null || auto ? null : funded - need;

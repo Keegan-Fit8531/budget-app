@@ -1,6 +1,6 @@
 import { Donut, Legend } from '../components/Donut';
 import { Icon } from '../components/Icon';
-import { averageSplit, averageTotalSplit } from '../lib/engine';
+import { plannedAverage } from '../lib/engine';
 import { money } from '../lib/money';
 import { useBudget } from '../lib/store';
 import type { RuleBucket } from '../lib/types';
@@ -16,12 +16,12 @@ export function Insights() {
   const { settings, accounts, groups } = budget;
   const pay = settings.expectedPay;
   const live = accounts.filter((a) => !a.archived);
-  const leftover = pay - averageTotalSplit(budget);
-
-  // Average money per account per month (auto accounts use their average need; leftover counts for the pay account).
+  // Average money per account per pay over the next 12 pays (leftover counts for the pay account).
+  const sent = new Map(live.filter((a) => a.id !== settings.payAccountId).map((a) => [a.id, plannedAverage(budget, a.id).sent]));
+  const leftover = pay - [...sent.values()].reduce((t, x) => t + x, 0);
   const perAccount = live.map((a) => ({
     account: a,
-    amount: a.id === settings.payAccountId ? Math.max(0, leftover) : averageSplit(budget, a.id),
+    amount: a.id === settings.payAccountId ? Math.max(0, leftover) : sent.get(a.id) ?? 0,
   })).filter((x) => x.amount > 0);
 
   const byGroup = groups.map((g) => ({
