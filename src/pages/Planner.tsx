@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { Fragment, useMemo, useRef, useState } from 'react';
 import { readPayslipPdf } from '../lib/payslip';
 import { applyBalance, autoPays, balancePay, DEBT_RATIO_GUIDE, restoreOverrides, type BalanceResult } from '../lib/rebalance';
 import { accountMode, leftoverBeforeBudget, topsUp } from '../lib/balances';
@@ -41,16 +41,8 @@ export function Planner() {
   const { offset, setOffset, period } = useViewPeriod();
   const [mode, setMode] = useState<Mode>('period');
   const [showAllDues, setShowAllDues] = useState(false);
-  // Which account cards have their cost list open (remembered on this device).
-  const [openCosts, setOpenCosts] = useState<string[]>(() => { try { return JSON.parse(localStorage.getItem('paydays.planner.costs') ?? '[]'); } catch { return []; } });
-  function toggleCosts(id: string, open: boolean) {
-    setOpenCosts((cur) => {
-      if (open === cur.includes(id)) return cur;
-      const next = open ? [...cur, id] : cur.filter((x) => x !== id);
-      try { localStorage.setItem('paydays.planner.costs', JSON.stringify(next)); } catch { /* ignore */ }
-      return next;
-    });
-  }
+  // The account card whose details pop-up is open.
+  const [openCard, setOpenCard] = useState<string | null>(null);
   const [payEdit, setPayEdit] = useState<string | null>(null);
   // "What's different this pay" starts open, and stays how you leave it (remembered on this device).
   const [notesOpen, setNotesOpen] = useState(() => { try { return localStorage.getItem('paydays.planner.notes') !== 'closed'; } catch { return true; } });
@@ -145,7 +137,6 @@ export function Planner() {
 
   const debtAccounts = new Set((budget.debts ?? []).map((d) => d.accountId));
   const goalAccounts = new Set((budget.savings ?? []).map((g) => g.accountId));
-  const cardHref = (id: string) => debtAccounts.has(id) ? '#/debts' : goalAccounts.has(id) ? '#/savings' : `#/deposits/${id}`;
 
   const upcoming = plan.dues.filter((d) => !isCurrent || d.date >= today);
   const dues = showAllDues ? upcoming : upcoming.slice(0, 8);
@@ -478,75 +469,132 @@ export function Planner() {
                   : sameCount && a.breakdown[0].item.frequency !== 'monthly'
                     ? times
                     : `${a.dues.length} costs due · ${cash(a.need)}`;
-            return (
-              <div key={a.account.id} className="acc-card" style={{ background: `${a.account.color}22` }}>
-              <a className="acc-link" href={cardHref(a.account.id)}>
-                <div className="between" style={{ flexWrap: 'nowrap' }}>
-                  <span className="acc-icon" style={{ background: a.account.color }}>
-                    <Icon name={a.account.kind === 'external' ? 'send' : isPay ? 'wallet' : 'bank'} />
+            // Everything about the account beyond its amount lives in a pop-up, opened by tapping the card.
+            const adjusted = a.usual !== undefined && a.usual !== a.funded;
+            const pill = (
+              <>
+                {diff !== null && diff !== 0 && (
+                  <span className={`pill ${diff < 0 ? 'bad' : 'good'}`}>{diff < 0 ? `${cash(-diff, { whole: Math.abs(diff) >= 10000 })} short` : `+${cash(diff, { whole: diff >= 10000 })} spare`}</span>
+                )}
+                {diff === 0 && <span className="pill good">Exactly right</span>}
+                {ends !== undefined && (
+                  <span className={`pill ${ends < 0 ? 'bad' : 'good'}`} title="Estimated balance at the end of this pay period">
+                    {ends < 0 ? `${cash(-ends, { whole: true })} short` : `Ends ${cash(ends, { whole: true })}`}
                   </span>
-                  {diff !== null && diff !== 0 && (
-                    <span className={`pill ${diff < 0 ? 'bad' : 'good'}`}>{diff < 0 ? `${cash(-diff, { whole: Math.abs(diff) >= 10000 })} short` : `+${cash(diff, { whole: diff >= 10000 })} spare`}</span>
-                  )}
-                  {diff === 0 && <span className="pill good">Exactly right</span>}
-                  {ends !== undefined && (
-                    <span className={`pill ${ends < 0 ? 'bad' : 'good'}`} title="Estimated balance at the end of this pay period">
-                      {ends < 0 ? `${cash(-ends, { whole: true })} short` : `Ends ${cash(ends, { whole: true })}`}
-                    </span>
-                  )}
-                </div>
+                )}
+              </>
+            );
+            const amount = <>{isPay && !known ? '—' : cash(funded)}{split && !(isPay && !known) && <small className="muted" style={{ fontSize: 13, fontWeight: 500 }}> /{mode === 'week' ? 'wk' : 'fn'}</small>}</>;
+            const amountClass = funded < 0 && (known || !isPay) ? 'neg' : '';
+            const icon = (
+              <span className="acc-icon" style={{ background: a.account.color }}>
+                <Icon name={a.account.kind === 'external' ? 'send' : isPay ? 'wallet' : 'bank'} />
+              </span>
+            );
+            // Each cost this pay (e.g. food, car gas, scooter gas, or every bill in Misc bills).
+            const byName = new Map<string, { name: string; amount: Cents; dates: string[] }>();
+            if (!longRun) for (const d of a.dues) {
+              const r = byName.get(d.item.name) ?? { name: d.item.name, amount: 0, dates: [] };
+              r.amount += d.item.amount; r.dates.push(d.date);
+              byName.set(d.item.name, r);
+            }
+            const rows = [...byName.values()];
+            // The budget's first pay starts from what the pay before it left in the account (or left short).
+            const carry = avg || isPay || period.start !== firstBudgetPay(budget, today).start
+              || !(budget.split.find((l) => l.accountId === a.account.id)?.mode === 'smooth' || topsUp(budget, a.account.id))
+              ? 0 : leftoverBeforeBudget(budget, a.account.id);
+            const why = notes.find((n) => n.a.account.id === a.account.id)?.why ?? [];
+            const isDebt = debtAccounts.has(a.account.id);
+            const isGoal = goalAccounts.has(a.account.id);
+            const isOpen = openCard === a.account.id;
+            return (
+              <Fragment key={a.account.id}>
+              <button className="acc-card" style={{ background: `${a.account.color}22` }} aria-haspopup="dialog"
+                aria-label={`${a.account.name}: details`} onClick={() => setOpenCard(a.account.id)}>
+                <div className="between" style={{ flexWrap: 'nowrap' }}>{icon}{pill}</div>
                 <p className="acc-name">{a.account.name}</p>
-                <p className={`amt ${funded < 0 && (known || !isPay) ? 'neg' : ''}`}>{isPay && !known ? '—' : cash(funded)}{split && !(isPay && !known) && <small className="muted" style={{ fontSize: 13, fontWeight: 500 }}> /{mode === 'week' ? 'wk' : 'fn'}</small>}</p>
-                <p className="small muted">{a.usual !== undefined && a.usual !== a.funded ? `Adjusted this pay · usually ${cash(a.usual)}` : detail}</p>
-                {(() => {
-                  // The budget's first pay starts from what the pay before it left in the account (or left short).
-                  if (avg || isPay || period.start !== firstBudgetPay(budget, today).start) return null;
-                  const carry = leftoverBeforeBudget(budget, a.account.id);
-                  if (!carry || !(budget.split.find((l) => l.accountId === a.account.id)?.mode === 'smooth' || topsUp(budget, a.account.id))) return null;
-                  return <p className={`small ${carry < 0 ? 'neg' : 'pos'}`}>{carry < 0 ? `Includes ${cash(-carry, { whole: true })} the ${monthName(shiftPeriod(period, -1, budget.settings).start)} pay left short` : `${cash(carry, { whole: true })} left from ${monthName(shiftPeriod(period, -1, budget.settings).start)} counted`}</p>;
-                })()}
-              </a>
-              {(() => {
-                // Each cost this pay (e.g. food, car gas, scooter gas, or every bill in Misc bills), in a list you
-                // can open and close. Same account and deposit; this only shows what its costs are.
-                if (longRun || isPay) return null;
-                const byName = new Map<string, { name: string; amount: Cents; dates: string[] }>();
-                for (const d of a.dues) {
-                  const name = d.item.name;
-                  const r = byName.get(name) ?? { name, amount: 0, dates: [] };
-                  r.amount += d.item.amount; r.dates.push(d.date);
-                  byName.set(name, r);
-                }
-                const rows = [...byName.values()];
-                if (rows.length < 2) return null;
-                return (
-                  <details className="cost-split" open={openCosts.includes(a.account.id)}
-                    onToggle={(e) => toggleCosts(a.account.id, (e.currentTarget as HTMLDetailsElement).open)}>
-                    <summary>{rows.length} costs this pay{split ? `, per ${mode}` : ''}</summary>
-                    <div className="cost-rows">
-                      {rows.map((r) => {
-                        const each = r.amount / r.dates.length;
-                        const same = r.dates.length > 1 && Number.isInteger(each);
-                        return (
-                          <span key={r.name} className="cost-row">
-                            <span style={{ minWidth: 0 }}>
-                              <span className="cost-name">{r.name}</span>
-                              {/* How often / when, on its own line so names and amounts line up */}
-                              <span className="cost-meta muted">
-                                {same ? `${r.dates.length} × ${cash(each, { whole: each % 100 === 0 })}` : r.dates.length === 1 ? fmtShort(r.dates[0]) : `${r.dates.length} payments`}
-                                {/* Week / Fortnight: say what the whole pay is, since the amount on the right is per week */}
-                                {split ? `${same ? ' =' : ' ·'} ${cash(r.amount)} this pay` : ''}
-                              </span>
-                            </span>
-                            <b className="num">{cash(v(r.amount))}{split && <small className="muted" style={{ fontWeight: 500 }}> /{mode === 'week' ? 'wk' : 'fn'}</small>}</b>
-                          </span>
-                        );
-                      })}
+                <div className="between" style={{ flexWrap: 'nowrap', alignItems: 'flex-end' }}>
+                  <p className={`amt ${amountClass}`}>{amount}</p>
+                  <span className="acc-more" aria-hidden="true"><Icon name="right" size={16} /></span>
+                </div>
+              </button>
+              {isOpen && (
+                <div className="modal-back" onClick={() => setOpenCard(null)}>
+                  <div className="modal" role="dialog" aria-modal="true" aria-labelledby="acc-title" onClick={(e) => e.stopPropagation()}>
+                    <div className="between" style={{ flexWrap: 'nowrap' }}>
+                      <span className="row" style={{ gap: 12, minWidth: 0 }}>
+                        {icon}
+                        <span style={{ minWidth: 0 }}>
+                          <h2 id="acc-title" className="h2">{a.account.name}</h2>
+                          <span className="small muted">{monthName(period.start)} pay · {fmtShort(period.start)} – {fmtShort(period.end)}</span>
+                        </span>
+                      </span>
+                      <button className="icon-btn" aria-label="Close" autoFocus onClick={() => setOpenCard(null)}><Icon name="x" /></button>
                     </div>
-                  </details>
-                );
-              })()}
-              </div>
+
+                    <div className="stat">
+                      <div className="between" style={{ flexWrap: 'nowrap' }}>
+                        <span className="small muted">{isPay ? 'Left here after the plan' : longRun ? 'Sent on average' : 'Payday sends'}</span>
+                        {pill}
+                      </div>
+                      <b className={amountClass} style={{ fontSize: 26 }}>{amount}</b>
+                      <span className="small muted" style={{ display: 'block', marginTop: 4 }}>{detail}</span>
+                      {adjusted && <span className="small" style={{ display: 'block', marginTop: 4 }}>Adjusted this pay · usually {cash(a.usual!)}</span>}
+                      {carry !== 0 && (
+                        <span className={`small ${carry < 0 ? 'neg' : 'pos'}`} style={{ display: 'block', marginTop: 4 }}>
+                          {carry < 0 ? `Includes ${cash(-carry, { whole: true })} the ${monthName(shiftPeriod(period, -1, budget.settings).start)} pay left short` : `${cash(carry, { whole: true })} left from ${monthName(shiftPeriod(period, -1, budget.settings).start)} counted`}
+                        </span>
+                      )}
+                    </div>
+
+                    {why.length > 0 && (
+                      <div className="tip small" style={{ flexDirection: 'column', gap: 4 }}>
+                        <b>Different this pay</b>
+                        {why.map((w) => <span key={w}>{w}</span>)}
+                      </div>
+                    )}
+
+                    {rows.length > 0 && (
+                      <div>
+                        <div className="between" style={{ marginBottom: 6 }}>
+                          <h3 style={{ fontSize: 15 }}>{rows.length} cost{rows.length === 1 ? '' : 's'} this pay{split ? `, per ${mode}` : ''}</h3>
+                          <b className="num">{cash(v(a.need))}</b>
+                        </div>
+                        <div className="cost-rows">
+                          {rows.map((r) => {
+                            const each = r.amount / r.dates.length;
+                            const same = r.dates.length > 1 && Number.isInteger(each);
+                            return (
+                              <span key={r.name} className="cost-row">
+                                <span style={{ minWidth: 0 }}>
+                                  <span className="cost-name">{r.name}</span>
+                                  <span className="cost-meta muted">
+                                    {same ? `${r.dates.length} × ${cash(each, { whole: each % 100 === 0 })}` : r.dates.length === 1 ? fmtShort(r.dates[0]) : `${r.dates.length} payments`}
+                                    {/* Week / Fortnight: say what the whole pay is, since the amount on the right is per week */}
+                                    {split ? `${same ? ' =' : ' ·'} ${cash(r.amount)} this pay` : ''}
+                                  </span>
+                                </span>
+                                <b className="num">{cash(v(r.amount))}{split && <small className="muted" style={{ fontWeight: 500 }}> /{mode === 'week' ? 'wk' : 'fn'}</small>}</b>
+                              </span>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+                    {rows.length === 0 && !isPay && !longRun && <p className="small muted">{a.account.kind === 'external' ? 'Sent on payday; no costs come out of it.' : 'No costs come out of this account this pay.'}</p>}
+
+                    {/* Quick links to where this account is set up. */}
+                    <div className="quick-links">
+                      <span className="small muted">Go to</span>
+                      {isDebt && <a className="btn small" href="#/debts"><Icon name="card" size={16} /> Debt and payment plans</a>}
+                      {isGoal && <a className="btn small" href="#/savings"><Icon name="target" size={16} /> Savings goal</a>}
+                      {!isDebt && !isGoal && <a className="btn small" href={`#/deposits/${a.account.id}`}><Icon name="edit" size={16} /> {isPay ? 'Account and costs' : 'Payday amount and costs'}</a>}
+                      {!isDebt && !isGoal && !isPay && a.account.kind === 'bank' && <a className="btn small" href="#/accounts"><Icon name="wallet" size={16} /> {budget.balances?.[a.account.id] ? 'Update balance' : 'Enter balance'}</a>}
+                    </div>
+                  </div>
+                </div>
+              )}
+              </Fragment>
             );
           })}
         </div>

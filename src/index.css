@@ -110,6 +110,13 @@ h1, h2, h3, p { margin: 0; }
 .acc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 14px; }
 @media (max-width: 899px) { .acc-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; } }
 .acc-card { border-radius: var(--radius); padding: 18px; display: flex; flex-direction: column; gap: 4px; text-decoration: none; color: var(--ink); border: 0; text-align: left; }
+/* A card opens its details: it lifts on hover and carries a small arrow. */
+button.acc-card { font: inherit; cursor: pointer; width: 100%; transition: transform .12s, box-shadow .12s; }
+button.acc-card:hover, button.acc-card:focus-visible { transform: translateY(-2px); box-shadow: 0 6px 18px rgba(20, 16, 60, 0.12); }
+button.acc-card:active { transform: none; }
+.acc-more { width: 26px; height: 26px; border-radius: 50%; background: color-mix(in srgb, var(--card) 70%, transparent); display: grid; place-items: center; flex: 0 0 auto; color: var(--ink); }
+.quick-links { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; border-top: 1px solid var(--line); padding-top: 14px; }
+.quick-links .btn { text-decoration: none; color: inherit; display: inline-flex; align-items: center; gap: 6px; }
 .acc-link { display: flex; flex-direction: column; gap: 4px; color: inherit; text-decoration: none; cursor: pointer; }
 .acc-card .amt { font-size: 24px; font-weight: 700; }
 @media (max-width: 899px) { .acc-card { padding: 14px; } .acc-card .amt { font-size: 19px; } }
@@ -200,7 +207,7 @@ details.notes[open] > summary::before { transform: rotate(45deg); }
 .cost-row { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; font-size: 14px; }
 .cost-name { display: block; font-weight: 500; }
 .cost-meta { display: block; font-size: 12px; line-height: 1.3; }
-.cost-split .num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.cost-split .num, .cost-rows .num { font-variant-numeric: tabular-nums; white-space: nowrap; }
 
 /* Planner: easier scanning */
 .num { font-variant-numeric: tabular-nums; white-space: nowrap; }
