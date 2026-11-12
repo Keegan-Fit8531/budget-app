@@ -10,11 +10,11 @@ import { PayNav, useViewPeriod } from '../lib/period';
 import { clearOptimiseUndo, OptimiseModal, readOptimiseUndo, type OptimiseUndo } from '../components/OptimiseModal';
 import { undoAllocation } from '../lib/allocate';
 import { applyPayrollDeduction } from '../lib/debts';
-import { fmtShort, monthName, todayISO } from '../lib/dates';
+import { addDays, fmtDay, fmtShort, monthName, todayISO } from '../lib/dates';
 import {
   averageSplit, convert, firstBudgetPay, isAuto, periodContaining, planFor, plannedAverage, shiftPeriod, type View,
 } from '../lib/engine';
-import { centsToInput, money, moneyParts, parseMoney } from '../lib/money';
+import { cash, centsToInput, moneyParts, parseMoney } from '../lib/money';
 import { useBudget } from '../lib/store';
 import type { Cents, PaydayMode } from '../lib/types';
 
@@ -28,6 +28,13 @@ const MODES: { v: Mode; label: string }[] = [
   { v: 'month', label: 'Month avg' },
   { v: 'year', label: 'Year' },
 ];
+
+/** Payments in date order, grouped by day. */
+function dayGroups<T extends { date: string }>(list: T[]): [string, T[]][] {
+  const m = new Map<string, T[]>();
+  for (const d of list) m.set(d.date, [...(m.get(d.date) ?? []), d]);
+  return [...m];
+}
 
 export function Planner() {
   const { budget, update } = useBudget();
@@ -200,9 +207,9 @@ export function Planner() {
       const diff = slip.net - budget.settings.expectedPay;
       setSlipMsg({
         ok: true,
-        text: `${monthName(p.start)} pay recorded: ${money(slip.net)}` +
-          (diff === 0 ? ', exactly as expected.' : `, ${money(Math.abs(diff))} ${diff > 0 ? 'more' : 'less'} than expected.`) +
-          (loan && slip.studentLoan ? ` Student loan: ${money(slip.studentLoan)} taken off what you owe.` : ''),
+        text: `${monthName(p.start)} pay recorded: ${cash(slip.net)}` +
+          (diff === 0 ? ', exactly as expected.' : `, ${cash(Math.abs(diff))} ${diff > 0 ? 'more' : 'less'} than expected.`) +
+          (loan && slip.studentLoan ? ` Student loan: ${cash(slip.studentLoan)} taken off what you owe.` : ''),
       });
       setOffset(offset + periodsBetween(period.start, p.start));
     } catch {
@@ -224,7 +231,7 @@ export function Planner() {
     <>
       <header className="between">
         <PayNav />
-        <div className="seg" role="group" aria-label="Show amounts as">
+        <div className="seg seg-modes" role="group" aria-label="Show amounts as">
           {MODES.map((m) => (
             <button key={m.v} aria-pressed={mode === m.v} onClick={() => setMode(m.v)}>{m.label}</button>
           ))}
@@ -235,7 +242,7 @@ export function Planner() {
         <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
           {known ? (
             <div>
-              <p className="small muted">{split
+              <p className="eyebrow">{split
                 ? `Left after plan, per ${mode} · this pay's ${period.days} days are ${(period.days / spanDays).toFixed(1)} ${mode}s`
                 : mode === 'month' ? 'Left after plan, per month (average of the next 12 pays)'
                 : mode === 'year' ? 'Left after plan over the next 12 pays'
@@ -245,7 +252,7 @@ export function Planner() {
               </p>
               <p className="small muted" style={{ marginTop: 10 }}>
                 {plan.leftover < 0
-                  ? `You've budgeted ${money(-plan.leftover)} more than this pay.`
+                  ? `You've budgeted ${cash(-plan.leftover)} more than this pay.`
                   : `Stays in ${payAccountName} for spending.`}
               </p>
               {!avg && plan.leftover < 0 && (
@@ -254,11 +261,11 @@ export function Planner() {
                   {drivers.map((x) => (
                     <span key={x.a.account.id} className="row" style={{ gap: 8 }}>
                       <span className="dot" style={{ background: x.a.account.color }} />
-                      <span>{x.a.account.name}: {money(x.a.funded)} this pay, usually about {money(x.usual, { whole: true })} (+{money(x.extra, { whole: true })})</span>
+                      <span>{x.a.account.name}: {cash(x.a.funded)} this pay, usually about {cash(x.usual, { whole: true })} (+{cash(x.extra, { whole: true })})</span>
                     </span>
                   ))}
                   {usualTotal > plan.pay && (
-                    <span className="muted">Even in a normal pay your budget is {money(usualTotal - plan.pay, { whole: true })} more than your pay.</span>
+                    <span className="muted">Even in a normal pay your budget is {cash(usualTotal - plan.pay, { whole: true })} more than your pay.</span>
                   )}
                   {drivers.length === 0 && usualTotal <= plan.pay && <span className="muted">A few small extras this pay add up.</span>}
                 </div>
@@ -267,7 +274,7 @@ export function Planner() {
                 <p className="small" style={{ marginTop: 8, display: 'flex', gap: 6, alignItems: 'center' }}>
                   <span className="pill" style={{ background: 'var(--soft)', color: 'var(--muted)' }}>Estimate</span>
                   <span className="muted">
-                    Using {monthName(plan.payEstimateFrom!)}'s pay of {money(plan.pay)}.{' '}
+                    Using {monthName(plan.payEstimateFrom!)}'s pay of {cash(plan.pay)}.{' '}
                     {paydayPassed ? 'Payday has passed: upload the payslip to make it exact.' : `Upload the payslip when it arrives on ${fmtShort(period.start)}.`}
                   </span>
                 </p>
@@ -275,7 +282,7 @@ export function Planner() {
             </div>
           ) : (
             <div>
-              <p className="small muted">Total budgeted</p>
+              <p className="eyebrow">Total budgeted</p>
               <p className="big" style={{ marginTop: 6 }}>{splitParts.main}<small>{splitParts.cents}</small></p>
               <p className="small muted" style={{ marginTop: 10 }}>
                 Upload your payslip or type your pay to see what's left.
@@ -286,14 +293,14 @@ export function Planner() {
             <div className="stat">
               <span className="small muted">{plan.payIsActual ? 'Pay received' : estimated ? 'Pay (estimated)' : 'Pay'}</span>
               {payEdit === null ? (
-                <b className={known ? '' : 'muted'}>{known ? money(v(plan.pay)) : 'Not in yet'}</b>
+                <b className={known ? '' : 'muted'}>{known ? cash(v(plan.pay)) : 'Not in yet'}</b>
               ) : (
                 <input aria-label="Actual pay" inputMode="decimal" autoFocus value={payEdit} onChange={(e) => setPayEdit(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && savePay()}
                   style={{ marginTop: 4, width: '100%', minHeight: 36, borderRadius: 8, border: '1px solid var(--line)', padding: '0 8px', background: 'var(--card)' }} />
               )}
             </div>
-            <div className="stat"><span className="small muted">Total budgeted</span><b>{money(totalBudgeted)}</b></div>
+            <div className="stat"><span className="small muted">Total budgeted</span><b>{cash(totalBudgeted)}</b></div>
           </div>
           <div className="row" style={{ flexWrap: 'wrap' }}>
             {payEdit === null ? (
@@ -342,14 +349,15 @@ export function Planner() {
           )}
         </div>
 
-        <div className="card" style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 24 }}>
-          <Donut slices={slices} size={190}>
+        {/* Sits at the top instead of stretching to the height of the card beside it. */}
+        <div className="card" style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', alignSelf: 'start', gap: 24 }}>
+          <h2 className="h2" style={{ flex: '1 1 100%' }}>Where this pay goes</h2>
+          <Donut slices={slices} size={170}>
             <span className="small muted">Budgeted</span>
-            <b style={{ fontSize: 19 }}>{money(plan.totalSplit, { whole: true })}</b>
+            <b style={{ fontSize: 19 }}>{cash(plan.totalSplit, { whole: true })}</b>
           </Donut>
-          <div style={{ flex: '1 1 200px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 10 }}>
-            <h2 className="h2">Where this pay goes</h2>
-            <Legend slices={slices} />
+          <div style={{ flex: '1 1 220px', minWidth: 0, display: 'flex' }}>
+            <Legend slices={slices} amounts />
           </div>
         </div>
       </section>
@@ -358,7 +366,7 @@ export function Planner() {
         <div className="alert" role="status">
           <Icon name="alert" />
           <span>
-            {shorts.map((s) => `${s.account.name} needs ${money(-(s.diff ?? 0))} more`).join(' · ')}
+            {shorts.map((s) => `${s.account.name} needs ${cash(-(s.diff ?? 0))} more`).join(' · ')}
             {' '}this {period.days}-day period.
             {shorts.some((s) => s.account.kind === 'bank' && !budget.balances?.[s.account.id]) && (
               <> That's unless it's already in {shorts.length === 1 ? 'the account' : 'those accounts'}: <a href="#/accounts" style={{ color: 'inherit', fontWeight: 600 }}>enter the balance in Accounts</a> to check.</>
@@ -386,22 +394,22 @@ export function Planner() {
             // "5 × $275" when every cost repeats the same number of times (e.g. weekly food + gas), else a count.
             const sameCount = a.breakdown.length > 0 && a.breakdown.every((x) => x.count === a.breakdown[0].count);
             const times = sameCount && a.breakdown[0].count > 1
-              ? `${a.breakdown[0].count} × ${money(a.breakdown.reduce((s, x) => s + x.item.amount, 0))}`
+              ? `${a.breakdown[0].count} × ${cash(a.breakdown.reduce((s, x) => s + x.item.amount, 0))}`
               : `${a.dues.length} payment${a.dues.length === 1 ? '' : 's'} due`;
             const detail = auto
               ? (longRun ? (steadyMode ? 'Steady' : 'Exact · average')
                 : !steadyMode && topsUp(budget, a.account.id)
-                  ? (a.funded < a.need ? `Exact · ${money(a.need, { whole: true })} of bills − ${money(a.need - a.funded, { whole: true })} already there` : `Exact · ${a.dues.length} bills, nothing left over`)
+                  ? (a.funded < a.need ? `Exact · ${cash(a.need, { whole: true })} of bills − ${cash(a.need - a.funded, { whole: true })} already there` : `Exact · ${a.dues.length} bills, nothing left over`)
                   : `${steadyMode ? 'Steady' : 'Exact'} · ${times}`)
               : isPay
               ? (known ? 'Pay lands here · what’s left' : 'Pay lands here · shows once pay is in')
               : a.diff === null
                 ? (a.account.kind === 'external' ? 'Sent on payday' : 'No costs set')
                 : longRun
-                  ? `${money(need)} needed on average`
+                  ? `${cash(need)} needed on average`
                   : sameCount && a.breakdown[0].item.frequency !== 'monthly'
                     ? times
-                    : `${a.dues.length} costs due · ${money(a.need)}`;
+                    : `${a.dues.length} costs due · ${cash(a.need)}`;
             return (
               <div key={a.account.id} className="acc-card" style={{ background: `${a.account.color}22` }}>
               <a className="acc-link" href={cardHref(a.account.id)}>
@@ -410,24 +418,24 @@ export function Planner() {
                     <Icon name={a.account.kind === 'external' ? 'send' : isPay ? 'wallet' : 'bank'} />
                   </span>
                   {diff !== null && diff !== 0 && (
-                    <span className={`pill ${diff < 0 ? 'bad' : 'good'}`}>{diff < 0 ? `${money(-diff, { whole: Math.abs(diff) >= 10000 })} short` : `+${money(diff, { whole: diff >= 10000 })} spare`}</span>
+                    <span className={`pill ${diff < 0 ? 'bad' : 'good'}`}>{diff < 0 ? `${cash(-diff, { whole: Math.abs(diff) >= 10000 })} short` : `+${cash(diff, { whole: diff >= 10000 })} spare`}</span>
                   )}
                   {diff === 0 && <span className="pill good">Exactly right</span>}
                   {ends !== undefined && (
                     <span className={`pill ${ends < 0 ? 'bad' : 'good'}`} title="Estimated balance at the end of this pay period">
-                      {ends < 0 ? `${money(-ends, { whole: true })} short` : `Ends ${money(ends, { whole: true })}`}
+                      {ends < 0 ? `${cash(-ends, { whole: true })} short` : `Ends ${cash(ends, { whole: true })}`}
                     </span>
                   )}
                 </div>
-                <p className="small" style={{ marginTop: 8 }}>{a.account.name}</p>
-                <p className={`amt ${funded < 0 && (known || !isPay) ? 'neg' : ''}`}>{isPay && !known ? '—' : money(funded)}{split && !(isPay && !known) && <small className="muted" style={{ fontSize: 13, fontWeight: 500 }}> /{mode === 'week' ? 'wk' : 'fn'}</small>}</p>
-                <p className="small muted">{a.usual !== undefined && a.usual !== a.funded ? `Adjusted this pay · usually ${money(a.usual)}` : detail}</p>
+                <p className="acc-name">{a.account.name}</p>
+                <p className={`amt ${funded < 0 && (known || !isPay) ? 'neg' : ''}`}>{isPay && !known ? '—' : cash(funded)}{split && !(isPay && !known) && <small className="muted" style={{ fontSize: 13, fontWeight: 500 }}> /{mode === 'week' ? 'wk' : 'fn'}</small>}</p>
+                <p className="small muted">{a.usual !== undefined && a.usual !== a.funded ? `Adjusted this pay · usually ${cash(a.usual)}` : detail}</p>
                 {(() => {
                   // The budget's first pay starts from what the pay before it left in the account (or left short).
                   if (avg || isPay || period.start !== firstBudgetPay(budget, today).start) return null;
                   const carry = leftoverBeforeBudget(budget, a.account.id);
                   if (!carry || !(budget.split.find((l) => l.accountId === a.account.id)?.mode === 'smooth' || topsUp(budget, a.account.id))) return null;
-                  return <p className={`small ${carry < 0 ? 'neg' : 'pos'}`}>{carry < 0 ? `Includes ${money(-carry, { whole: true })} the ${monthName(shiftPeriod(period, -1, budget.settings).start)} pay left short` : `${money(carry, { whole: true })} left from ${monthName(shiftPeriod(period, -1, budget.settings).start)} counted`}</p>;
+                  return <p className={`small ${carry < 0 ? 'neg' : 'pos'}`}>{carry < 0 ? `Includes ${cash(-carry, { whole: true })} the ${monthName(shiftPeriod(period, -1, budget.settings).start)} pay left short` : `${cash(carry, { whole: true })} left from ${monthName(shiftPeriod(period, -1, budget.settings).start)} counted`}</p>;
                 })()}
               </a>
               {(() => {
@@ -452,16 +460,17 @@ export function Planner() {
                         const each = r.amount / r.dates.length;
                         const same = r.dates.length > 1 && Number.isInteger(each);
                         return (
-                          <span key={r.name} className="between small" style={{ flexWrap: 'nowrap', gap: 8, alignItems: 'baseline' }}>
+                          <span key={r.name} className="cost-row">
                             <span style={{ minWidth: 0 }}>
-                              {r.name}{' '}
-                              <span className="muted">
-                                {same ? `${r.dates.length} × ${money(each, { whole: each % 100 === 0 })}` : r.dates.length === 1 ? fmtShort(r.dates[0]) : `${r.dates.length} payments`}
+                              <span className="cost-name">{r.name}</span>
+                              {/* How often / when, on its own line so names and amounts line up */}
+                              <span className="cost-meta muted">
+                                {same ? `${r.dates.length} × ${cash(each, { whole: each % 100 === 0 })}` : r.dates.length === 1 ? fmtShort(r.dates[0]) : `${r.dates.length} payments`}
                                 {/* Week / Fortnight: say what the whole pay is, since the amount on the right is per week */}
-                                {split ? `${same ? ' =' : ' ·'} ${money(r.amount, { whole: r.amount % 100 === 0 })} this pay` : ''}
+                                {split ? `${same ? ' =' : ' ·'} ${cash(r.amount)} this pay` : ''}
                               </span>
                             </span>
-                            <b className="num">{money(v(r.amount), { whole: !split && r.amount % 100 === 0 })}{split && <small className="muted" style={{ fontWeight: 500 }}> /{mode === 'week' ? 'wk' : 'fn'}</small>}</b>
+                            <b className="num">{cash(v(r.amount))}{split && <small className="muted" style={{ fontWeight: 500 }}> /{mode === 'week' ? 'wk' : 'fn'}</small>}</b>
                           </span>
                         );
                       })}
@@ -484,17 +493,28 @@ export function Planner() {
             <span className="small muted">{upcoming.length} payments</span>
           </div>
           {dues.length === 0 && <p className="muted small">Nothing else due this period.</p>}
-          {dues.map((d, i) => {
-            const acc = budget.accounts.find((a) => a.id === d.item.accountId);
-            return (
-              <div className="list-row" key={`${d.item.id}-${d.date}-${i}`}>
-                <span className="small muted" style={{ width: 56, flex: '0 0 56px' }}>{fmtShort(d.date)}</span>
-                <span className="dot" style={{ background: acc?.color }} />
-                <span style={{ flex: 1, minWidth: 0 }}>{d.item.name}<span className="small muted"> · {acc?.name}</span></span>
-                <b>{money(d.item.amount)}</b>
+          {/* One heading per day (Today, Tomorrow, Wed 18 Nov) with that day's total, then what's due. */}
+          {dayGroups(dues).map(([date, list]) => (
+            <div key={date} className="due-day">
+              <div className="due-day-head">
+                <span>{date === today ? 'Today' : date === addDays(today, 1) ? 'Tomorrow' : fmtDay(date)}</span>
+                {list.length > 1 && <span className="num">{cash(list.reduce((t, d) => t + d.item.amount, 0))}</span>}
               </div>
-            );
-          })}
+              {list.map((d, i) => {
+                const acc = budget.accounts.find((a) => a.id === d.item.accountId);
+                return (
+                  <div className="list-row" key={`${d.item.id}-${d.date}-${i}`}>
+                    <span className="dot" style={{ background: acc?.color }} />
+                    <span style={{ flex: 1, minWidth: 0 }}>
+                      {d.item.name}
+                      {acc && acc.name !== d.item.name && <span className="small muted"> · {acc.name}</span>}
+                    </span>
+                    <b className="num">{cash(d.item.amount)}</b>
+                  </div>
+                );
+              })}
+            </div>
+          ))}
           {upcoming.length > 8 && (
             <button className="btn small ghost" style={{ marginTop: 8 }} onClick={() => setShowAllDues(!showAllDues)}>
               {showAllDues ? 'Show fewer' : `Show all ${upcoming.length}`}
