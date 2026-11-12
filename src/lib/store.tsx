@@ -31,7 +31,14 @@ function load(): Budget {
         return autoBalance(parsed);
       }
     }
-  } catch { /* storage blocked or corrupt — fall back to seed */ }
+  } catch (e) {
+    // Couldn't read what's saved: keep a copy before starting blank, so it's never overwritten and lost.
+    try {
+      const raw = localStorage.getItem(KEY);
+      if (raw) localStorage.setItem(`${KEY}.unreadable.${Date.now()}`, raw);
+    } catch { /* storage blocked */ }
+    console.error('Couldn\u2019t load the saved budget', e);
+  }
   const fresh = structuredClone(seedBudget);
   settleAll(fresh);
   return autoBalance(fresh);
