@@ -53,7 +53,12 @@ export function Planner() {
   const plan = useMemo(() => planFor(budget, period), [budget, period]);
   const isCurrent = offset === 0;
   const avg = mode !== 'period';
-  const v = (c: Cents) => (avg ? convert(c, 'monthly', mode as View) : c);
+  // Week / Fortnight: this pay, split into weeks (or fortnights) by its number of days.
+  // Month avg / Year: what's planned over the next 12 pays, averaged (or added up for the year).
+  const split = mode === 'week' || mode === 'fortnight';
+  const longRun = mode === 'month' || mode === 'year';
+  const spanDays = mode === 'week' ? 7 : 14;
+  const v = (c: Cents) => (split ? Math.round((c * spanDays) / period.days) : avg ? convert(c, 'monthly', mode as View) : c);
 
   /** Only show what's left (or short) once the real pay is in. */
   // Show what's left once pay is in — or, before the payslip arrives, estimated from the last pay received.
@@ -73,13 +78,13 @@ export function Planner() {
   const usualTotal = plan.accounts.filter((a) => a.account.id !== budget.settings.payAccountId)
     .reduce((t, a) => t + usualOf(a.account.id), 0);
   // Average views (week, fortnight, month, year): what's really planned over the next 12 pays, averaged.
-  const planned = useMemo(() => (avg
+  const planned = useMemo(() => (longRun
     ? new Map(plan.accounts.map((a) => [a.account.id, plannedAverage(budget, a.account.id, today)]))
-    : null), [avg, budget, plan, today]);
+    : null), [longRun, budget, plan, today]);
   const plannedTotal = planned ? plan.accounts.filter((a) => a.account.id !== budget.settings.payAccountId)
     .reduce((t, a) => t + (planned.get(a.account.id)?.sent ?? 0), 0) : 0;
-  const totalBudgeted = avg ? v(plannedTotal) : plan.totalSplit;
-  const leftover = avg ? v(plan.pay - plannedTotal) : plan.leftover;
+  const totalBudgeted = split ? v(plan.totalSplit) : longRun ? v(plannedTotal) : plan.totalSplit;
+  const leftover = split ? v(plan.leftover) : longRun ? v(plan.pay - plannedTotal) : plan.leftover;
   const parts = moneyParts(leftover);
   const splitParts = moneyParts(totalBudgeted);
   const payAccountName = budget.accounts.find((a) => a.id === budget.settings.payAccountId)?.name ?? 'your main account';
@@ -220,7 +225,11 @@ export function Planner() {
         <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
           {known ? (
             <div>
-              <p className="small muted">{avg ? `Left after plan, per ${mode === 'month' ? 'month (average)' : mode}` : 'Left after your plan'}</p>
+              <p className="small muted">{split
+                ? `Left after plan, per ${mode} · this pay's ${period.days} days are ${(period.days / spanDays).toFixed(1)} ${mode}s`
+                : mode === 'month' ? 'Left after plan, per month (average of the next 12 pays)'
+                : mode === 'year' ? 'Left after plan over the next 12 pays'
+                : 'Left after your plan'}</p>
               <p className={`big ${leftover < 0 ? 'neg' : ''}`} style={{ marginTop: 6 }}>
                 {parts.main}<small>{parts.cents}</small>
               </p>
@@ -359,8 +368,8 @@ export function Planner() {
             const isPay = a.account.id === budget.settings.payAccountId;
             const auto = isAuto(budget, a.account.id);
             const steadyMode = accountMode(budget, a.account.id) === 'smooth';
-            const funded = !avg ? a.funded : isPay ? leftover : v(planned?.get(a.account.id)?.sent ?? 0);
-            const need = avg ? v(planned?.get(a.account.id)?.need ?? 0) : a.need;
+            const funded = !avg ? a.funded : isPay ? leftover : split ? v(a.funded) : v(planned?.get(a.account.id)?.sent ?? 0);
+            const need = split ? v(a.need) : longRun ? v(planned?.get(a.account.id)?.need ?? 0) : a.need;
             // With a balance entered, the pill shows what the account ends the period with.
             const ends = !avg ? a.endBalance : undefined;
             const diff = ends !== undefined ? null : a.diff === null || auto ? null : funded - need;
@@ -370,15 +379,15 @@ export function Planner() {
               ? `${a.breakdown[0].count} × ${money(a.breakdown.reduce((s, x) => s + x.item.amount, 0))}`
               : `${a.dues.length} payment${a.dues.length === 1 ? '' : 's'} due`;
             const detail = auto
-              ? (avg ? (steadyMode ? 'Steady' : 'Exact · average')
+              ? (longRun ? (steadyMode ? 'Steady' : 'Exact · average')
                 : !steadyMode && topsUp(budget, a.account.id)
-                  ? (funded < need ? `Exact · ${money(need, { whole: true })} of bills − ${money(need - funded, { whole: true })} already there` : `Exact · ${a.dues.length} bills, nothing left over`)
+                  ? (a.funded < a.need ? `Exact · ${money(a.need, { whole: true })} of bills − ${money(a.need - a.funded, { whole: true })} already there` : `Exact · ${a.dues.length} bills, nothing left over`)
                   : `${steadyMode ? 'Steady' : 'Exact'} · ${times}`)
               : isPay
               ? (known ? 'Pay lands here · what’s left' : 'Pay lands here · shows once pay is in')
               : a.diff === null
                 ? (a.account.kind === 'external' ? 'Sent on payday' : 'No costs set')
-                : avg
+                : longRun
                   ? `${money(need)} needed on average`
                   : sameCount && a.breakdown[0].item.frequency !== 'monthly'
                     ? times
@@ -401,7 +410,7 @@ export function Planner() {
                   )}
                 </div>
                 <p className="small" style={{ marginTop: 8 }}>{a.account.name}</p>
-                <p className={`amt ${funded < 0 && (known || !isPay) ? 'neg' : ''}`}>{isPay && !known ? '—' : money(funded)}</p>
+                <p className={`amt ${funded < 0 && (known || !isPay) ? 'neg' : ''}`}>{isPay && !known ? '—' : money(funded)}{split && !(isPay && !known) && <small className="muted" style={{ fontSize: 13, fontWeight: 500 }}> /{mode === 'week' ? 'wk' : 'fn'}</small>}</p>
                 <p className="small muted">{a.usual !== undefined && a.usual !== a.funded ? `Adjusted this pay · usually ${money(a.usual)}` : detail}</p>
                 {(() => {
                   // The budget's first pay starts from what the pay before it left in the account (or left short).
