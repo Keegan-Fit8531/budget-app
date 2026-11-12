@@ -189,3 +189,6 @@ select::-ms-expand { display: none; }
 .change-row .num { font-variant-numeric: tabular-nums; white-space: nowrap; }
 .balance-mode { display: flex; width: 100%; }
 .balance-mode button { flex: 1 1 0; }
+/* Each cost in an account card (e.g. food / car gas / scooter gas) */
+.cost-split { display: flex; flex-direction: column; gap: 3px; margin-top: 8px; padding-top: 8px; border-top: 1px solid color-mix(in srgb, var(--ink) 12%, transparent); }
+.cost-split .num { font-variant-numeric: tabular-nums; white-space: nowrap; }

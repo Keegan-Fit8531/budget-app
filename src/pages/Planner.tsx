@@ -413,6 +413,22 @@ export function Planner() {
                 <p className={`amt ${funded < 0 && (known || !isPay) ? 'neg' : ''}`}>{isPay && !known ? '—' : money(funded)}{split && !(isPay && !known) && <small className="muted" style={{ fontSize: 13, fontWeight: 500 }}> /{mode === 'week' ? 'wk' : 'fn'}</small>}</p>
                 <p className="small muted">{a.usual !== undefined && a.usual !== a.funded ? `Adjusted this pay · usually ${money(a.usual)}` : detail}</p>
                 {(() => {
+                  // A few different costs (e.g. food, car gas, scooter gas): show each one, so they can be told apart.
+                  // Same account and deposit; this only splits what its costs are.
+                  const rows = a.breakdown.filter((x) => x.item.frequency !== 'once');
+                  if (longRun || isPay || rows.length < 2 || rows.length > 4 || rows.length !== a.breakdown.length) return null;
+                  return (
+                    <div className="cost-split">
+                      {rows.map(({ item, count }) => (
+                        <span key={item.id} className="between small" style={{ flexWrap: 'nowrap', gap: 8 }}>
+                          <span style={{ minWidth: 0 }}>{item.name} <span className="muted">{count} × {money(item.amount, { whole: item.amount % 100 === 0 })}</span></span>
+                          <b className="num">{money(v(item.amount * count), { whole: !split })}</b>
+                        </span>
+                      ))}
+                    </div>
+                  );
+                })()}
+                {(() => {
                   // The budget's first pay starts from what the pay before it left in the account (or left short).
                   if (avg || isPay || period.start !== firstBudgetPay(budget, today).start) return null;
                   const carry = leftoverBeforeBudget(budget, a.account.id);
