@@ -1,4 +1,5 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import QRCode from 'qrcode';
 import { Icon } from '../components/Icon';
 import { fmtDay, monthName, todayISO } from '../lib/dates';
 import { periodContaining, shiftPeriod } from '../lib/engine';
@@ -6,7 +7,7 @@ import { centsToInput, money, parseMoney } from '../lib/money';
 import { nextColor } from '../lib/colors';
 import { CostCategoriesEditor } from '../components/CostCategories';
 import { newId, readVersions, useBudget } from '../lib/store';
-import { readSyncConfig, SyncError } from '../lib/sync';
+import { pairingLink, readSyncConfig, SyncError, type SyncConfig } from '../lib/sync';
 import type { Budget, RuleBucket } from '../lib/types';
 
 const RULES = [
@@ -237,6 +238,7 @@ function SyncCard() {
   const [token, setToken] = useState('');
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
+  const [qr, setQr] = useState<string | null>(null);
 
   async function connect() {
     if (!/^[\w.-]+\/[\w.-]+$/.test(repo.trim())) return setErr('Enter the repo as owner/name, e.g. you/budget-data.');
@@ -290,9 +292,11 @@ function SyncCard() {
           </p>
           {sync.state === 'error' && <p className="small error" role="alert">{sync.message}</p>}
           <div className="row" style={{ flexWrap: 'wrap' }}>
+            <button className="btn primary" onClick={() => setQr(qr ? null : 'loading')}>{qr ? 'Hide QR code' : 'Connect another device'}</button>
             <button className="btn" onClick={syncNow} disabled={sync.state === 'syncing'}>Sync now</button>
             <button className="btn" onClick={disconnectSync}>Disconnect this browser</button>
           </div>
+          {qr && saved && <ConnectQr config={saved} />}
         </>
       )}
     </section>
@@ -303,4 +307,46 @@ function SyncCard() {
 function guessRepo(): string {
   const m = location.hostname.match(/^([\w-]+)\.github\.io$/i);
   return m ? `${m[1]}/budget-data` : '';
+}
+
+/** A QR code that connects another device (e.g. your phone) to the same repo. Valid for 10 minutes. */
+function ConnectQr({ config }: { config: SyncConfig }) {
+  const [svg, setSvg] = useState('');
+  const [until, setUntil] = useState(0);
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    let live = true;
+    const make = () => {
+      const at = Date.now();
+      QRCode.toString(pairingLink(config, at), { type: 'svg', margin: 2, errorCorrectionLevel: 'M', color: { dark: '#000000', light: '#ffffff' } })
+        .then((s) => { if (live) { setSvg(s); setUntil(at + 10 * 60_000); } })
+        .catch(() => { if (live) setSvg(''); });
+    };
+    make();
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => { live = false; clearInterval(t); };
+  }, [config]);
+  const left = Math.max(0, Math.ceil((until - now) / 60_000));
+  const expired = until > 0 && now > until;
+  return (
+    <div className="tip" style={{ flexDirection: 'column', alignItems: 'center', gap: 10, textAlign: 'center' }}>
+      {expired ? (
+        <p className="small" style={{ margin: 0 }}>This code has expired. Choose <b>Hide QR code</b>, then <b>Connect another device</b> for a new one.</p>
+      ) : svg ? (
+        <>
+          <div aria-label="QR code to connect another device" role="img"
+            style={{ background: '#fff', padding: 8, borderRadius: 12, width: 220, maxWidth: '100%', lineHeight: 0 }}
+            dangerouslySetInnerHTML={{ __html: svg }} />
+          <p className="small" style={{ margin: 0 }}>
+            <b>Scan with your phone's camera</b> and open the link. It connects and loads your budget, with nothing to type.
+          </p>
+          <p className="small muted" style={{ margin: 0 }}>
+            Works for {left} more minute{left === 1 ? '' : 's'}. Anyone who scans it can open your budget, so only show it to your own devices.
+          </p>
+        </>
+      ) : (
+        <p className="small muted" style={{ margin: 0 }}>Making the code\u2026</p>
+      )}
+    </div>
+  );
 }

@@ -52,3 +52,40 @@ describe('sync with a private GitHub repo', () => {
     await expect(pullBudget(c)).rejects.toThrow(/token/);
   });
 });
+
+describe('connect another device by QR code', () => {
+  function stubBrowser(hash = '') {
+    const store = new Map<string, string>();
+    const loc = { origin: 'https://me.github.io', pathname: '/budget-app/', hash };
+    const replaceState = vi.fn((_: unknown, __: string, url: string) => { loc.hash = url.slice(url.indexOf('#')); });
+    vi.stubGlobal('location', loc);
+    vi.stubGlobal('history', { replaceState });
+    vi.stubGlobal('localStorage', { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => store.set(k, v), removeItem: (k: string) => store.delete(k) });
+    return { loc, replaceState };
+  }
+  it('the link connects the other device and is cleared from the address straight away', async () => {
+    const { pairingLink, takePairingFromUrl, readSyncConfig } = await import('./sync');
+    stubBrowser();
+    const link = pairingLink({ repo: 'me/budget-data', path: 'budget.json', token: 'secret' }, 1_000);
+    expect(link.startsWith('https://me.github.io/budget-app/#/connect/')).toBe(true);
+    expect(link).not.toContain('secret'); // encoded, not readable at a glance
+    const b = stubBrowser(link.slice(link.indexOf('#')));
+    expect(takePairingFromUrl(2_000)).toMatchObject({ ok: true, config: { repo: 'me/budget-data', token: 'secret' } });
+    expect(b.loc.hash).toBe('#/settings');
+    expect(readSyncConfig()).toMatchObject({ repo: 'me/budget-data', token: 'secret' });
+  });
+  it('an old code (over 10 minutes) is refused and saves nothing', async () => {
+    const { pairingLink, takePairingFromUrl, readSyncConfig } = await import('./sync');
+    stubBrowser();
+    const link = pairingLink({ repo: 'me/budget-data', path: 'budget.json', token: 'secret' }, 0);
+    stubBrowser(link.slice(link.indexOf('#')));
+    expect(takePairingFromUrl(11 * 60_000)).toMatchObject({ ok: false });
+    expect(readSyncConfig()).toBeNull();
+  });
+  it('a normal address is left alone', async () => {
+    const { takePairingFromUrl } = await import('./sync');
+    const b = stubBrowser('#/planner');
+    expect(takePairingFromUrl()).toBeNull();
+    expect(b.replaceState).not.toHaveBeenCalled();
+  });
+});

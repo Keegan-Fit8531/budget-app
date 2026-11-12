@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
-import { pullBudget, pushBudget, readSyncConfig, SyncError, writeSyncConfig, type SyncConfig } from './sync';
+import { pullBudget, pushBudget, readSyncConfig, SyncError, takePairingFromUrl, writeSyncConfig, type SyncConfig } from './sync';
 import { todayISO } from './dates';
 import { debtPerPay, settleDue } from './debts';
 import { autoBalance } from './rebalance';
@@ -102,9 +102,16 @@ const Ctx = createContext<Store | null>(null);
 const stamp = (b: Budget): Budget => { b.updatedAt = new Date().toISOString(); return b; };
 const newer = (a: Budget, b: Budget) => (a.updatedAt ?? '') > (b.updatedAt ?? '');
 
+// Opened from a "connect this device" QR code? Save that connection before anything else runs.
+const pairing = takePairingFromUrl();
+
 export function BudgetProvider({ children }: { children: ReactNode }) {
   const [budget, setBudget] = useState<Budget>(load);
-  const [sync, setSync] = useState<SyncStatus>(() => (readSyncConfig() ? { state: 'syncing' } : { state: 'off' }));
+  const [sync, setSync] = useState<SyncStatus>(() => pairing && !pairing.ok
+    ? { state: 'error', message: pairing.reason }
+    : readSyncConfig() ? { state: 'syncing' } : { state: 'off' });
+  // A device that's just been connected takes the budget from the repo (what it had is kept in Earlier versions).
+  const preferRemote = useRef(!!pairing?.ok);
   // The repo file's version and the change last saved there, so only real changes are sent.
   const sha = useRef<string | undefined>(undefined);
   const savedAt = useRef<string | undefined>(undefined);
@@ -128,7 +135,8 @@ export function BudgetProvider({ children }: { children: ReactNode }) {
     try {
       const remote = await pullBudget(c);
       const local = latest.current;
-      if (remote && (newer(remote.budget, local) || !local.updatedAt)) {
+      if (remote && (preferRemote.current || newer(remote.budget, local) || !local.updatedAt)) {
+        preferRemote.current = false;
         sha.current = remote.sha;
         savedAt.current = remote.budget.updatedAt;
         if (remote.budget.updatedAt !== local.updatedAt) {
@@ -192,6 +200,7 @@ export function BudgetProvider({ children }: { children: ReactNode }) {
     writeSyncConfig(c);
     sha.current = undefined;
     savedAt.current = undefined;
+    preferRemote.current = true; // connecting: the repo's budget comes to this browser
     await reconcile();
   }, [reconcile]);
   const disconnectSync = useCallback(() => { writeSyncConfig(null); sha.current = undefined; setSync({ state: 'off' }); }, []);

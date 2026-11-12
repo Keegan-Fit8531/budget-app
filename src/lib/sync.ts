@@ -89,3 +89,43 @@ export async function pushBudget(c: SyncConfig, budget: Budget, sha?: string): P
   if (!res.ok) throw new SyncError(res.status === 409 || res.status === 422 ? 'Changed in another browser.' : explain(res.status), res.status);
   return ((await res.json()) as { content: { sha: string } }).content.sha;
 }
+
+// ---------------------------------------------------------------------------------------------
+// Connect another device by QR code: a link to this app carrying the repo and token after the #.
+// The part after # is never sent to any server; the app reads it, saves it, and removes it from the
+// address and history straight away. The link stops working after 10 minutes.
+// ---------------------------------------------------------------------------------------------
+
+const PAIR_PREFIX = '#/connect/';
+const PAIR_MINUTES = 10;
+
+const b64url = (s: string) => toBase64(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+const unb64url = (s: string) => fromBase64(s.replace(/-/g, '+').replace(/_/g, '/'));
+
+/** A link that connects another device to the same repo (shown as a QR code). */
+export function pairingLink(c: SyncConfig, now = Date.now()): string {
+  const payload = b64url(JSON.stringify({ r: c.repo, p: c.path, t: c.token, e: now + PAIR_MINUTES * 60_000 }));
+  return `${location.origin}${location.pathname}${PAIR_PREFIX}${payload}`;
+}
+
+export type PairingResult = { ok: true; config: SyncConfig } | { ok: false; reason: string } | null;
+
+/**
+ * If the app was opened from a connect link: save the connection for this browser and take the link out
+ * of the address bar and history. Null when it wasn't opened from one.
+ */
+export function takePairingFromUrl(now = Date.now()): PairingResult {
+  if (!location.hash.startsWith(PAIR_PREFIX)) return null;
+  const payload = location.hash.slice(PAIR_PREFIX.length);
+  history.replaceState(null, '', `${location.pathname}#/settings`);
+  try {
+    const d = JSON.parse(unb64url(payload)) as { r: string; p?: string; t: string; e: number };
+    if (!d.r || !d.t) return { ok: false, reason: 'That QR code isn’t a connect code.' };
+    if (now > d.e) return { ok: false, reason: 'That QR code has expired. Show a new one on your other device.' };
+    const config = { repo: d.r, path: d.p || 'budget.json', token: d.t };
+    writeSyncConfig(config);
+    return { ok: true, config };
+  } catch {
+    return { ok: false, reason: 'That QR code couldn’t be read.' };
+  }
+}
