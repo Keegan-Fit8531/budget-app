@@ -111,6 +111,8 @@ export function BudgetProvider({ children }: { children: ReactNode }) {
   const latest = useRef(budget);
   latest.current = budget;
   const busy = useRef(false);
+  // Bumped to try a save again when a sync was already running.
+  const [retry, setRetry] = useState(0);
 
   useEffect(() => {
     try { localStorage.setItem(KEY, JSON.stringify(budget)); } catch { /* ignore */ }
@@ -161,7 +163,7 @@ export function BudgetProvider({ children }: { children: ReactNode }) {
     const c = readSyncConfig();
     if (!c || !budget.updatedAt || budget.updatedAt === savedAt.current) return;
     const t = setTimeout(async () => {
-      if (busy.current) return;
+      if (busy.current) { setRetry((n) => n + 1); return; } // a sync is running: try again shortly
       busy.current = true;
       setSync({ state: 'syncing' });
       try {
@@ -178,7 +180,7 @@ export function BudgetProvider({ children }: { children: ReactNode }) {
       }
     }, 1500);
     return () => clearTimeout(t);
-  }, [budget, reconcile]);
+  }, [budget, reconcile, retry]);
 
   const update = useCallback((fn: (b: Budget) => Budget) => setBudget((b) => { keepVersion(b); return stamp(autoBalance(fn(structuredClone(b)))); }), []);
   const replace = useCallback((b: Budget) => setBudget((cur) => { keepVersion(cur, true); return stamp(autoBalance(b)); }), []);
