@@ -446,7 +446,7 @@ export function Planner() {
                 return (
                   <details className="cost-split" open={openCosts.includes(a.account.id)}
                     onToggle={(e) => toggleCosts(a.account.id, (e.currentTarget as HTMLDetailsElement).open)}>
-                    <summary>{rows.length} costs this pay</summary>
+                    <summary>{rows.length} costs this pay{split ? `, per ${mode}` : ''}</summary>
                     <div className="cost-rows">
                       {rows.map((r) => {
                         const each = r.amount / r.dates.length;
@@ -455,9 +455,13 @@ export function Planner() {
                           <span key={r.name} className="between small" style={{ flexWrap: 'nowrap', gap: 8, alignItems: 'baseline' }}>
                             <span style={{ minWidth: 0 }}>
                               {r.name}{' '}
-                              <span className="muted">{same ? `${r.dates.length} × ${money(each, { whole: each % 100 === 0 })}` : r.dates.length === 1 ? fmtShort(r.dates[0]) : `${r.dates.length} payments`}</span>
+                              <span className="muted">
+                                {same ? `${r.dates.length} × ${money(each, { whole: each % 100 === 0 })}` : r.dates.length === 1 ? fmtShort(r.dates[0]) : `${r.dates.length} payments`}
+                                {/* Week / Fortnight: say what the whole pay is, since the amount on the right is per week */}
+                                {split ? `${same ? ' =' : ' ·'} ${money(r.amount, { whole: r.amount % 100 === 0 })} this pay` : ''}
+                              </span>
                             </span>
-                            <b className="num">{money(v(r.amount), { whole: !split && r.amount % 100 === 0 })}</b>
+                            <b className="num">{money(v(r.amount), { whole: !split && r.amount % 100 === 0 })}{split && <small className="muted" style={{ fontWeight: 500 }}> /{mode === 'week' ? 'wk' : 'fn'}</small>}</b>
                           </span>
                         );
                       })}
