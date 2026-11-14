@@ -9,6 +9,7 @@ import { PeriodProvider } from './lib/period';
 import { Debts } from './pages/Debts';
 import { Deposits } from './pages/Deposits';
 import { Savings } from './pages/Savings';
+import { LogoMark } from './components/LogoMark';
 
 function useHash(): string[] {
   const read = () => window.location.hash.replace(/^#\/?/, '').split('/').filter(Boolean);
@@ -50,7 +51,7 @@ export default function App() {
   return (
     <div className="app">
       <nav className="sidebar" aria-label="Main">
-        <div className="logo"><span className="logo-mark">$</span>Paydays</div>
+        <div className="logo"><LogoMark size={36} />Paydays</div>
         {MAIN.map((n) => (
           <a key={n.id} href={`#/${n.id}`} className={`nav-link ${page === n.id ? 'active' : ''}`} aria-current={page === n.id ? 'page' : undefined}>
             <Icon name={n.icon} />{n.label}
@@ -68,7 +69,7 @@ export default function App() {
       <PeriodProvider>
       <main className="main">
         <div className="mobile-top">
-          <span className="logo-mark" aria-hidden="true">$</span>
+          <LogoMark size={28} />
           <span style={{ flex: 1, fontWeight: 700 }}>Paydays</span>
           {SETUP.map((n) => (
             <a key={n.id} href={`#/${n.id}`} className={`icon-btn ${page === n.id ? 'active' : ''}`} aria-label={n.label} aria-current={page === n.id ? 'page' : undefined}><Icon name={n.icon} /></a>
