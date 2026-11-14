@@ -390,14 +390,14 @@ export function Planner() {
                       {Math.abs(x.extra) > 2000 && <span className={`small block ${x.extra > 0 ? 'neg' : 'pos'}`}>{x.extra > 0 ? '+' : '−'}{cash(Math.abs(x.extra), { whole: true })}</span>}
                     </span>
                     {adjEdit?.id === x.a.account.id && (
-                      <div className="row wrap gap-8" style={{ gridColumn: '2 / -1', marginTop: 6 }}>
+                      <div className="row nowrap gap-6" style={{ gridColumn: '2 / -1', marginTop: 6 }}>
                         <input className="input" inputMode="decimal" autoFocus aria-label={`${x.a.account.name} this pay`} aria-invalid={adjEdit.err || undefined}
-                          value={adjEdit.text} style={{ width: 120, fontWeight: 600 }}
+                          value={adjEdit.text} style={{ flex: '1 1 0', minWidth: 0, maxWidth: 130, fontWeight: 600 }}
                           onChange={(e) => setAdjEdit({ ...adjEdit, text: e.target.value, err: false })}
                           onKeyDown={(e) => { if (e.key === 'Enter') saveAdj(); if (e.key === 'Escape') setAdjEdit(null); }} />
                         <button className="btn small primary" onClick={saveAdj}>Save</button>
-                        <button className="btn small" onClick={() => setThisPay(x.a.account.id, null)}>Back to normal ({cash(x.a.usual ?? x.usual, { whole: true })})</button>
-                        <button className="btn small ghost" onClick={() => setAdjEdit(null)}>Cancel</button>
+                        <button className="btn small" onClick={() => setThisPay(x.a.account.id, null)}>Reset ({cash(x.a.usual ?? x.usual, { whole: true })})</button>
+                        <button className="icon-btn mini plain" aria-label="Cancel" onClick={() => setAdjEdit(null)}><Icon name="x" size={16} /></button>
                       </div>
                     )}
                   </div>
