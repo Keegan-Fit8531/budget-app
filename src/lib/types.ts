@@ -24,6 +24,11 @@ export interface Account {
   groupId: string;
   note?: string;
   archived?: boolean;
+  /**
+   * When balancing changes what payday sends here, round it to a multiple of this (e.g. 5000 = $50):
+   * trims round down, top-ups round up. 0 or unset = off.
+   */
+  round?: Cents;
 }
 
 /** Something that takes money out of an account on a schedule (a bill, rent, a weekly transfer). */
