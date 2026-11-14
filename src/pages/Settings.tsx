@@ -18,6 +18,9 @@ const RULES = [
   { name: '70/20/10', needs: 70, wants: 20, savings: 10 },
 ];
 
+/** 1st, 2nd, 3rd, 4th… 11th, 12th, 13th… 21st. */
+const ordinal = (n: number) => `${n}${n % 100 >= 11 && n % 100 <= 13 ? 'th' : ['th', 'st', 'nd', 'rd'][n % 10] ?? 'th'}`;
+
 export function Settings() {
   const { budget, update, replace, reset, sync } = useBudget();
   const s = budget.settings;
@@ -27,6 +30,19 @@ export function Settings() {
 
   const p0 = periodContaining(todayISO(), s);
   const upcoming = [0, 1, 2, 3, 4, 5].map((n) => shiftPeriod(p0, n, s));
+
+  // The payday day moves every pay, so it's only changed on purpose: what's typed is held here and
+  // nothing changes until it's confirmed (a stray key press or scroll can't shift the budget).
+  const [dayDraft, setDayDraft] = useState<string | null>(null);
+  const dayText = dayDraft ?? String(s.paydayDay);
+  const typedDay = /^\d{1,2}$/.test(dayText.trim()) ? Number(dayText.trim()) : NaN;
+  const dayBad = dayDraft !== null && dayDraft.trim() !== '' && !(typedDay >= 1 && typedDay <= 31);
+  const newDay = dayDraft !== null && !dayBad && typedDay !== s.paydayDay && !Number.isNaN(typedDay) ? typedDay : undefined;
+  const withNewDay = newDay !== undefined ? periodContaining(todayISO(), { ...s, paydayDay: newDay }) : undefined;
+  const dayMove = !withNewDay ? ''
+    : withNewDay.start === todayISO() && p0.start !== withNewDay.start ? `Today becomes payday, and the next one is ${fmtDay(withNewDay.nextPayday)} (it's ${fmtDay(p0.nextPayday)} now).`
+    : withNewDay.nextPayday === p0.nextPayday ? `Your next payday is still ${fmtDay(p0.nextPayday)}; later paydays move.`
+    : `Your next payday moves from ${fmtDay(p0.nextPayday)} to ${fmtDay(withNewDay.nextPayday)}.`;
   const history = Object.entries(budget.payActuals).sort((a, b) => b[0].localeCompare(a[0]));
   const nets = history.map(([, n]) => n);
   const avgPay = nets.length ? Math.round(nets.reduce((x, y) => x + y, 0) / nets.length) : 0;
@@ -68,9 +84,24 @@ export function Settings() {
         <h2 className="h2">Pay</h2>
         <div className="form-grid">
           <label className="field">Payday (day of month)
-            <input type="number" min={1} max={31} value={s.paydayDay}
-              onChange={(e) => { const n = Number(e.target.value); if (n >= 1 && n <= 31) setS('paydayDay', n); }} />
+            <input inputMode="numeric" value={dayText} aria-invalid={dayBad || undefined}
+              onChange={(e) => setDayDraft(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Escape') setDayDraft(null); }}
+              onBlur={() => { if (newDay === undefined) setDayDraft(null); }} />
+            {dayBad && <span className="error" role="alert">Enter a day of the month, from 1 to 31.</span>}
           </label>
+          {newDay !== undefined && (
+            <div className="tip stack gap-8 under" role="group" aria-label="Change payday">
+              <span>
+                <b>Change payday from the {ordinal(s.paydayDay)} to the {ordinal(newDay)}?</b>{' '}
+                {dayMove} Every pay is then re-planned around the new dates, so costs dated near payday can land in a different pay.
+              </span>
+              <div className="row wrap gap-8">
+                <button className="btn small primary" onClick={() => { setS('paydayDay', newDay); setDayDraft(null); }}>Change payday</button>
+                <button className="btn small" onClick={() => setDayDraft(null)}>Keep the {ordinal(s.paydayDay)}</button>
+              </div>
+            </div>
+          )}
           <label className="field">If it falls on a Saturday
             <select value={s.saturday} onChange={(e) => setS('saturday', e.target.value as 'friday' | 'monday')}>
               <option value="friday">Paid Friday before</option>

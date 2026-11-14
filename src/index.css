@@ -357,6 +357,10 @@ select::-ms-expand { display: none; }
 .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: var(--s-3); }
 .form-grid.bottom { align-items: end; }
 .form-grid.tight { grid-template-columns: repeat(auto-fit, minmax(90px, 1fr)); }
+/* A prompt that belongs to one field: full width, straight under its field when the grid is one column
+   (a phone, where the keyboard would hide anything further down), and under all the fields when wider. */
+.form-grid > .under { grid-column: 1 / -1; }
+@media (min-width: 420px) { .form-grid > .under { order: 1; } }
 /* A tick box with its label: the whole row is the target */
 .check-row { display: flex; align-items: center; gap: var(--s-3); min-height: var(--tap); cursor: pointer; font-size: var(--fs-md); }
 /* A choice you tick, outlined when it's on */
