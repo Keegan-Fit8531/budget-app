@@ -407,6 +407,10 @@ select::-ms-expand { display: none; }
 .donut { border-radius: 50%; display: grid; place-items: center; flex: 0 0 auto; }
 .donut > div { border-radius: 50%; background: var(--card); display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; line-height: 1.2; }
 .chart-row { display: flex; flex-wrap: wrap; align-items: center; align-content: center; gap: var(--s-5) var(--s-6); flex: 1; }
+/* Planner: the pay and chart cards end level, but once "What's different this pay" is open the pay card
+   grows well past the chart. Rather than a tall card with the chart floating in the middle, the chart card
+   keeps its own height at the top and stays in view while the list is scrolled. */
+.planner-hero:has(.disc-head[aria-expanded="true"]) > .card:last-child { align-self: start; position: sticky; top: var(--s-5); }
 .legend { display: flex; flex-direction: column; gap: var(--s-2); font-size: var(--fs-md); flex: 1 1 200px; min-width: 0; }
 .legend-row { display: flex; align-items: center; gap: 10px; }
 .legend-row .pct { width: 40px; text-align: right; }
