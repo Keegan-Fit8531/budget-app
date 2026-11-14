@@ -38,6 +38,8 @@ export function Planner() {
   const [slipMsg, setSlipMsg] = useState<{ ok: boolean; text: string } | null>(null);
   // Last "Balance this pay": what changed and why, plus what to restore on Undo.
   const [optimiseOpen, setOptimiseOpen] = useState(false);
+  // An account's amount for this pay only, being changed from "What's different this pay".
+  const [adjEdit, setAdjEdit] = useState<{ id: string; text: string; err?: boolean } | null>(null);
   const [optUndo, setOptUndo] = useState<OptimiseUndo | null>(() => readOptimiseUndo());
   // Undo puts back only what Optimise changed, so anything you've edited since stays.
   function undoOptimise() {
@@ -75,6 +77,24 @@ export function Planner() {
   // Notes on what's unusual this pay: each account sending noticeably more or less than normal, and why
   // (an extra week, a yearly or one-off cost falling in it, or an adjustment made for this pay only).
   const realItems = new Set(budget.items.map((i) => i.id));
+  const thisPay = budget.overrides?.[period.start] ?? {};
+  /** Set (or with null, remove) an account's amount for this pay only. */
+  function setThisPay(id: string, amount: Cents | null) {
+    update((b) => {
+      const o = { ...(b.overrides?.[period.start] ?? {}) };
+      if (amount === null) delete o[id]; else o[id] = amount;
+      b.overrides = b.overrides ?? {};
+      if (Object.keys(o).length) b.overrides[period.start] = o; else delete b.overrides[period.start];
+      return b;
+    });
+    setAdjEdit(null);
+  }
+  function saveAdj() {
+    if (!adjEdit) return;
+    const c = parseMoney(adjEdit.text);
+    if (c === null || c < 0) { setAdjEdit({ ...adjEdit, err: true }); return; }
+    setThisPay(adjEdit.id, c);
+  }
   const notes = plan.accounts
     .filter((a) => a.account.id !== budget.settings.payAccountId)
     .map((a) => {
@@ -359,11 +379,25 @@ export function Planner() {
                       <b>{x.a.account.name}</b>
                       {x.why.map((w) => <span key={w} className="small muted block">{w}</span>)}
                       {x.why.length === 0 && <span className="small muted block">Usually about {cash(x.usual, { whole: true })}</span>}
+                      {x.a.account.id in thisPay && adjEdit?.id !== x.a.account.id && (
+                        <button className="btn link small" onClick={() => setAdjEdit({ id: x.a.account.id, text: centsToInput(x.a.funded) })}>Change</button>
+                      )}
                     </span>
                     <span className="num right">
                       <b>{cash(x.a.funded)}</b>
                       {Math.abs(x.extra) > 2000 && <span className={`small block ${x.extra > 0 ? 'neg' : 'pos'}`}>{x.extra > 0 ? '+' : '−'}{cash(Math.abs(x.extra), { whole: true })}</span>}
                     </span>
+                    {adjEdit?.id === x.a.account.id && (
+                      <div className="row wrap gap-8" style={{ gridColumn: '2 / -1', marginTop: 6 }}>
+                        <input className="input" inputMode="decimal" autoFocus aria-label={`${x.a.account.name} this pay`} aria-invalid={adjEdit.err || undefined}
+                          value={adjEdit.text} style={{ width: 120, fontWeight: 600 }}
+                          onChange={(e) => setAdjEdit({ ...adjEdit, text: e.target.value, err: false })}
+                          onKeyDown={(e) => { if (e.key === 'Enter') saveAdj(); if (e.key === 'Escape') setAdjEdit(null); }} />
+                        <button className="btn small primary" onClick={saveAdj}>Save</button>
+                        <button className="btn small" onClick={() => setThisPay(x.a.account.id, null)}>Back to normal ({cash(x.a.usual ?? x.usual, { whole: true })})</button>
+                        <button className="btn small ghost" onClick={() => setAdjEdit(null)}>Cancel</button>
+                      </div>
+                    )}
                   </div>
                 ))}
                 {usualTotal > plan.pay && (
