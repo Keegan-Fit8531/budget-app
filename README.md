@@ -15,6 +15,16 @@ npm test        # pay-period engine tests
 npm run build   # production build in dist/
 ```
 
+## Design
+
+How the app looks is set in one place, so pages stay consistent:
+
+- `src/index.css` holds the tokens (colours, type sizes, spacing, corner radii, light and dark) and the classes built on them. Pages use those rather than their own values.
+- `src/components/ui.tsx` holds the shared pieces: the page header, anything that opens (`Disclosure`, `Section`), account icons and colour dots, and the colour picker.
+- `src/lib/colors.ts` holds the palette for accounts, groups and categories. Colours saved by earlier versions are shown as their nearest palette colour; nothing saved is changed.
+
+The rules it follows: the brand colour is for the sidebar, primary buttons and payday; green and red only ever mean "fine" and "short"; an account's colour is a small mark beside its name, never a whole card. Each screen shows the figures you came for, with the working behind them one click away.
+
 ## Your data
 
 Everything you enter is saved in your browser only (localStorage), never sent anywhere. Use

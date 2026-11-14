@@ -1,8 +1,9 @@
 import { useState } from 'react';
-import { PALETTE } from '../lib/colors';
+import { Disclosure, Dot } from './ui';
+import { colorAt } from '../lib/colors';
 import { addPerson, contributions, ME, peopleOf, removePerson, renamePerson, setPersonTotal, UNASSIGNED, type Contribution } from '../lib/contributions';
 import { fmtShort, todayISO } from '../lib/dates';
-import { centsToInput, money, parseMoney } from '../lib/money';
+import { cash, centsToInput, parseMoney } from '../lib/money';
 import { newId, useBudget } from '../lib/store';
 import type { Budget, GoalGift, SavingsGoal } from '../lib/types';
 import { Icon } from './Icon';
@@ -42,7 +43,7 @@ export function tracksPeople(budget: Budget, goal: SavingsGoal): boolean {
   return (goal.people?.length ?? 0) > 0 || contributions(budget, goal).some((p) => p.person !== ME && p.total !== 0);
 }
 
-const colorFor = (goal: SavingsGoal, p: string) => (p === UNASSIGNED ? '#94A3B8' : PALETTE[Math.max(0, peopleOf(goal).indexOf(p)) % PALETTE.length]);
+const colorFor = (goal: SavingsGoal, p: string) => (p === UNASSIGNED ? 'var(--muted)' : colorAt(Math.max(0, peopleOf(goal).indexOf(p))));
 
 /** Slices for the goal's saved pie: each person's share of what's saved, anything not assigned, then what's still to go. */
 export function savedSlices(budget: Budget, goal: SavingsGoal, target = goal.target) {
@@ -73,35 +74,36 @@ export function PeopleChips({ goal }: { goal: SavingsGoal }) {
   const people = contributions(budget, goal).filter((p) => p.person !== UNASSIGNED);
   const named = people.reduce((t, p) => t + p.total, 0);
   const unassigned = goal.balance - named;
-  const chip = { display: 'inline-flex', alignItems: 'center', gap: 6, minHeight: 36, padding: '0 12px', borderRadius: 99, border: '1px solid var(--line)', background: 'var(--card)', color: 'inherit', font: 'inherit', fontSize: 14, cursor: 'pointer' } as const;
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-      <div className="row" style={{ flexWrap: 'wrap', gap: 6 }}>
-        <span className="small muted" style={{ marginRight: 2 }}>Put in by</span>
-        {people.map((p) => (
-          <button key={p.person} style={chip} onClick={() => setPerson(p)} aria-label={`${personLabel(p.person)}: ${money(p.total)}. Edit`}
-            title={p.remainder ? 'Gets whatever\u2019s left of the balance' : [p.base ? `${money(p.base)} earlier` : '', p.pay ? `${money(p.pay)} from pay` : '', p.added ? `${money(p.added)} added` : '', p.takenOut ? `${money(p.takenOut)} taken out` : '', p.expected ? `${money(p.expected)} expected` : ''].filter(Boolean).join(' · ') || 'Tap to set their total'}>
-            <span className="dot" style={{ background: colorFor(goal, p.person) }} />
-            {personLabel(p.person)}
-            {p.total === 0 && p.direct > 0 && !p.remainder
-              ? <><b>{money(p.direct, { whole: true })}</b><span className="small muted">paid</span></>
-              : <>
-                <b className={p.total < 0 ? 'neg' : ''}>{money(p.total, { whole: true })}</b>
-                {p.remainder && <span className="small muted">· rest</span>}
-                {p.direct > 0 && <span className="small muted">+ {money(p.direct, { whole: true })} paid</span>}
-              </>}
-            {p.expected > 0 && <span className="small muted">+{money(p.expected, { whole: true })} due</span>}
-          </button>
-        ))}
-        <button className="btn small ghost" onClick={() => setPerson('new')}><Icon name="plus" size={16} /> Person</button>
-      </div>
+    <div className="stack gap-6">
+      {/* Who put in what is in the ring above; the amounts (and editing them) are a click away. */}
+      <Disclosure title="Who put it in" meta={`${people.length} ${people.length === 1 ? 'person' : 'people'}`} storageKey={`paydays.goalpeople.${goal.id}`}>
+        <div className="row wrap gap-6">
+          {people.map((p) => (
+            <button key={p.person} className="chip" onClick={() => setPerson(p)} aria-label={`${personLabel(p.person)}: ${cash(p.total)}. Edit`}
+              title={p.remainder ? 'Gets whatever\u2019s left of the balance' : [p.base ? `${cash(p.base)} earlier` : '', p.pay ? `${cash(p.pay)} from pay` : '', p.added ? `${cash(p.added)} added` : '', p.takenOut ? `${cash(p.takenOut)} taken out` : '', p.expected ? `${cash(p.expected)} expected` : ''].filter(Boolean).join(' · ') || 'Tap to set their total'}>
+              <Dot color={colorFor(goal, p.person)} />
+              {personLabel(p.person)}
+              {p.total === 0 && p.direct > 0 && !p.remainder
+                ? <><b>{cash(p.direct, { whole: true })}</b><span className="xs muted">paid</span></>
+                : <>
+                  <b className={p.total < 0 ? 'neg' : ''}>{cash(p.total, { whole: true })}</b>
+                  {p.remainder && <span className="xs muted">· rest</span>}
+                  {p.direct > 0 && <span className="xs muted">+ {cash(p.direct, { whole: true })} paid</span>}
+                </>}
+              {p.expected > 0 && <span className="xs muted">+{cash(p.expected, { whole: true })} due</span>}
+            </button>
+          ))}
+          <button className="btn small ghost" onClick={() => setPerson('new')}><Icon name="plus" size={16} /> Person</button>
+        </div>
+      </Disclosure>
       {unassigned > 0 && (
-        <div className="tip small" style={{ alignItems: 'center' }}>
-          <span style={{ flex: 1 }}><b>{money(unassigned)}</b> of the balance isn't assigned to anyone yet. Split it to show who put in what.</span>
-          <button className="btn small primary" onClick={() => setSplitting(true)}>Split {money(unassigned, { whole: true })}</button>
+        <div className="tip small between">
+          <span className="grow"><b>{cash(unassigned)}</b> of the balance isn't assigned to anyone yet. Split it to show who put in what.</span>
+          <button className="btn small primary" onClick={() => setSplitting(true)}>Split {cash(unassigned, { whole: true })}</button>
         </div>
       )}
-      {unassigned < 0 && <span className="small muted">Everyone's totals come to {money(-unassigned)} more than the balance (costs already spent, or returns down).</span>}
+      {unassigned < 0 && <span className="small muted">Everyone's totals come to {cash(-unassigned)} more than the balance (costs already spent, or returns down).</span>}
       {person && <PersonModal goal={goal} person={person === 'new' ? undefined : person} onClose={() => setPerson(null)} />}
       {splitting && <SplitModal goal={goal} onClose={() => setSplitting(false)} />}
     </div>
@@ -120,25 +122,25 @@ export function GoalGifts({ goal }: { goal: SavingsGoal }) {
   const expected = entries.filter((x) => !x.received && !x.out).reduce((t, x) => t + x.amount, 0);
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-      <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+    <div className="stack gap-8">
+      <div className="row gap-8 wrap">
         <button className="btn small primary" onClick={() => setAdding('in')}><Icon name="plus" size={16} /> Add money</button>
         <button className="btn small" onClick={() => setAdding('out')}>Take money out</button>
       </div>
       {entries.length === 0
         ? <p className="small muted">Gifts and one-off deposits show here (your payday transfers are counted automatically). Taking money out records who it was for.</p>
-        : <p className="small muted">{money(received)} in{out ? ` · ${money(out)} out` : ''}{expected ? ` · ${money(expected)} expected` : ''}</p>}
+        : <p className="small muted">{cash(received)} in{out ? ` · ${cash(out)} out` : ''}{expected ? ` · ${cash(expected)} expected` : ''}</p>}
       <div>
         {entries.map((x) => (
           <div key={x.id} className="list-row">
-            <span className="dot" style={{ background: colorFor(goal, x.person ?? UNASSIGNED) }} />
-            <span style={{ flex: 1, minWidth: 0 }}>
+            <Dot color={colorFor(goal, x.person ?? UNASSIGNED)} />
+            <span className="grow">
               {x.out ? `For ${x.person ? personLabel(x.person) : '…'}` : x.person ? `From ${personLabel(x.person)}` : 'Money added'}
-              <span className="small muted" style={{ display: 'block' }}>
+              <span className="small muted block">
                 {[`${fmtShort(x.date)} ${x.date.slice(0, 4)}`, x.out ? 'Taken out' : x.received ? '' : 'Expected', x.note].filter(Boolean).join(' · ')}
               </span>
             </span>
-            <b className={x.out ? 'neg' : 'pos'} style={{ whiteSpace: 'nowrap' }}>{x.out ? '−' : '+'}{money(x.amount)}</b>
+            <b className={x.out ? 'neg' : 'pos'} style={{ whiteSpace: 'nowrap' }}>{x.out ? '−' : '+'}{cash(x.amount)}</b>
             {!x.received && !x.out && (
               <button className="btn small" onClick={() => update((b) => { saveGift(b, goal.id, { ...x, received: true, date: x.date > today ? today : x.date }, x); return b; })}>Received</button>
             )}
@@ -214,7 +216,7 @@ function GiftModal({ goal, gift, out = false, onClose }: { goal: SavingsGoal; gi
       <div className="modal" role="dialog" aria-modal="true" aria-labelledby="gift-title" onClick={(e) => e.stopPropagation()}>
         <div className="between">
           <h2 id="gift-title" className="h2">{gift ? (out ? 'Edit money taken out' : 'Edit money added') : out ? `${goal.name}: take money out` : `${goal.name}: add money`}</h2>
-          <button className="icon-btn" aria-label="Close" onClick={onClose}><Icon name="x" /></button>
+          <button className="icon-btn plain" aria-label="Close" onClick={onClose}><Icon name="x" /></button>
         </div>
         <div className="form-grid">
           <label className="field">Amount
@@ -233,7 +235,7 @@ function GiftModal({ goal, gift, out = false, onClose }: { goal: SavingsGoal; gi
         ) : future ? (
           <p className="small muted">A future date makes it <b>expected</b>: it counts in the plan from {fmtShort(date)}, and you tap <b>Received</b> when it arrives.</p>
         ) : (
-          <label className="row" style={{ fontSize: 14, cursor: 'pointer', minHeight: 44 }}>
+          <label className="check-row">
             <input type="checkbox" checked={received} onChange={(e) => setReceived(e.target.checked)} style={{ width: 20, height: 20, accentColor: 'var(--brand)' }} />
             Already in the account (adds it to the saved balance)
           </label>
@@ -296,7 +298,7 @@ function PersonModal({ goal, person, onClose }: { goal: SavingsGoal; person?: Co
       <div className="modal" role="dialog" aria-modal="true" aria-labelledby="person-title" onClick={(e) => e.stopPropagation()}>
         <div className="between">
           <h2 id="person-title" className="h2">{person ? personLabel(person.person) : 'Add a person'}</h2>
-          <button className="icon-btn" aria-label="Close" onClick={onClose}><Icon name="x" /></button>
+          <button className="icon-btn plain" aria-label="Close" onClick={onClose}><Icon name="x" /></button>
         </div>
         <div className="form-grid">
           <label className="field">Name
@@ -307,17 +309,17 @@ function PersonModal({ goal, person, onClose }: { goal: SavingsGoal; person?: Co
               onChange={(e) => { setTotal(e.target.value); setErr(''); }} onKeyDown={(e) => e.key === 'Enter' && save()} />
           </label>
         </div>
-        <label className="row" style={{ fontSize: 14, cursor: 'pointer', minHeight: 44, gap: 10 }}>
+        <label className="check-row">
           <input type="checkbox" checked={auto} onChange={(e) => setAuto(e.target.checked)} style={{ width: 20, height: 20, accentColor: 'var(--brand)' }} />
           <span>Gets whatever's left of the balance
-            <span className="small muted" style={{ display: 'block' }}>
+            <span className="small muted block">
               {otherRemainder ? `Takes this over from ${personLabel(otherRemainder)}. ` : ''}Their total is the balance minus everyone else's, so it always adds up.
             </span>
           </span>
         </label>
         {!auto && <p className="small muted">
           {isYou ? 'Your payday transfers to this fund are added for you automatically from the budget start. ' : ''}
-          {others ? `Their entries${person?.pay ? ' and pay' : ''} so far come to ${money(others)}; the rest is counted as put in earlier. ` : ''}
+          {others ? `Their entries${person?.pay ? ' and pay' : ''} so far come to ${cash(others)}; the rest is counted as put in earlier. ` : ''}
           Money added or taken out later keeps adding to this total. This doesn't change the fund's balance.
         </p>}
         {err && <p className="error" role="alert">{err}</p>}
@@ -366,27 +368,27 @@ function SplitModal({ goal, onClose }: { goal: SavingsGoal; onClose: () => void 
     <div className="modal-back" onClick={onClose}>
       <div className="modal" role="dialog" aria-modal="true" aria-labelledby="split-title" onClick={(e) => e.stopPropagation()}>
         <div className="between">
-          <h2 id="split-title" className="h2">Who put in the {money(goal.balance, { whole: true })}?</h2>
-          <button className="icon-btn" aria-label="Close" onClick={onClose}><Icon name="x" /></button>
+          <h2 id="split-title" className="h2">Who put in the {cash(goal.balance, { whole: true })}?</h2>
+          <button className="icon-btn plain" aria-label="Close" onClick={onClose}><Icon name="x" /></button>
         </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <div className="stack gap-8">
           {people.map((p) => (
-            <label key={p.person} className="row" style={{ gap: 10 }}>
-              <span className="dot" style={{ background: colorFor(goal, p.person) }} />
-              <span style={{ flex: 1 }}>{personLabel(p.person)}{p.person === rest && <span className="small muted" style={{ display: 'block' }}>Gets what's left</span>}</span>
+            <label key={p.person} className="row gap-8">
+              <Dot color={colorFor(goal, p.person)} />
+              <span className="grow">{personLabel(p.person)}{p.person === rest && <span className="small muted block">Gets what's left</span>}</span>
               <input inputMode="decimal" aria-label={`${personLabel(p.person)} put in`} value={p.person === rest ? centsToInput(cents(p.person) ?? 0) : vals[p.person] ?? ''} disabled={p.person === rest} placeholder="0.00"
                 onChange={(e) => { setVals((v) => ({ ...v, [p.person]: e.target.value })); setErr(''); }} onKeyDown={(e) => e.key === 'Enter' && save()}
-                style={{ width: 130, minHeight: 44, padding: '0 10px', borderRadius: 10, border: '1px solid var(--line)', background: 'var(--card)', color: 'inherit', fontSize: 16, fontWeight: 600 }} />
+                className="input" style={{ width: 130, fontWeight: 600 }} />
             </label>
           ))}
         </div>
         <div className="between">
           <button className="btn small" onClick={evenly}>Split evenly</button>
-          <b className={left < 0 ? 'neg' : left === 0 ? 'pos' : ''}>{left === 0 ? 'All assigned' : left > 0 ? `${money(left)} left to assign` : `${money(-left)} more than the balance`}</b>
+          <b className={left < 0 ? 'neg' : left === 0 ? 'pos' : ''}>{left === 0 ? 'All assigned' : left > 0 ? `${cash(left)} left to assign` : `${cash(-left)} more than the balance`}</b>
         </div>
         <p className="small muted">Anything left over stays as "Not assigned" (e.g. fund returns). Someone missing? Add them with <b>+ Person</b> first. Your payday transfers keep adding to your total.</p>
         {err && <p className="error" role="alert">{err}</p>}
-        <div className="row" style={{ justifyContent: 'flex-end' }}>
+        <div className="row end">
           <button className="btn" onClick={onClose}>Cancel</button>
           <button className="btn primary" onClick={save}>Save</button>
         </div>

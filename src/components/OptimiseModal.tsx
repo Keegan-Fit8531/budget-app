@@ -1,8 +1,9 @@
 import { useMemo, useState } from 'react';
+import { Dot } from './ui';
 import { allocationTargets, allowancePerWeek, applyAllocation, type AllocationUndo, type AllocMode } from '../lib/allocate';
 import { fmtShort, monthName, todayISO } from '../lib/dates';
 import type { Period } from '../lib/engine';
-import { centsToInput, money, parseMoney } from '../lib/money';
+import { cash, centsToInput, parseMoney } from '../lib/money';
 import { useBudget } from '../lib/store';
 import { Icon } from './Icon';
 
@@ -72,8 +73,8 @@ export function OptimiseModal({ period, leftover, onClose, onApplied }: {
     <div className="modal-back" onClick={onClose}>
       <div className="modal" role="dialog" aria-modal="true" aria-labelledby="opt-title" onClick={(e) => e.stopPropagation()}>
         <div className="between">
-          <h2 id="opt-title" className="h2">Put {money(leftover)} to work</h2>
-          <button className="icon-btn" aria-label="Close" onClick={onClose}><Icon name="x" /></button>
+          <h2 id="opt-title" className="h2">Put {cash(leftover)} to work</h2>
+          <button className="icon-btn plain" aria-label="Close" onClick={onClose}><Icon name="x" /></button>
         </div>
         <p className="small muted">Left over from the {fmtShort(period.start)} pay after everything's budgeted. Choose where it goes.</p>
 
@@ -82,28 +83,28 @@ export function OptimiseModal({ period, leftover, onClose, onApplied }: {
           <button aria-pressed={mode === 'every'} onClick={() => setMode('every')}>Every pay from now</button>
         </div>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <div className="stack gap-8">
           {targets.map((t) => {
             const on = ticked.includes(t.id);
             const amt = cents(t.id);
             const weekly = t.kind === 'allowance' && amt > 0 ? allowancePerWeek(budget, period, t, amt, mode) : null;
             return (
-              <div key={t.id} style={{ border: `1px solid ${on ? 'var(--brand-2)' : 'var(--line)'}`, borderRadius: 14, padding: '10px 12px', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-                <label className="row" style={{ flex: '1 1 180px', gap: 10, cursor: 'pointer', minHeight: 44 }}>
+              <div key={t.id} className={`pick${on ? ' on' : ''}`}>
+                <label className="check-row" style={{ flex: '1 1 180px' }}>
                   <input type="checkbox" checked={on} onChange={(e) => toggle(t.id, e.target.checked)} style={{ width: 20, height: 20, accentColor: 'var(--brand)' }} />
-                  <span className="dot" style={{ background: t.color }} />
-                  <span style={{ minWidth: 0 }}>
+                  <Dot color={t.color} />
+                  <span className="min0">
                     <b>{t.name}</b>
-                    <span className="small muted" style={{ display: 'block' }}>
-                      {weekly ? (mode === 'once' ? `+${money(weekly.perWeek)} a week this pay (${weekly.weeks} transfers)` : `+${money(weekly.perWeek)} on each weekly transfer from now`) : t.detail}
+                    <span className="small muted block">
+                      {weekly ? (mode === 'once' ? `+${cash(weekly.perWeek)} a week this pay (${weekly.weeks} transfers)` : `+${cash(weekly.perWeek)} on each weekly transfer from now`) : t.detail}
                     </span>
                   </span>
                 </label>
                 {on && (
-                  <span className="row" style={{ gap: 6 }}>
+                  <span className="row gap-6">
                     <input aria-label={`Amount for ${t.name}`} inputMode="decimal" value={amounts[t.id] ?? ''} placeholder="0.00"
                       onChange={(e) => setAmounts((a) => ({ ...a, [t.id]: e.target.value }))}
-                      style={{ width: 110, minHeight: 40, padding: '0 10px', borderRadius: 10, border: '1px solid var(--line)', background: 'var(--card)', fontSize: 16, fontWeight: 600 }} />
+                      className="input" style={{ width: 110, fontWeight: 600 }} />
                     <button className="btn small ghost" onClick={() => allTo(t.id)}>All</button>
                   </span>
                 )}
@@ -115,13 +116,13 @@ export function OptimiseModal({ period, leftover, onClose, onApplied }: {
         <div className="between">
           <button className="btn small" onClick={splitEvenly}>Split evenly between ticked</button>
           <span className={left < 0 ? 'neg' : left === 0 ? 'pos' : ''}>
-            <b>{left < 0 ? `${money(-left)} too much` : left === 0 ? 'All allocated' : `${money(left)} still left`}</b>
+            <b>{left < 0 ? `${cash(-left)} too much` : left === 0 ? 'All allocated' : `${cash(left)} still left`}</b>
           </span>
         </div>
         {mode === 'every' && <p className="small muted">Every pay raises the normal amounts from now on (allowance: each weekly transfer goes up). Check the next pays still balance on the Planner.</p>}
         {left > 0 && <p className="small muted">Anything not allocated stays as spending money.</p>}
 
-        <div className="row" style={{ justifyContent: 'flex-end' }}>
+        <div className="row end">
           <button className="btn" onClick={onClose}>Cancel</button>
           <button className="btn primary" onClick={apply} disabled={left < 0} title={left < 0 ? 'Allocate no more than is left over' : undefined}>Apply</button>
         </div>

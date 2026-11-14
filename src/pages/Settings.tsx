@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import QRCode from 'qrcode';
 import { Icon } from '../components/Icon';
+import { ColorPicker, Disclosure, PageHead, Section } from '../components/ui';
 import { fmtDay, monthName, todayISO } from '../lib/dates';
 import { budgetPeriod, clearPaydayMove, periodContaining, shiftPeriod } from '../lib/engine';
 import { downloadMonth, exportablePeriods, periodLabel } from '../lib/export';
-import { centsToInput, money, parseMoney } from '../lib/money';
+import { cash, centsToInput, parseMoney } from '../lib/money';
 import { nextColor } from '../lib/colors';
 import { CostCategoriesEditor } from '../components/CostCategories';
 import { newId, readVersions, useBudget } from '../lib/store';
@@ -56,11 +57,14 @@ export function Settings() {
     }
   }
 
+  const costCount = (budget.costCategories ?? []).length;
+
   return (
     <>
-      <header><h1 className="h1">Settings</h1></header>
+      <PageHead title="Settings" />
 
-      <section className="card" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      {/* Pay and the rule are what the budget runs on, so they're open. The rest opens when you need it. */}
+      <section className="card stack gap-16">
         <h2 className="h2">Pay</h2>
         <div className="form-grid">
           <label className="field">Payday (day of month)
@@ -89,48 +93,12 @@ export function Settings() {
             </select>
           </label>
         </div>
-        <div>
-          <p className="small muted" style={{ marginBottom: 6 }}>Your next paydays</p>
+        <Disclosure title="Your next paydays" meta={`next ${fmtDay(upcoming[1]?.start ?? upcoming[0].start)}`}>
           <div className="conv">{upcoming.map((p) => <span key={p.start}>{fmtDay(p.start)} · {p.days} days</span>)}</div>
-        </div>
+        </Disclosure>
       </section>
 
-      <section className="card" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-        <h2 className="h2">Pay history</h2>
-        {history.length === 0 && <p className="small muted">Upload a payslip on the Planner to start your pay history.</p>}
-        {history.map(([start, net]) => {
-          const slip = budget.payslips?.[start];
-          return (
-            <div key={start} className="list-row" style={{ alignItems: 'flex-start' }}>
-              <span style={{ flex: 1, minWidth: 0 }}>
-                {monthName(start)} {start.slice(0, 4)}
-                <span className="small muted" style={{ display: 'block' }}>
-                  {slip
-                    ? `Paid ${fmtDay(slip.payDay)}` +
-                      (slip.paye !== undefined ? ` · PAYE ${money(slip.paye)}` : '') +
-                      (slip.studentLoan !== undefined ? ` · student loan ${money(slip.studentLoan)}` : '') +
-                      (slip.kiwisaver !== undefined ? ` · KiwiSaver ${money(slip.kiwisaver)}` : '') +
-                      (slip.employerKiwisaver !== undefined ? ` + ${money(slip.employerKiwisaver)} employer` : '')
-                    : 'Typed in'}
-                </span>
-              </span>
-              <b>{money(net)}</b>
-              <button className="btn small ghost" aria-label={`Remove ${monthName(start)} pay`}
-                onClick={() => update((b) => { delete b.payActuals[start]; if (b.payslips) delete b.payslips[start]; clearPaydayMove(b, start); return b; })}>
-                <Icon name="x" size={16} />
-              </button>
-            </div>
-          );
-        })}
-        {history.length > 1 && (
-          <div className="between" style={{ marginTop: 6 }}>
-            <span className="small muted">Average {money(avgPay)} · range {money(minPay)} – {money(maxPay)}</span>
-            <button className="btn small" onClick={() => { setS('expectedPay', avgPay); setPayText(centsToInput(avgPay)); }}>Use average as expected pay</button>
-          </div>
-        )}
-      </section>
-
-      <section className="card" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <section className="card stack gap-16">
         <h2 className="h2">Budgeting rule</h2>
         <div className="seg" role="group" aria-label="Rule" style={{ alignSelf: 'flex-start' }}>
           {RULES.map((r) => (
@@ -138,9 +106,9 @@ export function Settings() {
           ))}
           <button aria-pressed={!RULES.some((r) => r.name === s.rule.name)} onClick={() => setS('rule', { ...s.rule, name: 'Custom' })}>Custom</button>
         </div>
-        <div className="form-grid">
+        <div className="form-grid tight">
           {(['needs', 'wants', 'savings'] as RuleBucket[]).map((k) => (
-            <label key={k} className="field">{k === 'savings' ? 'Savings and debt %' : `${k[0].toUpperCase()}${k.slice(1)} %`}
+            <label key={k} className="field">{k === 'savings' ? 'Savings, debt %' : `${k[0].toUpperCase()}${k.slice(1)} %`}
               <input type="number" min={0} max={100} value={s.rule[k]}
                 onChange={(e) => setS('rule', { ...s.rule, name: 'Custom', [k]: Number(e.target.value) })} />
             </label>
@@ -148,44 +116,77 @@ export function Settings() {
         </div>
       </section>
 
-      <section className="card" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <Section title="Pay history" summary={history.length ? `${history.length} pay${history.length === 1 ? '' : 's'} recorded · latest ${cash(history[0][1])}` : 'No pays recorded yet'}>
+        {history.length === 0 && <p className="small muted">Upload a payslip on the Planner to start your pay history.</p>}
+        <div>
+          {history.map(([start, net]) => {
+            const slip = budget.payslips?.[start];
+            return (
+              <div key={start} className="list-row top">
+                <span className="grow">
+                  {monthName(start)} {start.slice(0, 4)}
+                  <span className="small muted block">
+                    {slip
+                      ? `Paid ${fmtDay(slip.payDay)}` +
+                        (slip.paye !== undefined ? ` · PAYE ${cash(slip.paye)}` : '') +
+                        (slip.studentLoan !== undefined ? ` · student loan ${cash(slip.studentLoan)}` : '') +
+                        (slip.kiwisaver !== undefined ? ` · KiwiSaver ${cash(slip.kiwisaver)}` : '') +
+                        (slip.employerKiwisaver !== undefined ? ` + ${cash(slip.employerKiwisaver)} employer` : '')
+                      : 'Typed in'}
+                  </span>
+                </span>
+                <b className="num">{cash(net)}</b>
+                <button className="icon-btn mini plain" aria-label={`Remove ${monthName(start)} pay`}
+                  onClick={() => update((b) => { delete b.payActuals[start]; if (b.payslips) delete b.payslips[start]; clearPaydayMove(b, start); return b; })}>
+                  <Icon name="x" size={16} />
+                </button>
+              </div>
+            );
+          })}
+        </div>
+        {history.length > 1 && (
+          <div className="between">
+            <span className="small muted">Average {cash(avgPay)} · range {cash(minPay)} – {cash(maxPay)}</span>
+            <button className="btn small" onClick={() => { setS('expectedPay', avgPay); setPayText(centsToInput(avgPay)); }}>Use average as expected pay</button>
+          </div>
+        )}
+      </Section>
+
+      <Section title="Groups" summary={budget.groups.map((g) => g.name).join(', ')}>
         <div className="between">
-          <h2 className="h2">Groups</h2>
+          <p className="small muted grow">Groups drive the charts. Each one counts toward needs, wants or savings for the rule.</p>
           <button className="btn small" onClick={() => update((b) => { b.groups.push({ id: newId(), name: 'New group', color: nextColor(b.groups.map((x) => x.color)), bucket: 'wants' }); return b; })}>
             <Icon name="plus" size={16} /> Add group
           </button>
         </div>
-        <p className="small muted">Groups drive the pie charts. Each one counts toward needs, wants or savings for the rule.</p>
-        {budget.groups.map((g) => (
-          <div key={g.id} className="form-grid" style={{ alignItems: 'end' }}>
-            <label className="field">Name
-              <input value={g.name} onChange={(e) => update((b) => { b.groups.find((x) => x.id === g.id)!.name = e.target.value; return b; })} />
+        {budget.groups.map((g, i) => (
+          <div key={g.id} className={`form-grid group-row${i ? ' rest' : ''}`}>
+            <label className="field"><span>Name</span>
+              <input value={g.name} aria-label={`Group name: ${g.name}`} onChange={(e) => update((b) => { b.groups.find((x) => x.id === g.id)!.name = e.target.value; return b; })} />
             </label>
-            <label className="field">Counts as
-              <select value={g.bucket} onChange={(e) => update((b) => { b.groups.find((x) => x.id === g.id)!.bucket = e.target.value as RuleBucket; return b; })}>
+            <label className="field"><span>Counts as</span>
+              <select value={g.bucket} aria-label={`${g.name} counts as`} onChange={(e) => update((b) => { b.groups.find((x) => x.id === g.id)!.bucket = e.target.value as RuleBucket; return b; })}>
                 <option value="needs">Needs</option><option value="wants">Wants</option><option value="savings">Savings and debt</option>
               </select>
             </label>
-            <label className="field">Colour
-              <input type="color" value={g.color} style={{ padding: 4 }}
-                onChange={(e) => update((b) => { b.groups.find((x) => x.id === g.id)!.color = e.target.value; return b; })} />
-            </label>
+            <ColorPicker value={g.color} onChange={(c) => update((b) => { b.groups.find((x) => x.id === g.id)!.color = c; return b; })} />
           </div>
         ))}
-      </section>
+      </Section>
 
-      <CostCategoriesEditor />
-
-      <EarlierVersions />
+      <Section title="Savings cost categories" summary={costCount ? `${costCount} categor${costCount === 1 ? 'y' : 'ies'}` : 'For costs on savings goals'}>
+        <CostCategoriesEditor />
+      </Section>
 
       <SyncCard />
 
       <ExportMonth />
 
-      <section className="card" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-        <h2 className="h2">Your data</h2>
-        <p className="small muted">{sync.state === 'off' ? 'Right now your budget is saved in this browser only. Download a backup to move it to another device, or sync it below.' : 'Saved in this browser and synced to your private GitHub repo. A backup file is a copy you keep yourself.'}</p>
-        <div className="row" style={{ flexWrap: 'wrap' }}>
+      <EarlierVersions />
+
+      <Section title="Your data" summary="Download or restore a backup, or start over">
+        <p className="small muted">{sync.state === 'off' ? 'Right now your budget is saved in this browser only. Download a backup to move it to another device, or sync it above.' : 'Saved in this browser and synced to your private GitHub repo. A backup file is a copy you keep yourself.'}</p>
+        <div className="row wrap gap-8">
           <button className="btn" onClick={exportData}>Download backup</button>
           <button className="btn" onClick={() => fileRef.current?.click()}>Restore backup</button>
           <input ref={fileRef} type="file" accept="application/json" hidden onChange={(e) => e.target.files?.[0] && importData(e.target.files[0])} />
@@ -194,7 +195,7 @@ export function Settings() {
           </button>
         </div>
         {msg && <p className="small" role="status">{msg}</p>}
-      </section>
+      </Section>
     </>
   );
 }
@@ -221,10 +222,9 @@ function ExportMonth() {
   }
 
   return (
-    <section className="card" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-      <h2 className="h2">Export a month</h2>
+    <Section title="Export a month" summary="Download one pay as a spreadsheet">
       <p className="small muted">Download one pay as a spreadsheet (.xlsx) that opens in Excel, Numbers or Google Sheets: a summary, what payday sends to each account, and every payment due.</p>
-      <div className="form-grid" style={{ alignItems: 'end' }}>
+      <div className="form-grid bottom">
         <label className="field">Month
           <select value={period.start} onChange={(e) => { setStart(e.target.value); setMsg(null); }}>
             {periods.map((p) => (
@@ -236,7 +236,7 @@ function ExportMonth() {
       </div>
       {period.end < today && <p className="small muted">A past month is worked out from your budget as it is now, so costs you've changed since show their current amounts.</p>}
       {msg && <p className={`small${msg.ok ? '' : ' error'}`} role={msg.ok ? 'status' : 'alert'}>{msg.text}</p>}
-    </section>
+    </Section>
   );
 }
 
@@ -249,18 +249,17 @@ function EarlierVersions() {
     const w = (b.savings ?? []).find((g) => g.id === 'wedding');
     const costs = (b.savings ?? []).reduce((t, g) => t + (g.costs?.length ?? 0), 0);
     const debts = (b.debts ?? []).reduce((t, d) => t + d.plans.length, 0);
-    return `${costs} savings costs${w ? ` · wedding ${money(w.balance, { whole: true })} saved` : ''} · ${debts} debt plans`;
+    return `${costs} savings costs${w ? ` · wedding ${cash(w.balance, { whole: true })} saved` : ''} · ${debts} debt plans`;
   };
   return (
-    <section className="card" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-      <h2 className="h2">Restore an earlier version</h2>
+    <Section title="Restore an earlier version" summary={versions.length ? `${versions.length} earlier version${versions.length === 1 ? '' : 's'} kept` : 'None yet: they build up as you make changes'}>
       <p className="small muted">A copy of everything is kept automatically before changes (the last {30}, at most one every 2 minutes). Restoring keeps a copy of what you have now first, so you can switch back.</p>
       {versions.length === 0 && <p className="small muted">No earlier versions yet. They build up as you make changes.</p>}
       {versions.slice(0, 12).map((v) => (
         <div key={v.at} className="list-row">
-          <span style={{ flex: 1, minWidth: 0 }}>
+          <span className="grow">
             <b>{new Date(v.at).toLocaleString('en-NZ', { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}</b>
-            <span className="small muted" style={{ display: 'block' }}>{summary(v.budget)}</span>
+            <span className="small muted block">{summary(v.budget)}</span>
           </span>
           <button className="btn small" onClick={() => {
             if (!confirm('Go back to this version? What you have now is kept as a version too.')) return;
@@ -269,7 +268,7 @@ function EarlierVersions() {
         </div>
       ))}
       {msg && <p className="small" role="status">{msg}</p>}
-    </section>
+    </Section>
   );
 }
 
@@ -297,21 +296,19 @@ function SyncCard() {
   }
 
   return (
-    <section className="card" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-      <div className="between">
-        <h2 className="h2">Sync across browsers</h2>
-        {sync.state !== 'off' && (
-          <span className={`pill ${sync.state === 'error' ? 'bad' : 'good'}`} style={{ background: sync.state === 'error' ? 'var(--bad-bg)' : 'var(--good-bg)' }} role="status">
-            {sync.state === 'syncing' ? 'Syncing\u2026' : sync.state === 'synced' ? `Synced ${new Date(sync.at).toLocaleTimeString('en-NZ', { hour: 'numeric', minute: '2-digit' })}` : 'Not synced'}
-          </span>
-        )}
-      </div>
+    <Section title="Sync across browsers" forceOpen={sync.state === 'error' || !!err}
+      summary={sync.state === 'off' ? 'Off: saved in this browser only' : `With ${saved?.repo ?? 'your repo'}`}
+      action={sync.state !== 'off' ? (
+        <span className={`pill ${sync.state === 'error' ? 'bad' : 'good'}`} role="status">
+          {sync.state === 'syncing' ? 'Syncing\u2026' : sync.state === 'synced' ? `Synced ${new Date(sync.at).toLocaleTimeString('en-NZ', { hour: 'numeric', minute: '2-digit' })}` : 'Not synced'}
+        </span>
+      ) : undefined}>
       {sync.state === 'off' ? (
         <>
           <p className="small muted">
             Keep your budget in a <b>private</b> GitHub repo, so it's the same in every browser and on your phone. Do this once in each browser.
           </p>
-          <ol className="small" style={{ margin: 0, paddingLeft: 18, display: 'flex', flexDirection: 'column', gap: 4 }}>
+          <ol className="small stack gap-4" style={{ margin: 0, paddingLeft: 18 }}>
             {!guessRepo() && <li>Make a private repo on GitHub (e.g. <i>budget-data</i>).</li>}
             <li>
               <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noreferrer">Create a fine-grained token</a>:
@@ -335,7 +332,7 @@ function SyncCard() {
             Synced with <b>{saved?.repo}</b>. Changes save there a moment after you make them, and the newest copy is loaded when you open the app.
           </p>
           {sync.state === 'error' && <p className="small error" role="alert">{sync.message}</p>}
-          <div className="row" style={{ flexWrap: 'wrap' }}>
+          <div className="row wrap">
             <button className="btn primary" onClick={() => setQr(qr ? null : 'loading')}>{qr ? 'Hide QR code' : 'Connect another device'}</button>
             <button className="btn" onClick={syncNow} disabled={sync.state === 'syncing'}>Sync now</button>
             <button className="btn" onClick={disconnectSync}>Disconnect this browser</button>
@@ -343,7 +340,7 @@ function SyncCard() {
           {qr && saved && <ConnectQr config={saved} />}
         </>
       )}
-    </section>
+    </Section>
   );
 }
 
@@ -373,13 +370,13 @@ function ConnectQr({ config }: { config: SyncConfig }) {
   const left = Math.max(0, Math.ceil((until - now) / 60_000));
   const expired = until > 0 && now > until;
   return (
-    <div className="tip" style={{ flexDirection: 'column', alignItems: 'center', gap: 10, textAlign: 'center' }}>
+    <div className="tip stack gap-8" style={{ alignItems: 'center', textAlign: 'center' }}>
       {expired ? (
         <p className="small" style={{ margin: 0 }}>This code has expired. Choose <b>Hide QR code</b>, then <b>Connect another device</b> for a new one.</p>
       ) : svg ? (
         <>
           <div aria-label="QR code to connect another device" role="img"
-            style={{ background: '#fff', padding: 8, borderRadius: 12, width: 220, maxWidth: '100%', lineHeight: 0 }}
+            style={{ background: '#fff', padding: 8, borderRadius: 'var(--r-md)', width: 220, maxWidth: '100%', lineHeight: 0 }}
             dangerouslySetInnerHTML={{ __html: svg }} />
           <p className="small" style={{ margin: 0 }}>
             <b>Scan with your phone's camera</b> and open the link. It connects and loads your budget, with nothing to type.

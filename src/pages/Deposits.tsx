@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react';
 import { Icon } from '../components/Icon';
+import { AccIcon, Chevron, ColorPicker, PageHead } from '../components/ui';
 import { ItemModal } from '../components/ItemModal';
 import { fmtShort, todayISO } from '../lib/dates';
 import { depositFor, exactNeed, modeOf, smoothAmount, topsUp } from '../lib/balances';
 import { averageNeed, convert, itemDates, periodContaining, planFor, shiftPeriod } from '../lib/engine';
 import { PayNav, useViewPeriod } from '../lib/period';
-import { centsToInput, money, parseMoney } from '../lib/money';
+import { cash, centsToInput, parseMoney } from '../lib/money';
 import { nextColor } from '../lib/colors';
 import { newId, useBudget } from '../lib/store';
 import { balancedMode } from '../lib/rebalance';
@@ -41,16 +42,12 @@ export function Deposits({ openId }: { openId?: string }) {
 
   return (
     <>
-      <header className="between">
-        <div>
-          <h1 className="h1">Deposits and transfers</h1>
-          <p className="small muted">What each payday sends to your accounts, and the costs paid from each.</p>
-        </div>
+      <PageHead title="Deposits and transfers" sub="What each payday sends to your accounts, and the costs paid from each.">
+        <PayNav compact />
         <button className="btn primary" onClick={addAccount}><Icon name="plus" /> Add account</button>
-      </header>
-      <div className="card" style={{ padding: '10px 14px' }}><PayNav compact /></div>
+      </PageHead>
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <div className="stack gap-12">
         {shown.map((a) => (
           <AccountSection key={a.id} account={a} open={open === a.id}
             onToggle={() => setOpen(open === a.id ? null : a.id)}
@@ -61,10 +58,7 @@ export function Deposits({ openId }: { openId?: string }) {
             onAddItem={() => setModal({ accountId: a.id })} />
         ))}
       </div>
-      <div className="tip">
-        <Icon name="bulb" />
-        <span>Balances are in <a href="#/accounts">Accounts</a>. Cards, Afterpay and people you owe are in <a href="#/debts">Debts</a>. Wedding and other goals are in <a href="#/savings">Savings</a>.</span>
-      </div>
+      <p className="note">Balances are in <a href="#/accounts">Accounts</a>. Cards, Afterpay and people you owe are in <a href="#/debts">Debts</a>. Wedding and other goals are in <a href="#/savings">Savings</a>.</p>
       {budget.accounts.some((a) => a.archived && !managed.has(a.id)) && (
         <button className="btn ghost small" onClick={() => setShowArchived(!showArchived)}>
           {showArchived ? 'Hide archived' : 'Show archived accounts'}
@@ -125,21 +119,21 @@ function AccountSection({ account: a, open, onToggle, periodNeed, periodSends, p
   return (
     <section className="acc-section" style={{ opacity: a.archived ? 0.6 : 1 }}>
       <button className="acc-head" aria-expanded={open} onClick={onToggle}>
-        <span className="acc-icon" style={{ background: a.color }}><Icon name={a.kind === 'external' ? 'send' : 'bank'} /></span>
-        <span style={{ flex: 1, minWidth: 0 }}>
-          <b style={{ display: 'block' }}>{a.name}</b>
+        <AccIcon color={a.color} name={a.kind === 'external' ? 'send' : 'bank'} />
+        <span className="grow">
+          <b className="block">{a.name}</b>
           <span className="small muted">
             {isPay ? 'Pay lands here' : a.kind === 'external' ? 'Sent elsewhere' : `${items.length} cost${items.length === 1 ? '' : 's'}`}
             {a.archived ? ' · archived' : ''}
           </span>
         </span>
         {!isPay && (
-          <span style={{ textAlign: 'right' }}>
-            <b>{money(periodSends)}</b>
-            {mode !== 'fixed' && <span className="small muted" style={{ display: 'block' }}>{mode === 'smooth' ? 'steady' : 'exact'}</span>}
+          <span className="right">
+            <b className="num">{cash(periodSends)}</b>
+            {mode !== 'fixed' && <span className="small muted block">{mode === 'smooth' ? 'steady' : 'exact'}</span>}
           </span>
         )}
-        <span style={{ transform: open ? 'rotate(180deg)' : 'none', display: 'grid' }}><Icon name="down" /></span>
+        <Chevron />
       </button>
 
       {open && (
@@ -159,13 +153,11 @@ function AccountSection({ account: a, open, onToggle, periodNeed, periodSends, p
                 {budget.groups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
               </select>
             </label>
-            <label className="field">Colour
-              <input type="color" value={a.color} onChange={(e) => set('color', e.target.value)} style={{ padding: 4 }} />
-            </label>
+            <ColorPicker value={a.color} onChange={(c) => set('color', c)} />
           </div>
 
           {!isPay && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div className="stack gap-8">
               <span className="small muted">Each payday, send</span>
               <div className="seg" role="group" aria-label="Payday amount" style={{ alignSelf: 'flex-start' }}>
                 {!balanced && <button aria-pressed={mode === 'fixed'} onClick={() => setMode('fixed')}>Fixed amount</button>}
@@ -177,7 +169,7 @@ function AccountSection({ account: a, open, onToggle, periodNeed, periodSends, p
                   {balanced === 'smooth'
                     ? 'Every cost here is weekly, so it gets a steady amount: the same most pays, with 4-week pays covering the 5th week.'
                     : 'This account has bills on set dates, so each pay is worked out from them rather than a fixed amount.'}
-                  {periodSends !== (mode === 'smooth' ? steady : periodNeed) && mode !== 'fixed' ? ` The pay being viewed sends ${money(periodSends)}.` : ''}
+                  {periodSends !== (mode === 'smooth' ? steady : periodNeed) && mode !== 'fixed' ? ` The pay being viewed sends ${cash(periodSends)}.` : ''}
                 </p>
               )}
 
@@ -191,16 +183,16 @@ function AccountSection({ account: a, open, onToggle, periodNeed, periodSends, p
                     <div className="tip">
                       <Icon name="bulb" />
                       <span>
-                        This period ({periodDays} days) needs <b>{money(periodNeed)}</b>. On average it needs <b>{money(avgNeed)}</b> a month.
-                        {!hasBalance && periodNeed > split && ` Sending ${money(split)} leaves it ${money(periodNeed - split)} short.`}
+                        This period ({periodDays} days) needs <b>{cash(periodNeed)}</b>. On average it needs <b>{cash(avgNeed)}</b> a month.
+                        {!hasBalance && periodNeed > split && ` Sending ${cash(split)} leaves it ${cash(periodNeed - split)} short.`}
                       </span>
                     </div>
                   )}
                   {items.length > 0 && items.every((i) => i.frequency === 'weekly') && (
-                    <div className="tip" style={{ alignItems: 'center', flexWrap: 'wrap' }}>
+                    <div className="tip wrap" style={{ alignItems: 'center' }}>
                       <Icon name="bulb" />
                       <span style={{ flex: '1 1 220px' }}>
-                        A fixed amount goes short in 5-week pays and builds up in 4-week ones. <b>Steady</b> evens it out: about <b>{money(Math.ceil(avgNeed / 100) * 100)}</b> every pay, with 4-week pays leaving enough over for the 5th week.
+                        A fixed amount goes short in 5-week pays and builds up in 4-week ones. <b>Steady</b> evens it out: about <b>{cash(Math.ceil(avgNeed / 100) * 100)}</b> every pay, with 4-week pays leaving enough over for the 5th week.
                       </span>
                       <button className="btn small primary" onClick={() => setMode('smooth')}>Even it out: use Steady</button>
                     </div>
@@ -213,8 +205,8 @@ function AccountSection({ account: a, open, onToggle, periodNeed, periodSends, p
                   <Icon name="bulb" />
                   <span>
                     {steady === Math.ceil(avgNeed / 100) * 100
-                      ? <>Sends <b>{money(steady)}</b> every payday.</>
-                      : <>Sends <b>{money(steady)}</b> next payday, then usually <b>{money(Math.ceil(avgNeed / 100) * 100)}</b>. {steady > avgNeed ? 'The extra covers earlier transfers and leaves enough for the next 5-week pay, so later pays stay level.' : 'A little less while there\u2019s extra in the account.'}</>}
+                      ? <>Sends <b>{cash(steady)}</b> every payday.</>
+                      : <>Sends <b>{cash(steady)}</b> next payday, then usually <b>{cash(Math.ceil(avgNeed / 100) * 100)}</b>. {steady > avgNeed ? 'The extra covers earlier transfers and leaves enough for the next 5-week pay, so later pays stay level.' : 'A little less while there\u2019s extra in the account.'}</>}
                     {' '}4-week periods leave a little over that covers the 5th week, so the account never goes below $0.
                     {hasBalance
                       ? ' Worked out from the balance in Accounts, and it updates when you change it.'
@@ -231,8 +223,8 @@ function AccountSection({ account: a, open, onToggle, periodNeed, periodSends, p
                       const next = shiftPeriod(periodContaining(today, budget.settings), 1, budget.settings);
                       const sends = depositFor(budget, a.id, next, today);
                       const bills = exactNeed(budget, a.id, next);
-                      return <>Sends what each pay's bills need, <b>less whatever is already left in the account</b>. Next pay ({fmtShort(next.start)}): bills {money(bills)}{bills > sends ? `, ${money(bills - sends)} already there` : ''}, so it sends <b>{money(sends)}</b>.</>;
-                    })() : <>Sends exactly what each period needs. This period ({periodDays} days) that's <b>{money(periodNeed)}</b>, averaging <b>{money(avgNeed)}</b> a month.</>}
+                      return <>Sends what each pay's bills need, <b>less whatever is already left in the account</b>. Next pay ({fmtShort(next.start)}): bills {cash(bills)}{bills > sends ? `, ${cash(bills - sends)} already there` : ''}, so it sends <b>{cash(sends)}</b>.</>;
+                    })() : <>Sends exactly what each period needs. This period ({periodDays} days) that's <b>{cash(periodNeed)}</b>, averaging <b>{cash(avgNeed)}</b> a month.</>}
                   </span>
                 </div>
               )}
@@ -241,25 +233,24 @@ function AccountSection({ account: a, open, onToggle, periodNeed, periodSends, p
 
           {(a.kind === 'bank' || items.length > 0) && (
             <div>
-              <div className="between" style={{ marginBottom: 4 }}>
-                <h3 style={{ fontSize: 15 }}>Costs paid from here</h3>
+              <div className="card-head" style={{ marginBottom: 4 }}>
+                <h3 className="h3">Costs paid from here</h3>
                 <button className="btn small" onClick={onAddItem}><Icon name="plus" size={16} /> Add cost</button>
               </div>
               {items.length === 0 && <p className="small muted">No costs yet.</p>}
               {items.map((i) => {
                 const next = itemDates(i, today, '2100-01-01', budget.settings)[0];
                 return (
-                  <button key={i.id} className="list-row" onClick={() => onEditItem(i)}
-                    style={{ width: '100%', background: 'none', border: 0, borderBottom: '1px solid var(--line)', cursor: 'pointer', textAlign: 'left' }}>
-                    <span style={{ flex: 1, minWidth: 0 }}>
+                  <button key={i.id} className="list-row" onClick={() => onEditItem(i)}>
+                    <span className="grow">
                       {i.name}
-                      <span className="small muted" style={{ display: 'block' }}>
+                      <span className="small muted block">
                         {FREQ_LABEL[i.frequency]}{next ? ` · next ${fmtShort(next)}` : ' · finished'}
-                        {i.frequency !== 'once' && i.frequency !== 'monthly' ? ` · ${money(convert(i.amount, i.frequency, 'month'))}/mo avg` : ''}
+                        {i.frequency !== 'once' && i.frequency !== 'monthly' ? ` · ${cash(convert(i.amount, i.frequency, 'month'))}/mo avg` : ''}
                         {i.note ? ` · ${i.note}` : ''}
                       </span>
                     </span>
-                    <b>{money(i.amount)}</b>
+                    <b>{cash(i.amount)}</b>
                     <Icon name="edit" size={16} />
                   </button>
                 );
