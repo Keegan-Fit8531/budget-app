@@ -2,7 +2,7 @@ import { accountMode, levelAmount, spareInfo } from './balances';
 import { fmtShort } from './dates';
 import { debtAdvice } from './debts';
 import { todayISO } from './dates';
-import { planFor, shiftPeriod, upcomingPayPeriod, type Period } from './engine';
+import { periodContaining, planFor, shiftPeriod, upcomingPayPeriod, type Period } from './engine';
 import type { ISODate } from './dates';
 import type { Budget, Cents } from './types';
 
@@ -244,12 +244,25 @@ export function clearAuto(b: Budget, start: ISODate): void {
 }
 
 /**
+ * Undo what automatic balancing set for upcoming pays that no longer exist. When the payday day or a
+ * weekend rule changes, pays start on other dates, and what was worked out for the old dates would
+ * otherwise sit there unused (and come back, out of date, if the payday were ever set back). Amounts
+ * you set yourself, and anything kept for a pay that has already started, are left as they are.
+ */
+export function clearOrphanAuto(b: Budget, today: ISODate = todayISO()): void {
+  for (const start of Object.keys(b.autoBalanced ?? {})) {
+    if (start > today && periodContaining(start, b.settings).start !== start) clearAuto(b, start);
+  }
+}
+
+/**
  * Balance every upcoming pay, in order, from scratch: what it set last time is undone first, so a pay
  * that no longer needs a trim gets its normal amount back. Changes you made yourself are built on.
  * Same inputs give the same result, so it's safe to run after every change.
  */
 export function autoBalance(b: Budget, today: ISODate = todayISO()): Budget {
   b.autoBalanced = b.autoBalanced ?? {};
+  clearOrphanAuto(b, today);
   for (const p of autoPays(b, today)) {
     clearAuto(b, p.start);
     // Whatever is still adjusted now is yours: balancing builds around it.

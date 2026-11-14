@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { balanceToday, billTracker, estimateBalance } from './balances';
+import { balanceToday, billTracker, depositFor, estimateBalance } from './balances';
 import { addDays } from './dates';
 import { applyPayment, debtSchedules, planSchedule, recordHistory, settleDue } from './debts';
 import { classifyText, matchDebt, parseDate, parseStatementText, recordStatement } from './documents';
@@ -240,6 +240,42 @@ describe('automatic balancing', () => {
     expect([balancedMode(b, 'bills'), balancedMode(b, 'food'), balancedMode(b, 'spare')]).toEqual(['not-fixed', 'smooth', undefined]);
     autoBalance(b, '2026-11-12'); // settings.autoBalance is false in this budget: it's ignored now
     expect(b.split.map((l) => l.mode)).toEqual(['exact', 'smooth', 'fixed']);
+  });
+
+  it('when the payday changes, what it set for pays that no longer exist is undone', () => {
+    // $200 is set aside on the 19th of each month, from an account that gets $200 a pay and has nothing in it.
+    const b = budget();
+    b.accounts.push({ id: 'car', name: 'Car', kind: 'bank', color: '#000', groupId: 'needs' });
+    b.split.push({ accountId: 'car', amount: 20000, mode: 'fixed' });
+    b.items.push({ id: 'c', name: 'Service set-aside', amount: 20000, frequency: 'monthly', start: '2026-01-19', accountId: 'car' });
+    b.balances = { car: { amount: 0, asOf: '2026-11-11' } };
+    const today = '2026-11-14';
+
+    // Paid on the 19th, each set-aside comes out on payday: nothing to adjust.
+    autoBalance(b, today);
+    expect(b.overrides?.['2026-11-19']?.car).toBeUndefined();
+
+    // Paid on the 20th, 19 Nov's comes out the day before payday with nothing there, so the pay
+    // starting Fri 20 Nov is topped up to cover it as well as 19 Dec's.
+    b.settings.paydayDay = 20;
+    autoBalance(b, today);
+    expect(b.overrides?.['2026-11-20']?.car).toBe(40000);
+    expect(b.autoBalanced?.['2026-11-20']?.car).toMatchObject({ prev: null, to: 40000 });
+    // An amount set by hand for that pay, and a past pay's record, to check they're left alone.
+    b.overrides!['2026-11-20'].food = 12300;
+    b.autoBalanced!['2026-10-20'] = { car: { prev: null, to: 25000, reason: 'An earlier pay' } };
+    b.overrides!['2026-10-20'] = { car: 25000 };
+
+    // Back to the 19th: no pay starts on 20 Nov any more, so its top-up goes rather than lingering…
+    b.settings.paydayDay = 19;
+    autoBalance(b, today);
+    expect(b.autoBalanced?.['2026-11-20']).toBeUndefined();
+    expect(b.overrides?.['2026-11-20']).toEqual({ food: 12300 }); // …but what you set yourself stays
+    expect(b.overrides?.['2026-11-19']?.car).toBeUndefined();
+    expect(depositFor(b, 'car', periodContaining('2026-11-19', b.settings), today)).toBe(20000);
+    // A pay that had already started keeps its record (it's history, and comes back if the payday does).
+    expect(b.autoBalanced?.['2026-10-20']).toBeDefined();
+    expect(b.overrides?.['2026-10-20']).toEqual({ car: 25000 });
   });
 });
 
