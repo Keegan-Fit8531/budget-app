@@ -187,7 +187,7 @@ export function PayProjectionView({ budget, account, period, day, today = todayI
           <span className="small muted">Still to come</span>
           <b>{cash(toCome, { whole: true })}</b>
           <span className={`xs ${left !== undefined && left < 0 ? 'neg' : 'muted'}`}>
-            {left === undefined ? `${comeRows.length} payment${comeRows.length === 1 ? '' : 's'}` : left < 0 ? `${cash(-left, { whole: true })} short` : `leaves ${cash(left, { whole: true })}${steady ? ' buffer' : ''}`}
+            {left === undefined ? `${comeRows.length} payment${comeRows.length === 1 ? '' : 's'}` : left < 0 ? `${cash(-left, { whole: true })} short` : `${steady ? 'buffer' : 'leaves'} ${cash(left, { whole: true })}`}
           </span>
         </div>
       </div>

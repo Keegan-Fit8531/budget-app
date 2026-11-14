@@ -3,7 +3,7 @@ import { DebtChart } from '../components/DebtChart';
 import { Icon } from '../components/Icon';
 import { AccIcon, Chevron, PageHead } from '../components/ui';
 import { PaydayControl } from '../components/PaydayControl';
-import { nextColor, tone } from '../lib/colors';
+import { nextColor } from '../lib/colors';
 import { addDays, fmtDay, fmtShort, monthName, ordinal, todayISO, type ISODate } from '../lib/dates';
 import { applyPayment, beforeStatement, debtAdvice, debtPerPay, debtSchedules, gemPlan, historyOwed, owed, type DebtAdvice, PLAN_LABEL, plannedOwed, planSchedule, projectedOwed, recordHistory, suggestPlan, unplanned } from '../lib/debts';
 import { periodContaining, planFor, upcomingPayPeriod } from '../lib/engine';
@@ -104,6 +104,8 @@ export function Debts() {
         </div>
       )}
 
+      {debts.length === 0 && <p className="note">No debts yet. Add a card, Afterpay, a loan or someone you owe to plan its payments.</p>}
+
       <div className="stack gap-12">
       {debts.map((d) => {
         const acc = budget.accounts.find((a) => a.id === d.accountId) ?? (d.color ? { color: d.color } : undefined);
@@ -154,7 +156,7 @@ export function Debts() {
               </div>
             )}
 
-            <BalanceEditor debt={d} color={acc?.color} used={used} onAddPlan={() => setPlanModal({ debt: d, prefill: unplanned(d) })} />
+            <BalanceEditor debt={d} used={used} onAddPlan={() => setPlanModal({ debt: d, prefill: unplanned(d) })} />
 
             {gem && (
               <div className="tip stack gap-8">
@@ -170,7 +172,7 @@ export function Debts() {
                 <div className="trio">
                   <div className="stat" style={{ background: 'var(--card)' }}><span className="small muted">No interest</span><b>{cash(gem.recommended)}</b><span className="xs muted">a pay</span></div>
                   <div className="stat" style={{ background: 'var(--card)' }}><span className="small muted">Minimum</span><b>{cash(gem.minimum)}</b><span className="xs muted">this month</span></div>
-                  <div className="stat" style={{ background: 'var(--card)' }}><span className="small muted">You're paying</span><b className={gem.perPay < gem.recommended ? 'neg' : ''}>{cash(gem.perPay)}</b><span className="xs muted">a pay</span></div>
+                  <div className="stat" style={{ background: 'var(--card)' }}><span className="small muted">You pay</span><b className={gem.perPay < gem.recommended ? 'neg' : ''}>{cash(gem.perPay)}</b><span className="xs muted">a pay</span></div>
                 </div>
                 {gem.perPay < gem.recommended && (
                   <span className="small error">At {cash(gem.perPay)} a pay, some interest-free plans won't be cleared in time. See the warnings below.</span>
@@ -195,7 +197,7 @@ export function Debts() {
                     {PLAN_LABEL[p.type]}{p.months && p.type !== 'afterpay' && p.type !== 'balance' ? ` · ${p.months} months` : ''}
                     {' · '}bought {fmtShort(p.purchaseDate)} for {cash(p.original)}
                   </span>
-                  <div className="bar" style={{ marginTop: 2 }}><div style={{ width: `${done}%`, background: tone(acc?.color) }} /></div>
+                  <div className="bar" style={{ marginTop: 2 }} role="img" aria-label={`${Math.round(done)}% paid off`}><div style={{ width: `${done}%` }} /></div>
                   <span className="small">
                     {p.remaining <= 0 ? 'Paid off'
                       : [
@@ -491,7 +493,7 @@ export function DebtModal({ debt, onClose, onDelete }: { debt?: Debt; onClose: (
 }
 
 /** Outstanding balance and available credit, editable either way round. */
-function BalanceEditor({ debt: d, color, used, onAddPlan }: { debt: Debt; color?: string; used: number; onAddPlan: () => void }) {
+function BalanceEditor({ debt: d, used, onAddPlan }: { debt: Debt; used: number; onAddPlan: () => void }) {
   const { budget, update } = useBudget();
   // Money owed outside a plan still gets paid from the payday amount; it's only unscheduled when that's $0.
   const unscheduled = debtPerPay(budget, d) === 0;
@@ -566,7 +568,7 @@ function BalanceEditor({ debt: d, color, used, onAddPlan }: { debt: Debt; color?
         <span><b className="fig-sm">{cash(o)}</b> owed</span>
         {d.limit ? <span className="muted"><b className={d.limit - o < 0 ? 'neg' : ''}>{cash(d.limit - o)}</b> available of {cash(d.limit, { whole: true })}</span> : null}
       </div>
-      {d.limit ? <div className="bar"><div style={{ width: `${used}%`, background: used > 80 ? 'var(--bad)' : tone(color) }} /></div> : null}
+      {d.limit ? <div className="bar" role="img" aria-label={`${Math.round(used)}% of the limit used`}><div style={{ width: `${used}%`, background: used > 80 ? 'var(--bad)' : undefined }} /></div> : null}
       <div className="between small">
         <span className="muted">
           {d.balance ? `Balance checked ${fmtShort(d.balance.asOf)}${d.balance.asOf.slice(0, 4) !== today.slice(0, 4) ? ` ${d.balance.asOf.slice(0, 4)}` : ''}` : 'From your plans below'}

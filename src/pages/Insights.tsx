@@ -56,7 +56,8 @@ export function Insights() {
   });
 
   const tips: string[] = [];
-  for (const b of byBucket) {
+  // Nothing to compare until there's a pay to share out.
+  for (const b of pay > 0 ? byBucket : []) {
     const diff = b.amount - (pay * b.target) / 100;
     if (Math.abs(b.pct - b.target) < 3) continue;
     const top = perAccount
@@ -165,9 +166,11 @@ export function Insights() {
         <div className="card stack gap-16">
           <div className="card-head">
             <h2 className="h2">By account</h2>
-            <span className="small muted">{accountSlices.length} accounts, largest first</span>
+            {accountSlices.length > 1 && <span className="small muted">{accountSlices.length} accounts, largest first</span>}
           </div>
-          <BarList slices={accountSlices} />
+          {accountSlices.length === 0
+            ? <p className="note">Nothing is sent to an account yet.</p>
+            : <BarList slices={accountSlices} />}
         </div>
       {tips.length > 0 && (
         <section className="card stack gap-8">

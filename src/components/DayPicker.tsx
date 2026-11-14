@@ -64,8 +64,11 @@ export function DayPicker({ dv }: { dv: DayView }) {
         </div>
         <div className="row gap-4 day-steps" style={{ flex: '0 0 auto' }}>
           {moved && <button className="btn small ghost" onClick={() => { goPay(0); setPicking(false); }}>Today</button>}
-          <button className={`icon-btn plain has-tip${open ? ' on' : ''}`} data-tip="Look at another day" aria-label="Look at another day" aria-expanded={open}
-            onClick={() => setPicking(!open)} disabled={day !== today}><Icon name="calendar" /></button>
+          {/* While another day is chosen the slider stays open, and Today puts it away. */}
+          {day === today && (
+            <button className={`icon-btn plain has-tip${open ? ' on' : ''}`} data-tip="Look at another day" aria-label="Look at another day" aria-expanded={open}
+              onClick={() => setPicking(!open)}><Icon name="calendar" /></button>
+          )}
           <button className="icon-btn plain" aria-label="Previous pay" disabled={offset === 0} onClick={() => goPay(offset - 1)}><Icon name="left" /></button>
           <button className="icon-btn plain" aria-label="Next pay" onClick={() => goPay(offset + 1)}><Icon name="right" /></button>
         </div>

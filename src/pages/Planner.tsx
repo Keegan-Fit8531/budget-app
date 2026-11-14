@@ -405,6 +405,7 @@ export function Planner() {
           <a href="#/deposits" className="btn small ghost">Edit accounts</a>
         </div>
 
+        {cards.length === 0 && <p className="note">Nothing is sent on from your pay yet. Use Add for a cost, a savings goal or a debt, and it shows here.</p>}
         <div className="acc-grid">
           {cards.map((a) => {
             const isPay = a.account.id === budget.settings.payAccountId;

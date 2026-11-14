@@ -207,7 +207,6 @@ h1, h2, h3, p { margin: 0; }
   .page-head .pay-nav.compact { justify-content: space-between; }
   .pay-nav-steps .icon-btn, .day-steps .icon-btn { width: 36px; }
   .acc-head .h2 { font-size: var(--fs-lg); }
-  .btn.small { padding: 0 10px; }
 }
 
 /* ---------- Card ---------- */
@@ -231,6 +230,7 @@ h1, h2, h3, p { margin: 0; }
 .btn.primary { background: var(--brand); border-color: var(--brand); color: var(--on-brand); }
 .btn.primary:hover { filter: brightness(1.12); }
 .btn.small { min-height: 36px; padding: 0 var(--s-3); font-size: var(--fs-sm); }
+@media (max-width: 899px) { .btn.small { padding: 0 10px; gap: 6px; } }
 .btn.ghost { border-color: transparent; background: transparent; }
 .btn.ghost:hover { background: var(--soft); }
 .btn.danger { color: var(--bad); }
