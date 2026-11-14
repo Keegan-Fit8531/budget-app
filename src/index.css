@@ -75,6 +75,10 @@
 
   --tap: 44px;          /* smallest touch target */
 
+  /* Motion */
+  --ease-out: cubic-bezier(.22, .8, .24, 1);
+  --dur-open: .3s;      /* details opening and closing */
+
   font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
   font-size: var(--fs-md);
   line-height: 1.45;
@@ -239,6 +243,8 @@ h1, h2, h3, p { margin: 0; }
 .icon-btn:hover { border-color: var(--muted); }
 .icon-btn:disabled { opacity: 0.4; cursor: default; }
 .icon-btn.mini { width: 32px; height: 32px; border-radius: var(--r-sm); color: var(--muted); }
+/* The height of a small button, to sit beside one */
+.icon-btn.sm { width: 36px; height: 36px; color: var(--muted); }
 .icon-btn.plain { border-color: transparent; background: transparent; }
 .icon-btn.plain:hover, .icon-btn.plain.on { background: var(--soft); }
 .icon-btn.brand { background: var(--brand); border-color: var(--brand); color: var(--on-brand); }
@@ -415,9 +421,22 @@ select::-ms-expand { display: none; }
 .disc-head { display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 0; background: none; border: 0; cursor: pointer; font-size: var(--fs-sm); font-weight: 600; color: var(--ink); text-align: left; }
 .disc-head.wide { display: flex; width: 100%; justify-content: space-between; gap: var(--s-3); }
 .disc-head .disc-meta { font-weight: 500; color: var(--muted); }
-.chev { display: inline-grid; flex: 0 0 auto; transition: transform .15s; color: var(--muted); }
+.chev { display: inline-grid; flex: 0 0 auto; transition: transform .25s var(--ease-out); color: var(--muted); }
 [aria-expanded="true"] > .chev, .chev.open { transform: rotate(180deg); }
 .disc-body { padding-top: var(--s-1); display: flex; flex-direction: column; gap: var(--s-3); }
+/* Opening and closing (Collapse): the height grows from nothing while the content fades in, and back. */
+.collapse { display: grid; grid-template-rows: 0fr; opacity: 0; visibility: hidden;
+  transition: grid-template-rows var(--dur-open) var(--ease-out), opacity .18s ease, visibility 0s linear var(--dur-open); }
+.collapse[data-open="true"] { grid-template-rows: 1fr; opacity: 1; visibility: visible;
+  transition: grid-template-rows var(--dur-open) var(--ease-out), opacity .24s ease .06s, visibility 0s; }
+.collapse > div { min-height: 0; overflow: hidden; }
+.collapse.settled > div { overflow: visible; }
+/* In a stack (a card), it takes none of the stack's gap while closed: it pulls up by the gap and gives it back inside. */
+.collapse.stacked { margin-top: calc(-1 * var(--s-3)); }
+.collapse.stacked > div > .collapse-pad { padding-top: var(--s-3); }
+@media (prefers-reduced-motion: reduce) {
+  .collapse, .collapse[data-open="true"], .chev { transition: none; }
+}
 .disc.ruled { border-top: 1px solid var(--line); padding-top: var(--s-1); }
 /* A row (account, debt, setting) that opens to show its details */
 .acc-section { border-radius: var(--r-xl); background: var(--card); }

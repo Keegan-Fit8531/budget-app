@@ -2,7 +2,7 @@ import { accountMode, levelAmount, spareInfo } from './balances';
 import { fmtShort } from './dates';
 import { debtAdvice } from './debts';
 import { todayISO } from './dates';
-import { periodContaining, planFor, shiftPeriod, upcomingPayPeriod, type Period } from './engine';
+import { hasSetAsides, isSetAside, periodContaining, planFor, setAsideOn, shiftPeriod, upcomingPayPeriod, type Period } from './engine';
 import type { ISODate } from './dates';
 import type { Budget, Cents } from './types';
 
@@ -47,16 +47,16 @@ const dollarsUp = (c: Cents) => Math.ceil(c / 100) * 100;
  *  1. Spare money already sitting in an account (balance entered, keeps a payment in reserve).
  *  2. Debt paid above what's needed on 0% / interest-free plans (no interest is saved by paying early).
  *  3. Savings contributions (largest first) — they can catch up next pay.
- *  4. Sinking funds (set-asides for later costs).
+ *  4. Money put aside for later costs with no date to meet (a WOF, tyres): paused for this pay only.
  * Never cut: rent, bills, food and gas, weekly transfers, or any debt's required payment.
  */
 /** `keep`: accounts with an amount you set yourself this pay; never trimmed or changed (except a top-up if it's short). */
 export function balancePay(input: Budget, period: Period, today: ISODate = todayISO(), keep: Set<string> = new Set()): BalanceResult {
   // Even out first: accounts with weekly costs that aren't on Steady go up and down between 4- and
   // 5-week pays, so balancing moves them to Steady (and works everything else out from there).
-  const items = (id: string) => input.items.filter((i) => i.accountId === id);
+  // The account's bills: what really comes out of it (money put aside stays in it).
+  const items = (id: string) => input.items.filter((i) => i.accountId === id && !isSetAside(i));
   const allWeekly = (id: string) => items(id).length > 0 && items(id).every((i) => i.frequency === 'weekly');
-  const setAside = (id: string) => items(id).length > 0 && items(id).every((i) => /set.?aside/i.test(`${i.name} ${i.note ?? ''}`));
   const usable = (a: Budget['accounts'][number]) => !a.archived && a.kind === 'bank' && a.id !== input.settings.payAccountId
     && input.overrides?.[period.start]?.[a.id] === undefined && !(input.savings ?? []).some((g) => g.accountId === a.id)
     && !(input.debts ?? []).some((d) => d.accountId === a.id);
@@ -64,8 +64,9 @@ export function balancePay(input: Budget, period: Period, today: ISODate = today
     // Only accounts whose costs are all weekly transfers (food and gas, allowance) go to Steady.
     ...input.accounts.filter((a) => usable(a) && accountMode(input, a.id) !== 'smooth' && allWeekly(a.id))
       .map((a) => ({ accountId: a.id, name: a.name, was: accountMode(input, a.id) as 'fixed' | 'exact', to: 'smooth' as const })),
-    // Accounts with bills on set dates (even with a weekly cost among them, e.g. a bills account) go to Exact.
-    ...input.accounts.filter((a) => usable(a) && accountMode(input, a.id) === 'fixed' && items(a.id).length > 0 && !allWeekly(a.id) && !setAside(a.id))
+    // Accounts with bills on set dates (even with a weekly cost among them, e.g. a bills account), or
+    // money put aside (a car fund), go to Exact: payday follows them rather than a fixed amount.
+    ...input.accounts.filter((a) => usable(a) && accountMode(input, a.id) === 'fixed' && (items(a.id).length > 0 || hasSetAsides(input, a.id)) && !allWeekly(a.id))
       .map((a) => ({ accountId: a.id, name: a.name, was: 'fixed' as const, to: 'exact' as const })),
   ];
   const b = toSteady.length ? structuredClone(input) : input;
@@ -90,7 +91,9 @@ export function balancePay(input: Budget, period: Period, today: ISODate = today
   // 0. Top up short accounts first — their costs are real (e.g. a Wednesday transfer before payday).
   for (const s of shortAccounts) {
     const from = funded(s.accountId);
-    changes.push({ accountId: s.accountId, name: s.name, from, to: from + s.short, topUp: true, reason: `Needs ${fmt(s.short)} more to cover its costs before next payday.` });
+    const onlyAside = !b.items.some((i) => i.accountId === s.accountId && !isSetAside(i));
+    changes.push({ accountId: s.accountId, name: s.name, from, to: from + s.short, topUp: true,
+      reason: onlyAside ? `Needs ${fmt(s.short)} more to put aside what's planned for ${asideNames(b, s.accountId)}.` : `Needs ${fmt(s.short)} more to cover its costs before next payday.` });
   }
   const topUps = shortAccounts.reduce((t, s) => t + s.short, 0);
   let short = topUps - plan.leftover;
@@ -112,6 +115,8 @@ export function balancePay(input: Budget, period: Period, today: ISODate = today
       if (id === b.settings.payAccountId || debtIds.has(id) || a.account.kind !== 'bank' || savingGroupIds.has(a.account.groupId)) continue;
       if (!b.items.some((i) => i.accountId === id)) continue;
       const name = a.account.name;
+      // What's built up in a car fund (a WOF, tyres) is waiting for those costs, whenever they come.
+      if (hasSetAsides(b, id)) { notSpare.push({ accountId: id, name, reason: `Its balance is money put aside for ${asideNames(b, id)}, so none of it is spare.` }); continue; }
       const info = spareInfo(b, id, period, 12, today);
       if (!info) { notSpare.push({ accountId: id, name, reason: 'No balance entered in Accounts, so the app can\u2019t tell if it has spare money.' }); continue; }
       if (protectedIds.has(id)) { notSpare.push({ accountId: id, name, reason: 'It\u2019s short this pay, so it was topped up instead.' }); continue; }
@@ -144,12 +149,12 @@ export function balancePay(input: Budget, period: Period, today: ISODate = today
       .filter((a) => !debtIds.has(a.account.id) && savingGroups.has(a.account.groupId) && a.funded > 0)
       .sort((x, y) => y.funded - x.funded);
     for (const a of savers) cut(a.account.id, a.account.name, a.funded, 'Saved a bit less this pay only. It can catch up next pay.');
-    // 4. Sinking funds: accounts whose costs are all set-asides for later.
-    const sinking = plan.accounts.filter((a) => {
-      const items = b.items.filter((i) => i.accountId === a.account.id);
-      return items.length > 0 && items.every((i) => /set.?aside/i.test(`${i.name} ${i.note ?? ''}`)) && a.funded > 0;
-    });
-    for (const a of sinking) cut(a.account.id, a.account.name, a.funded, 'Set-aside for later costs, paused this pay. Top it up next pay.');
+    // 4. Money put aside for later costs (a WOF, tyres): there's no date to meet, so it can wait a pay.
+    //    Only what's put aside is paused; bills paid from the same account still get their money.
+    for (const a of plan.accounts) {
+      const aside = Math.min(a.funded, setAsideOn(b, a.account.id, period.start));
+      cut(a.account.id, a.account.name, aside, `Puts aside less for ${asideNames(b, a.account.id)} this pay only (there's no date to meet). Back to the usual amount next pay.`);
+    }
   }
 
   // 5. With money left over: put a little aside in Steady accounts for the next 5-week pay, so later pays
@@ -208,17 +213,25 @@ const fmt = (c: Cents) => `$${(c / 100).toLocaleString('en-NZ', { minimumFractio
 export const AUTO_PAYS = 12;
 
 /**
- * The payday amount balancing always gives an account, whatever you pick: Steady when every cost is a
- * weekly transfer, and never a fixed amount for an account with bills on set dates ('not-fixed').
- * Undefined when the choice is yours (no costs, set-asides, sent elsewhere, debts and savings goals).
+ * The payday amount balancing always gives an account, whatever you pick: Steady when every bill is a
+ * weekly transfer, and never a fixed amount for an account with bills on set dates or money put aside
+ * ('not-fixed'). Undefined when the choice is yours (no costs, sent elsewhere, debts and savings goals).
  */
 export function balancedMode(b: Budget, accountId: string): 'smooth' | 'not-fixed' | undefined {
   const a = b.accounts.find((x) => x.id === accountId);
   const items = b.items.filter((i) => i.accountId === accountId);
   if (!a || a.archived || a.kind !== 'bank' || a.id === b.settings.payAccountId || !items.length) return undefined;
   if ((b.savings ?? []).some((g) => g.accountId === a.id) || (b.debts ?? []).some((d) => d.accountId === a.id)) return undefined;
-  if (items.every((i) => i.frequency === 'weekly')) return 'smooth';
-  return items.every((i) => /set.?aside/i.test(`${i.name} ${i.note ?? ''}`)) ? undefined : 'not-fixed';
+  // Weekly bills (money put aside alongside them or not) → Steady. Bills on set dates, or only money put
+  // aside (a car fund), are never a fixed amount: payday follows them, so it can't quietly send too little.
+  const bills = items.filter((i) => !isSetAside(i));
+  return bills.length && bills.every((i) => i.frequency === 'weekly') ? 'smooth' : 'not-fixed';
+}
+
+/** "Motor maintenance and WOF": what an account puts aside, for messages. */
+export function asideNames(b: Budget, accountId: string): string {
+  const names = [...new Set(b.items.filter((i) => i.accountId === accountId && isSetAside(i)).map((i) => i.name))];
+  return names.length <= 1 ? names[0] ?? 'later costs' : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
 }
 
 /** The pays automatic balancing covers: from the next payday on (a pay already split is left as it is). */

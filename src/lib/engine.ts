@@ -202,6 +202,39 @@ export function skippedDates(item: Pick<Item, 'frequency' | 'start' | 'end' | 's
   return skip ? occurrences(item, from, to).filter((d) => daysToPayday(d, s) <= skip) : [];
 }
 
+// ---------- Money put aside ----------
+
+/** A cost that's put aside each pay and kept in its account until needed (a WOF, tyres), not paid out on a date. */
+export const isSetAside = (item: Pick<Item, 'setAside'>): boolean => item.setAside === true;
+
+/** What a set-aside puts aside each pay: its average per month (pay is monthly), or the whole amount once. */
+export function setAsidePerPay(item: Pick<Item, 'amount' | 'frequency'>): Cents {
+  return item.frequency === 'once' ? item.amount : convert(item.amount, item.frequency, 'month');
+}
+
+/** The first payday on or after `date`. */
+function paydayFrom(date: ISODate, s: PayRules): ISODate {
+  const p = periodContaining(date, s);
+  return p.start === date ? date : p.nextPayday;
+}
+
+/** What a payday puts aside in an account: each set-aside from the first payday on or after its start, up to its end. */
+export function setAsidesOn(b: Pick<Budget, 'items' | 'settings'>, accountId: string, payday: ISODate): { item: Item; amount: Cents }[] {
+  return b.items
+    .filter((i) => i.accountId === accountId && isSetAside(i) && i.start <= payday && (!i.end || payday <= i.end)
+      && (i.frequency !== 'once' || paydayFrom(i.start, b.settings) === payday))
+    .map((item) => ({ item, amount: setAsidePerPay(item) }));
+}
+
+/** The total a payday puts aside in an account. */
+export function setAsideOn(b: Pick<Budget, 'items' | 'settings'>, accountId: string, payday: ISODate): Cents {
+  return setAsidesOn(b, accountId, payday).reduce((t, x) => t + x.amount, 0);
+}
+
+export function hasSetAsides(b: Pick<Budget, 'items'>, accountId: string): boolean {
+  return b.items.some((i) => i.accountId === accountId && isSetAside(i));
+}
+
 // ---------- Frequency conversion ----------
 
 export type View = 'week' | 'fortnight' | 'month' | 'year';
@@ -274,7 +307,7 @@ export function planFor(b: Budget, period: Period, today: ISODate = todayISO()):
   const base = live.map((account) => {
     const items = b.items.filter((i) => i.accountId === account.id);
     const dues: Due[] = [];
-    const breakdown = items.map((item) => {
+    const breakdown = items.filter((i) => !isSetAside(i)).map((item) => {
       const dates = itemDates(item, period.start, period.end, b.settings);
       dates.forEach((date) => dues.push({ item, date }));
       return { item, count: dates.length };
@@ -294,8 +327,15 @@ export function planFor(b: Budget, period: Period, today: ISODate = todayISO()):
       dues.push({ item, date: period.start });
       breakdown.push({ item, count: 1 });
     }
+    // Money put aside on payday (a WOF, tyres): part of what the account needs, though nothing is paid out.
+    for (const x of setAsidesOn(b, account.id, period.start)) {
+      const item: Item = { ...x.item, id: `aside-${x.item.id}`, amount: x.amount, frequency: 'once', start: period.start, end: undefined };
+      dues.push({ item, date: period.start });
+      breakdown.push({ item, count: 1 });
+    }
     dues.sort((x, y) => x.date.localeCompare(y.date));
-    allDues.push(...dues);
+    // The pay's list of payments leaves out what's only put aside.
+    allDues.push(...dues.filter((d) => !isSetAside(d.item)));
     const need = dues.reduce((s, d) => s + d.item.amount, 0);
     // …then what payday sends: the same amount the balance projections use (one source of truth).
     const funded = account.id === payId ? 0 : depositFor(b, account.id, period, today);
@@ -327,9 +367,10 @@ export function planFor(b: Budget, period: Period, today: ISODate = todayISO()):
 /** Steady per-pay amount for an account: its items' long-run monthly average. */
 export function averageNeed(b: Budget, accountId: string): Cents {
   const mine = b.items.filter((i) => i.accountId === accountId && i.frequency !== 'once');
-  let items = mine.filter((i) => !i.skipIfWithin).reduce((s, i) => s + convert(i.amount, i.frequency, 'month'), 0);
-  // Costs with a skip-near-payday rule: count the real dates over the next 12 pays.
-  const skippy = mine.filter((i) => i.skipIfWithin);
+  let items = mine.filter((i) => !i.skipIfWithin || isSetAside(i)).reduce((s, i) => s + convert(i.amount, i.frequency, 'month'), 0);
+  // Costs with a skip-near-payday rule: count the real dates over the next 12 pays. (Set-asides never skip:
+  // the line above counts each at its average per month, which is what it puts aside each pay.)
+  const skippy = mine.filter((i) => i.skipIfWithin && !isSetAside(i));
   if (skippy.length) {
     const first = periodContaining(todayISO(), b.settings);
     const last = shiftPeriod(first, 11, b.settings);

@@ -44,6 +44,12 @@ function tidy(b: Budget): Budget {
   b.flags = b.flags ?? [];
   b.debts = b.debts ?? [];
   b.savings = b.savings ?? [];
+  // Costs named as set-asides (e.g. "Service set-aside") were always money kept in the account, never
+  // paid out: say so once. Unticking "Put aside" afterwards sticks.
+  if (!b.flags.includes('set-aside-costs')) {
+    for (const i of b.items) if (i.frequency !== 'once' && /set.?aside/i.test(`${i.name} ${i.note ?? ''}`)) i.setAside = true;
+    b.flags.push('set-aside-costs');
+  }
   return b;
 }
 

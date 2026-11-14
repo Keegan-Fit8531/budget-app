@@ -1,12 +1,15 @@
 import { useEffect, useState } from 'react';
+import { AccountHistoryList, OneOffCostModal } from '../components/AccountHistory';
 import { DayPicker, useDayView } from '../components/DayPicker';
+import { Icon } from '../components/Icon';
 import { MonthTracker, PayProjectionView } from '../components/MonthTracker';
 import { fmtDay, fmtShort, monthName, todayISO } from '../lib/dates';
 import { accountMode, balanceOn, balanceToday, depositFor, forecastBalances, outflows, smoothAmount } from '../lib/balances';
 import { periodContaining, type Period } from '../lib/engine';
 import { cash, centsToInput, parseMoney } from '../lib/money';
-import { AccIcon, Chevron, Disclosure, PageHead } from '../components/ui';
-import { useBudget } from '../lib/store';
+import { AccIcon, Chevron, Collapse, Disclosure, PageHead } from '../components/ui';
+import { setBalance } from '../lib/history';
+import { newId, useBudget } from '../lib/store';
 import type { Account } from '../lib/types';
 
 /** Balances: what's in each account, what it's for before next payday, and where it's heading. */
@@ -70,6 +73,7 @@ function BalanceCard({ account: a, view, day, onPick }: { account: Account; view
   const s = budget.settings;
   const entry = budget.balances?.[a.id];
   const [editing, setEditing] = useState(false);
+  const [costing, setCosting] = useState(false);
   // The payments behind the figures are a click away; open or closed is remembered per account.
   const openKey = `paydays.accounts.open.${a.id}`;
   const [open, setOpenState] = useState(() => { try { return localStorage.getItem(openKey) === 'open'; } catch { return false; } });
@@ -88,11 +92,16 @@ function BalanceCard({ account: a, view, day, onPick }: { account: Account; view
   const forecast = entry && !isPay ? forecastBalances(budget, a.id, 6, today) : [];
   const lowest = forecast.reduce<number | undefined>((m, r) => (r.end === undefined ? m : m === undefined ? r.end : Math.min(m, r.end)), undefined);
   const tracked = !isPay && budget.items.some((i) => i.accountId === a.id);
+  const history = budget.accountHistory?.[a.id] ?? [];
+  const hasHistory = history.length > 0;
+  // One-off costs recorded since you last entered the balance (they've been taken off it).
+  const costsSince = history.slice(history.map((e) => e.kind).lastIndexOf('balance') + 1)
+    .reduce((t, e) => t + (e.kind === 'cost' ? e.amount : 0), 0);
 
   function save() {
     const c = parseMoney(text);
     if (c === null) return setErr('Enter the balance, like 705.00');
-    update((b) => { b.balances = { ...(b.balances ?? {}), [a.id]: { amount: c, asOf: today } }; return b; });
+    update((b) => { setBalance(b, a.id, c, today, newId()); return b; });
     setEditing(false); setErr('');
   }
 
@@ -135,7 +144,9 @@ function BalanceCard({ account: a, view, day, onPick }: { account: Account; view
         ? <PayProjectionView budget={budget} account={a} period={view} day={day} today={today} open={open} />
         : <MonthTracker budget={budget} account={a} today={today} open={open} />)}
 
-      {open && forecast.length > 0 && (
+      <Collapse open={open} stacked>
+      <div className="stack gap-12">
+      {forecast.length > 0 && (
         <Disclosure title="Next 6 pays" meta={lowest !== undefined ? `lowest ${cash(lowest)}` : undefined}>
           <div className="table-scroll">
             <table className="table">
@@ -157,21 +168,33 @@ function BalanceCard({ account: a, view, day, onPick }: { account: Account; view
         </Disclosure>
       )}
 
-      {open && entry && !editing && (
+      <AccountHistoryList account={a} />
+
+      {entry && !editing && (
         <p className="small muted">
-          {entry.asOf === today ? `You entered ${cash(entry.amount)} today.`
-            : `You entered ${cash(entry.amount)} on ${fmtShort(entry.asOf)}. Payments and paydays since then are counted in the estimate${dueToday ? "; today's bills are still to come" : ''}.`}
+          {`You entered ${cash(entry.amount + costsSince)} ${entry.asOf === today ? 'today' : `on ${fmtShort(entry.asOf)}`}`}
+          {costsSince ? `, less ${cash(costsSince)} of one-off costs since` : ''}.
+          {entry.asOf !== today && ` Payments and paydays since then are counted in the estimate${dueToday ? "; today's bills are still to come" : ''}.`}
         </p>
       )}
+      </div>
+      </Collapse>
 
       {entry && !editing && (
         <div className="between nowrap">
-          {tracked || forecast.length > 0
+          {tracked || forecast.length > 0 || hasHistory
             ? <button type="button" className="disc-head" aria-expanded={open} onClick={() => setOpen(!open)}>{open ? 'Hide details' : 'Details'}<Chevron size={16} /></button>
             : <span />}
-          <button className="btn small" onClick={() => { setText(centsToInput(now ?? entry.amount)); setEditing(true); }}>Update balance</button>
+          <span className="row nowrap gap-6">
+            <button className="icon-btn sm has-tip" data-tip="Update balance" aria-label={`Update ${a.name} balance`}
+              onClick={() => { setText(centsToInput(now ?? entry.amount)); setEditing(true); }}>
+              <Icon name="edit" size={16} />
+            </button>
+            <button className="btn small" onClick={() => setCosting(true)}><Icon name="receipt" size={16} /> One-off cost</button>
+          </span>
         </div>
       )}
+      {costing && <OneOffCostModal account={a} onClose={() => setCosting(false)} />}
     </section>
   );
 }

@@ -1,6 +1,8 @@
 import { addDays, todayISO, type ISODate } from './dates';
 import { accountHasPlans, debtPaymentsIn, debtPerPay, projectedOwed } from './debts';
-import { averageNeed, firstBudgetPay, itemDates, periodContaining, shiftPeriod, type Period } from './engine';
+import {
+  averageNeed, firstBudgetPay, hasSetAsides, isSetAside, itemDates, periodContaining, setAsideOn, setAsidesOn, shiftPeriod, type Period,
+} from './engine';
 import { accountHasGoals, savingsNeedIn } from './savings';
 import type { Budget, Cents, PaydayMode, SplitLine } from './types';
 
@@ -14,22 +16,49 @@ export function accountMode(b: Budget, accountId: string): PaydayMode {
 
 export interface Outflow { date: ISODate; amount: Cents; name: string }
 
-/** Money leaving an account between two dates (inclusive): its costs and debt plan payments. */
+/**
+ * Money leaving an account between two dates (inclusive): its costs and debt plan payments. Money put
+ * aside (a WOF, tyres) stays in the account, so it isn't here; see `fundedOut`.
+ */
 export function outflows(b: Budget, accountId: string, from: ISODate, to: ISODate): Outflow[] {
   if (from > to) return [];
   const out: Outflow[] = [];
   for (const item of b.items) {
-    if (item.accountId !== accountId) continue;
+    if (item.accountId !== accountId || isSetAside(item)) continue;
     for (const date of itemDates(item, from, to, b.settings)) out.push({ date, amount: item.amount, name: item.name });
   }
   for (const p of debtPaymentsIn(b, accountId, from, to)) out.push({ date: p.date, amount: p.amount, name: p.plan.name });
   return out.sort((x, y) => x.date.localeCompare(y.date) || y.amount - x.amount);
 }
 
-/** What 'exact' mode sends in a period: the period's costs, debt payments and savings-goal amounts. */
-export function exactNeed(b: Budget, accountId: string, p: Period): Cents {
-  return outflows(b, accountId, p.start, p.end).reduce((t, o) => t + o.amount, 0) + savingsNeedIn(b, accountId, p.start);
+/**
+ * What payday has to fund between two dates: the payments (`outflows`), plus what each payday in that
+ * time puts aside, as if it were paid out on payday. Working out the payday amounts this way means money
+ * put aside is never counted as free to pay the bills (or as spare), however much has built up.
+ */
+export function fundedOut(b: Budget, accountId: string, from: ISODate, to: ISODate): Outflow[] {
+  const out = outflows(b, accountId, from, to);
+  if (from > to || !hasSetAsides(b, accountId)) return out;
+  const s = b.settings;
+  let p = periodContaining(from, s);
+  if (p.start < from) p = shiftPeriod(p, 1, s);
+  for (; p.start <= to; p = shiftPeriod(p, 1, s)) {
+    for (const x of setAsidesOn(b, accountId, p.start)) out.push({ date: p.start, amount: x.amount, name: x.item.name });
+  }
+  return out.sort((x, y) => x.date.localeCompare(y.date) || y.amount - x.amount);
 }
+
+/** What 'exact' mode sends in a period: the period's costs, debt payments, money put aside and savings-goal amounts. */
+export function exactNeed(b: Budget, accountId: string, p: Period): Cents {
+  return fundedOut(b, accountId, p.start, p.end).reduce((t, o) => t + o.amount, 0) + savingsNeedIn(b, accountId, p.start);
+}
+
+/**
+ * A pay sent less than its usual amount (e.g. paused while pay is short): whatever it's short of what the
+ * pay puts aside is simply put aside less, not money the account is owed, so later pays don't catch it up.
+ */
+const pausedAside = (b: Budget, accountId: string, date: ISODate, usual: Cents, sent: Cents): Cents =>
+  sent >= usual ? 0 : Math.min(setAsideOn(b, accountId, date), usual - sent);
 
 const HORIZON = 24;
 const RUN_PAYS = 40;
@@ -47,7 +76,7 @@ function window(b: Budget, accountId: string, pay: Period, count: number): { slo
     slots.push({ date: p.start, fixed: b.overrides?.[p.start]?.[accountId] });
     p = shiftPeriod(p, 1, b.settings);
   }
-  return { slots, out: outflows(b, accountId, pay.start, addDays(slots[count].date, -1)) };
+  return { slots, out: fundedOut(b, accountId, pay.start, addDays(slots[count].date, -1)) };
 }
 
 /** The usual steady amount: the long-run average, to the dollar. */
@@ -99,7 +128,9 @@ function between(out: Outflow[], from: ISODate, to: ISODate, idx: { i: number })
  */
 function runStart(b: Budget, accountId: string, today: ISODate, useBalance: boolean): { pay: Period; bal: Cents; cursor: ISODate } {
   const entry = b.balances?.[accountId];
-  const known = useBalance && entry && entry.asOf <= today ? entry : undefined;
+  // An account that keeps money put aside (a car fund): its balance is mostly that money, which isn't
+  // there to pay the bills, so its amounts are worked out from the budget's start instead.
+  const known = useBalance && entry && entry.asOf <= today && !hasSetAsides(b, accountId) ? entry : undefined;
   if (known) return { pay: shiftPeriod(periodContaining(known.asOf, b.settings), 1, b.settings), bal: known.amount, cursor: known.asOf };
   const pay = firstBudgetPay(b, today);
   return { pay, bal: priorLeftover(b, accountId, today), cursor: addDays(pay.start, -1) };
@@ -142,7 +173,7 @@ function steadyRun(b: Budget, accountId: string, today: ISODate, useBalance = tr
     const usual = usualSteady(b, accountId);
     const { slots, out } = window(b, accountId, start.pay, count + HORIZON);
     // Payments between the balance date and the first payday come off first.
-    let bal = start.bal - outflows(b, accountId, addDays(start.cursor, 1), addDays(start.pay.start, -1)).reduce((t, o) => t + o.amount, 0);
+    let bal = start.bal - fundedOut(b, accountId, addDays(start.cursor, 1), addDays(start.pay.start, -1)).reduce((t, o) => t + o.amount, 0);
     const amounts = new Map<string, Cents>();
     const idx = { i: 0 };
     for (let i = 0; i < count; i++) {
@@ -150,7 +181,8 @@ function steadyRun(b: Budget, accountId: string, today: ISODate, useBalance = tr
       const ahead = between(out, date, slots[i + HORIZON].date, idx); // this pay and the next 23
       const amt = steadyAt(slots.slice(i, i + HORIZON + 1), ahead, usual, bal);
       amounts.set(date, amt);
-      bal += slots[i].fixed ?? amt;
+      const sent = slots[i].fixed ?? amt;
+      bal += sent + pausedAside(b, accountId, date, amt, sent);
       bal -= between(out, date, slots[i + 1].date, { i: idx.i }).reduce((t, o) => t + o.amount, 0);
     }
     return { first: slots[0].date, amounts };
@@ -374,7 +406,7 @@ export function nextBufferUse(b: Budget, accountId: string, from: Period, pays =
   let p = from;
   for (let i = 0; i < pays; i++) {
     p = shiftPeriod(p, 1, b.settings);
-    const need = outflows(b, accountId, p.start, p.end).reduce((t, o) => t + o.amount, 0);
+    const need = fundedOut(b, accountId, p.start, p.end).reduce((t, o) => t + o.amount, 0);
     const deposit = depositFor(b, accountId, p, today);
     if (need > deposit) return { period: p, need, deposit };
   }
@@ -456,16 +488,17 @@ function topUpRun(b: Budget, accountId: string, today: ISODate, useBalance = tru
     const start = runStart(b, accountId, today, useBalance);
     const count = runLength(start.pay, today, s);
     const { slots, out } = window(b, accountId, start.pay, count);
-    let bal = start.bal - outflows(b, accountId, addDays(start.cursor, 1), addDays(start.pay.start, -1)).reduce((t, o) => t + o.amount, 0);
+    let bal = start.bal - fundedOut(b, accountId, addDays(start.cursor, 1), addDays(start.pay.start, -1)).reduce((t, o) => t + o.amount, 0);
     const amounts = new Map<string, Cents>();
     const idx = { i: 0 };
     for (let i = 0; i < count; i++) {
       const date = slots[i].date;
-      // The bills (and any savings-goal amount), less what's already there, or plus what an earlier pay left short.
+      // The bills, money put aside (and any savings-goal amount), less what's already there, or plus what an earlier pay left short.
       const spent = between(out, date, slots[i + 1].date, idx).reduce((t, o) => t + o.amount, 0) + savingsNeedIn(b, accountId, date);
       const amt = Math.max(0, spent - bal);
       amounts.set(date, amt);
-      bal += (slots[i].fixed ?? amt) - spent;
+      const sent = slots[i].fixed ?? amt;
+      bal += sent - spent + pausedAside(b, accountId, date, amt, sent);
     }
     return { first: slots[0].date, amounts };
   });
@@ -496,7 +529,7 @@ function priorLeftover(b: Budget, accountId: string, today: ISODate): Cents {
   const prev = shiftPeriod(first, -1, b.settings);
   // What it sent: a one-pay adjustment made to it (e.g. topped up by transfer), or its fixed amount.
   const sent = b.overrides?.[prev.start]?.[accountId] ?? sentBeforeBudget(b, accountId, prev);
-  return sent === undefined ? 0 : sent - outflows(b, accountId, prev.start, addDays(first.start, -1)).reduce((t, o) => t + o.amount, 0);
+  return sent === undefined ? 0 : sent - fundedOut(b, accountId, prev.start, addDays(first.start, -1)).reduce((t, o) => t + o.amount, 0);
 }
 
 /** What a pay before the budget started sent to an account: its last fixed amount. */

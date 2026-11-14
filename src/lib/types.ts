@@ -41,6 +41,12 @@ export interface Item {
   showInWeeks?: boolean;
   /** Skip it when it lands this many days (or fewer) before payday — you go without until pay. */
   skipIfWithin?: number;
+  /**
+   * Put aside, not paid out (a WOF, tyres, a service): each payday sends its share (a yearly $90 WOF is
+   * $7.50 a pay) and the money stays in the account until it's needed, so nothing comes out on a date.
+   * It starts on the first payday on or after `start`.
+   */
+  setAside?: boolean;
 }
 
 /** How much of each pay is sent to each account on payday. */
@@ -64,6 +70,20 @@ export interface BalanceEntry {
   amount: Cents;
   /** The day you checked the balance. */
   asOf: ISODate;
+}
+
+/** Something that happened to an account's money, kept as its history. */
+export interface AccountEvent {
+  id: string;
+  date: ISODate;
+  /**
+   * cost: money spent from the account outside the plan (a tyre puncture), taken off its balance when recorded.
+   * balance: the balance you entered from your banking app.
+   */
+  kind: 'cost' | 'balance';
+  amount: Cents;
+  /** What a cost was. */
+  note?: string;
 }
 
 /**
@@ -231,6 +251,8 @@ export interface Budget {
   savings?: SavingsGoal[];
   /** Account balances you've entered, by account id. */
   balances?: Record<string, BalanceEntry>;
+  /** Each account's history (balances entered, one-off costs), by account id, in the order they were recorded. */
+  accountHistory?: Record<string, AccountEvent[]>;
   /** One-pay adjustments: pay period start → account id → amount sent that pay instead of the usual. */
   overrides?: Record<ISODate, Record<string, Cents>>;
   /**
