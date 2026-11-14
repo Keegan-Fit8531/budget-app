@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent } from 'react';
+import { Disclosure } from './ui';
+import { tone } from '../lib/colors';
 import { monthName, todayISO } from '../lib/dates';
 import { budgetPeriod, planFor, shiftPeriod, type Period } from '../lib/engine';
-import { money } from '../lib/money';
+import { cash } from '../lib/money';
 import type { Budget, SavingsGoal } from '../lib/types';
 
 interface Point { period: Period; label: string; balance: number; added: number }
@@ -43,7 +45,7 @@ export function SavingsChart({ budget }: { budget: Budget }) {
 
   const chosen: SavingsGoal[] = sel === 'all' ? goals : goals.filter((g) => g.id === sel);
   const one = chosen.length === 1 ? chosen[0] : undefined;
-  const color = one ? (budget.accounts.find((a) => a.id === one.accountId)?.color ?? '#22C55E') : '#22C55E';
+  const color = one ? tone(budget.accounts.find((a) => a.id === one.accountId)?.color) : 'var(--brand-2)';
   const target = one?.target ?? (chosen.every((g) => g.target) && chosen.length ? chosen.reduce((t, g) => t + (g.target ?? 0), 0) : undefined);
   const targetDate = one?.targetDate;
 
@@ -83,8 +85,8 @@ export function SavingsChart({ budget }: { budget: Budget }) {
   const reachedI = target !== undefined ? points.findIndex((p) => p.balance >= target) : -1;
   const last = points[points.length - 1];
 
-  const summary = `${one ? one.name : 'All savings'}: ${money(start)} now, about ${money(last?.balance ?? start, { whole: true })} in ${RANGES.find((r) => r.n === pays)?.label}` +
-    (target !== undefined ? (reachedI >= 0 ? `, reaching ${money(target, { whole: true })} by ${monthName(points[reachedI].period.start)} ${points[reachedI].period.start.slice(0, 4)}` : `, short of the ${money(target, { whole: true })} target`) : '') + '.';
+  const summary = `${one ? one.name : 'All savings'}: ${cash(start)} now, about ${cash(last?.balance ?? start, { whole: true })} in ${RANGES.find((r) => r.n === pays)?.label}` +
+    (target !== undefined ? (reachedI >= 0 ? `, reaching ${cash(target, { whole: true })} by ${monthName(points[reachedI].period.start)} ${points[reachedI].period.start.slice(0, 4)}` : `, short of the ${cash(target, { whole: true })} target`) : '') + '.';
 
   function onMove(e: PointerEvent<SVGSVGElement>) {
     const r = e.currentTarget.getBoundingClientRect();
@@ -98,12 +100,12 @@ export function SavingsChart({ budget }: { budget: Budget }) {
 
   if (!goals.length) return null;
   return (
-    <section className="card" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-      <div className="between">
+    <section className="card stack gap-12">
+      <div className="card-head">
         <h2 className="h2">Savings projection</h2>
         <span className="small muted">{summary}</span>
       </div>
-      <div className="row" style={{ flexWrap: 'wrap', gap: 8 }}>
+      <div className="row wrap gap-8">
         <div className="seg" role="group" aria-label="Which goal">
           <button aria-pressed={sel === 'all'} onClick={() => setSel('all')}>All goals</button>
           {goals.map((g) => <button key={g.id} aria-pressed={sel === g.id} onClick={() => setSel(g.id)}>{g.name}</button>)}
@@ -134,7 +136,7 @@ export function SavingsChart({ budget }: { budget: Budget }) {
           {target !== undefined && (
             <g>
               <line x1={padL} x2={padL + innerW} y1={yB(target)} y2={yB(target)} stroke="var(--ink)" strokeWidth="1" opacity="0.5" />
-              <text x={padL + innerW} y={yB(target) - 5} textAnchor="end" fontSize="11" fill="var(--ink)">Target {money(target, { whole: true })}</text>
+              <text x={padL + innerW} y={yB(target) - 5} textAnchor="end" fontSize="11" fill="var(--ink)">Target {cash(target, { whole: true })}</text>
             </g>
           )}
           {dateI >= 0 && (
@@ -163,48 +165,43 @@ export function SavingsChart({ budget }: { budget: Budget }) {
         </svg>
 
         {h && (
-          <div role="status" style={{
-            position: 'absolute', top: 8, left: Math.min(Math.max(0, x(hover!) + 12), width - 200), width: 188, pointerEvents: 'none',
-            background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 12, padding: '10px 12px',
-            boxShadow: '0 6px 20px rgba(0,0,0,0.12)', fontSize: 13, display: 'flex', flexDirection: 'column', gap: 4,
-          }}>
+          <div role="status" className="pop-card" style={{ position: 'absolute', top: 8, left: Math.min(Math.max(0, x(hover!) + 12), width - 200), width: 188 }}>
             <span className="muted">{monthName(h.period.start)} {h.period.start.slice(0, 4)} pay</span>
-            <span className="row" style={{ gap: 8 }}>
+            <span className="row gap-8">
               <svg width="14" height="10" aria-hidden="true"><line x1="0" y1="5" x2="14" y2="5" stroke={color} strokeWidth="2" strokeLinecap="round" /></svg>
-              <b>{money(h.balance)}</b><span className="muted">saved</span>
+              <b>{cash(h.balance)}</b><span className="muted">saved</span>
             </span>
-            <span className="row" style={{ gap: 8 }}>
+            <span className="row gap-8">
               <svg width="14" height="10" aria-hidden="true"><rect y="1" width="10" height="8" rx="2" fill={color} opacity="0.7" /></svg>
-              <b>{money(h.added)}</b><span className="muted">added this pay</span>
+              <b>{cash(h.added)}</b><span className="muted">added this pay</span>
             </span>
-            {target !== undefined && <span className="muted">{h.balance >= target ? 'Target reached' : `${money(target - h.balance)} to go`}</span>}
+            {target !== undefined && <span className="muted">{h.balance >= target ? 'Target reached' : `${cash(target - h.balance)} to go`}</span>}
           </div>
         )}
       </div>
 
-      <details>
-        <summary className="small" style={{ cursor: 'pointer', fontWeight: 600, minHeight: 32 }}>Show as a table</summary>
-        <div style={{ overflowX: 'auto', marginTop: 6 }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, fontVariantNumeric: 'tabular-nums' }}>
+      <Disclosure title="Show as a table">
+        <div className="table-scroll">
+          <table className="table">
             <thead>
-              <tr className="muted" style={{ textAlign: 'right' }}>
-                <th style={{ textAlign: 'left', padding: '6px 4px', fontWeight: 500 }}>Pay</th>
-                <th style={{ padding: '6px 4px', fontWeight: 500 }}>Added</th>
-                <th style={{ padding: '6px 4px', fontWeight: 500 }}>Saved</th>
+              <tr>
+                <th>Pay</th>
+                <th>Added</th>
+                <th>Saved</th>
               </tr>
             </thead>
             <tbody>
               {points.map((p) => (
-                <tr key={p.period.start} style={{ borderTop: '1px solid var(--line)', textAlign: 'right' }}>
-                  <td style={{ textAlign: 'left', padding: '6px 4px' }}>{monthName(p.period.start)} {p.period.start.slice(0, 4)}</td>
-                  <td style={{ padding: '6px 4px' }}>{money(p.added)}</td>
-                  <td style={{ padding: '6px 4px' }}>{money(p.balance)}</td>
+                <tr key={p.period.start}>
+                  <td>{monthName(p.period.start)} {p.period.start.slice(0, 4)}</td>
+                  <td>{cash(p.added)}</td>
+                  <td>{cash(p.balance)}</td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
-      </details>
+      </Disclosure>
       <p className="small muted">Projection only: uses what each payday sends (including any one-pay adjustments) and adds no fund returns.</p>
     </section>
   );

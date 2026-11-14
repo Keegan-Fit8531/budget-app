@@ -4,7 +4,7 @@ import { nextColor } from '../lib/colors';
 import { fmtDay, fmtShort, monthName, todayISO } from '../lib/dates';
 import { owed } from '../lib/debts';
 import { matchDebt, readDocument, recordPayslip, recordStatement, type ReadDocument } from '../lib/documents';
-import { centsToInput, money, parseMoney } from '../lib/money';
+import { cash, centsToInput, parseMoney } from '../lib/money';
 import { newId, useBudget } from '../lib/store';
 import { DebtModal } from '../pages/Debts';
 import { GoalModal } from '../pages/Savings';
@@ -40,15 +40,15 @@ export function AddMenu({ render }: { render: (open: () => void) => React.ReactN
           <div className="modal" role="dialog" aria-modal="true" aria-labelledby="add-title" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 440 }}>
             <div className="between">
               <h2 id="add-title" className="h2">Add</h2>
-              <button className="icon-btn" aria-label="Close" onClick={close}><Icon name="x" /></button>
+              <button className="icon-btn plain" aria-label="Close" onClick={close}><Icon name="x" /></button>
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <div className="stack gap-8">
               {choices.map((c) => (
                 <button key={c.id} className="add-choice" onClick={c.go}>
                   <span className="add-choice-icon"><Icon name={c.icon} size={20} /></span>
-                  <span style={{ minWidth: 0 }}>
+                  <span className="min0">
                     <b>{c.title}</b>
-                    <span className="small muted" style={{ display: 'block' }}>{c.hint}</span>
+                    <span className="small muted block">{c.hint}</span>
                   </span>
                 </button>
               ))}
@@ -120,7 +120,7 @@ function DocumentModal({ file, onClose }: { file: File; onClose: () => void }) {
       const after = structuredClone(budget);
       const { start, loan } = recordPayslip(after, { ...slip, payDay, net: c });
       update((b) => { recordPayslip(b, { ...slip, payDay, net: c }); return b; });
-      return setDone(`${monthName(start)} pay recorded: ${money(c)}, paid ${fmtDay(payDay)}.${loan && slip?.studentLoan ? ` Student loan: ${money(slip.studentLoan)} taken off what you owe.` : ''}`);
+      return setDone(`${monthName(start)} pay recorded: ${cash(c)}, paid ${fmtDay(payDay)}.${loan && slip?.studentLoan ? ` Student loan: ${cash(slip.studentLoan)} taken off what you owe.` : ''}`);
     }
     const c = parseMoney(balance);
     if (c === null || c < 0) return setErr('Enter what’s owed, like 1,240.50');
@@ -143,32 +143,32 @@ function DocumentModal({ file, onClose }: { file: File; onClose: () => void }) {
       recordStatement(b, id, { balance: c, date: asAt, limit: lim }, today);
       return b;
     });
-    setDone(`${name}: ${money(c)} owed as at ${fmtShort(asAt)}${debt ? ` (was ${money(owed(debt))})` : ''}.`);
+    setDone(`${name}: ${cash(c)} owed as at ${fmtShort(asAt)}${debt ? ` (was ${cash(owed(debt))})` : ''}.`);
   }
 
   return (
     <div className="modal-back" onClick={onClose}>
       <div className="modal" role="dialog" aria-modal="true" aria-labelledby="doc-title" onClick={(e) => e.stopPropagation()}>
-        <div className="between" style={{ flexWrap: 'nowrap' }}>
-          <div style={{ minWidth: 0 }}>
+        <div className="between nowrap">
+          <div className="min0">
             <h2 id="doc-title" className="h2">{done ? 'Saved' : !doc && !failed ? 'Reading…' : kind === 'payslip' ? 'Check this payslip' : 'Check this statement'}</h2>
             <span className="small muted" style={{ overflowWrap: 'anywhere' }}>{file.name}</span>
           </div>
-          <button className="icon-btn" aria-label="Close" onClick={onClose}><Icon name="x" /></button>
+          <button className="icon-btn plain" aria-label="Close" onClick={onClose}><Icon name="x" /></button>
         </div>
 
         {done ? (
           <>
             <p role="status">{done}</p>
-            <div className="row" style={{ justifyContent: 'flex-end' }}>
-              <a className="btn" href={kind === 'payslip' ? '#/planner' : '#/debts'} onClick={onClose} style={{ textDecoration: 'none', color: 'inherit' }}>{kind === 'payslip' ? 'Open Planner' : 'Open Debts'}</a>
+            <div className="row end">
+              <a className="btn" href={kind === 'payslip' ? '#/planner' : '#/debts'} onClick={onClose}>{kind === 'payslip' ? 'Open Planner' : 'Open Debts'}</a>
               <button className="btn primary" onClick={onClose}>Done</button>
             </div>
           </>
         ) : !doc && !failed ? (
           <div role="status">
             <p className="small muted">{file.type.startsWith('image/') ? 'Reading the text in the photo on this device. This can take a little while the first time.' : 'Reading the PDF on this device.'}</p>
-            <div className="bar" style={{ height: 8, marginTop: 8 }}><div style={{ height: 8, width: `${Math.max(6, Math.round(progress * 100))}%`, background: 'var(--brand)' }} /></div>
+            <div className="bar"><div style={{ width: `${Math.max(6, Math.round(progress * 100))}%` }} /></div>
           </div>
         ) : (
           <>
@@ -193,7 +193,7 @@ function DocumentModal({ file, onClose }: { file: File; onClose: () => void }) {
                 </div>
                 {slip && (slip.paye !== undefined || slip.studentLoan !== undefined || slip.kiwisaver !== undefined) && (
                   <p className="small muted">
-                    Also read: {[slip.paye !== undefined ? `PAYE ${money(slip.paye)}` : '', slip.studentLoan !== undefined ? `student loan ${money(slip.studentLoan)}` : '', slip.kiwisaver !== undefined ? `KiwiSaver ${money(slip.kiwisaver)}` : ''].filter(Boolean).join(' · ')}.
+                    Also read: {[slip.paye !== undefined ? `PAYE ${cash(slip.paye)}` : '', slip.studentLoan !== undefined ? `student loan ${cash(slip.studentLoan)}` : '', slip.kiwisaver !== undefined ? `KiwiSaver ${cash(slip.kiwisaver)}` : ''].filter(Boolean).join(' · ')}.
                   </p>
                 )}
               </>
@@ -201,7 +201,7 @@ function DocumentModal({ file, onClose }: { file: File; onClose: () => void }) {
               <>
                 <label className="field">Which debt it's for
                   <select value={debtId} onChange={(e) => { setDebtId(e.target.value); setErr(''); }}>
-                    {debts.map((d) => <option key={d.id} value={d.id}>{d.name} (now {money(owed(d))})</option>)}
+                    {debts.map((d) => <option key={d.id} value={d.id}>{d.name} (now {cash(owed(d))})</option>)}
                     <option value={NEW_DEBT}>+ A new debt…</option>
                   </select>
                 </label>
@@ -222,13 +222,13 @@ function DocumentModal({ file, onClose }: { file: File; onClose: () => void }) {
                   </label>
                 </div>
                 <p className="small muted">
-                  {st?.minimum !== undefined ? `The statement's minimum payment is ${money(st.minimum)}. ` : ''}
+                  {st?.minimum !== undefined ? `The statement's minimum payment is ${cash(st.minimum)}. ` : ''}
                   This sets what's owed as at that date; payments planned since then are counted as paid. Purchases and plans stay as they are.
                 </p>
               </>
             )}
             {err && <p className="error" role="alert">{err}</p>}
-            <div className="row" style={{ justifyContent: 'flex-end' }}>
+            <div className="row end">
               <button className="btn" onClick={onClose}>Cancel</button>
               <button className="btn primary" onClick={save}>{kind === 'payslip' ? 'Record pay' : 'Update what’s owed'}</button>
             </div>
