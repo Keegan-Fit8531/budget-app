@@ -8,7 +8,7 @@ import { AccIcon, Disclosure, Dot } from '../components/ui';
 import { WeeksView } from '../components/WeeksView';
 import { PayNav, useViewPeriod, ViewModes } from '../lib/period';
 import { clearOptimiseUndo, OptimiseModal, readOptimiseUndo, type OptimiseUndo } from '../components/OptimiseModal';
-import { undoAllocation } from '../lib/allocate';
+import { existingExtras, undoAllocation } from '../lib/allocate';
 import { recordPayslip } from '../lib/documents';
 import { addDays, fmtDay, fmtShort, monthName, todayISO } from '../lib/dates';
 import {
@@ -200,6 +200,8 @@ export function Planner() {
   const undoHere = optUndo?.periodStart === period.start ? optUndo : null;
   // From $1: rounded accounts (e.g. the wedding fund to $50) often leave a few dollars to put somewhere.
   const canOptimise = !avg && !needsBalance && plan.leftover >= 100;
+  // Extra already added to goals, debts or the allowance for this pay only: Optimise can show and change it.
+  const extrasHere = useMemo(() => !avg && !!existingExtras(budget, period), [avg, budget, period]);
   // Automatic balancing looks after the next 12 pays; a pay already split (or further out) is done by hand.
   const autoHere = autoPays(budget, today).some((p) => p.start === period.start);
   const hasModeChanges = (() => { try { return !!JSON.parse(localStorage.getItem(MODES_KEY) ?? '{}')[period.start]; } catch { return false; } })();
@@ -281,10 +283,10 @@ export function Planner() {
                 </p>
               </div>
               {/* Put what's left over to work (once the pay is balanced), or change where it went. */}
-              {!avg && known && (canOptimise || undoHere) && (
+              {!avg && known && (canOptimise || undoHere || extrasHere) && (
                 <button className="icon-btn brand has-tip tip-left"
-                  data-tip={undoHere ? 'Optimise: change where the leftover went' : 'Optimise: choose where the leftover goes'}
-                  aria-label={undoHere ? 'Optimise: change where the leftover went' : 'Optimise: choose where the leftover goes'}
+                  data-tip={undoHere || extrasHere ? 'Optimise: change where the leftover went' : 'Optimise: choose where the leftover goes'}
+                  aria-label={undoHere || extrasHere ? 'Optimise: change where the leftover went' : 'Optimise: choose where the leftover goes'}
                   onClick={() => setOptimiseOpen(true)}>
                   <Icon name="wand" />
                 </button>

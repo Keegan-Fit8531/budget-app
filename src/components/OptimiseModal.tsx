@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Dot } from './ui';
-import { allocationTargets, allowancePerWeek, applyAllocation, undoAllocation, type AllocationUndo, type AllocMode } from '../lib/allocate';
+import { allocationTargets, allowancePerWeek, applyAllocation, existingExtras, undoAllocation, type AllocationUndo, type AllocMode } from '../lib/allocate';
 import { fmtShort, monthName, todayISO } from '../lib/dates';
 import { planFor, type Period } from '../lib/engine';
 import { cash, centsToInput, parseMoney } from '../lib/money';
@@ -31,10 +31,25 @@ export function clearOptimiseUndo() {
  * With `previous` (Edit), it opens with what you chose last time and the leftover from before it, and
  * saving swaps that allocation for the new one.
  */
-export function OptimiseModal({ period, leftover: leftNow, previous, onClose, onApplied }: {
+export function OptimiseModal({ period, leftover: leftNow, previous: record, onClose, onApplied }: {
   period: Period; leftover: number; previous?: OptimiseUndo | null; onClose: () => void; onApplied: (u: OptimiseUndo | null) => void;
 }) {
   const { budget, update } = useBudget();
+  // What's already been added for this pay: the last Optimise here (if this device has it), plus any other
+  // extra for this pay only (e.g. $300 to Misc savings set on another device), worked out once on opening.
+  const [previous] = useState<OptimiseUndo | null>(() => {
+    const b = structuredClone(budget);
+    if (record) undoAllocation(b, record);
+    const extra = existingExtras(b, period);
+    if (!extra) return record ?? null;
+    if (!record) return { ...extra, at: todayISO(), label: `${monthName(period.start)} pay`, mode: 'once' };
+    const allocs = record.allocs ? [...record.allocs] : undefined;
+    for (const a of extra.allocs) {
+      const same = allocs?.find((x) => x.targetId === a.targetId);
+      if (same) same.amount += a.amount; else allocs?.push(a);
+    }
+    return { ...record, overrides: { ...record.overrides, ...extra.overrides }, allocs };
+  });
   // Editing: the budget as it was before the last Optimise, so the whole leftover is there to hand out again.
   const before = useMemo(() => {
     if (!previous) return null;

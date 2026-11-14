@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { balanceToday, billTracker, depositFor, estimateBalance, outflows } from './balances';
-import { applyAllocation, undoAllocation } from './allocate';
+import { applyAllocation, existingExtras, undoAllocation } from './allocate';
 import { addDays } from './dates';
 import { applyPayment, debtSchedules, planSchedule, recordHistory, settleDue } from './debts';
 import { classifyText, matchDebt, parseDate, parseStatementText, recordStatement } from './documents';
@@ -533,6 +533,24 @@ describe('optimising the leftover, then changing it', () => {
     expect(funded(b, p, 'a')).toBe(15000);
     expect(funded(b, p, 'b')).toBe(30000);
     expect(planFor(b, p).leftover).toBe(start - 25000);
+  });
+
+  it('finds extra already added for this pay only, so Optimise can hand it out again', () => {
+    const b = twoGoals();
+    const p = periodContaining('2026-11-20', b.settings);
+    b.overrides = { [p.start]: { a: 40000 } }; // $300 on top of the usual $100, set without Optimise
+    const start = planFor(b, p).leftover;
+    const x = existingExtras(b, p)!;
+    expect(x.allocs).toEqual([{ targetId: 'goal-a', amount: 30000 }]);
+    // Hand it all out again: $200 back to goal a, $100 plus what was left to goal b.
+    undoAllocation(b, x);
+    expect(planFor(b, p).leftover).toBe(start + 30000);
+    applyAllocation(b, p, [{ targetId: 'goal-a', amount: 20000 }, { targetId: 'goal-b', amount: 10000 + start }], 'once');
+    expect(funded(b, p, 'a')).toBe(30000);
+    expect(planFor(b, p).leftover).toBe(0);
+    // An amount set lower than usual isn't extra.
+    b.overrides = { [p.start]: { a: 5000 } };
+    expect(existingExtras(b, p)).toBeNull();
   });
 
   it('every pay: editing changes the normal amount rather than adding to it', () => {
