@@ -406,6 +406,8 @@ select::-ms-expand { display: none; }
 /* ---------- Pop-ups ---------- */
 .modal-back { position: fixed; inset: 0; background: var(--scrim); z-index: 50; display: flex; align-items: center; justify-content: center; padding: var(--s-4); }
 .modal { background: var(--card); border-radius: var(--r-xl); padding: var(--s-6); width: 100%; max-width: 540px; max-height: 92vh; overflow: auto; display: flex; flex-direction: column; gap: var(--s-4); box-shadow: var(--shadow-pop); }
+/* A tall modal scrolls; its parts keep their height (a scrolling .seg would otherwise be squashed flat). */
+.modal > * { flex-shrink: 0; }
 @media (max-width: 600px) {
   .modal-back { align-items: flex-end; padding: 0; }
   .modal { border-radius: var(--r-xl) var(--r-xl) 0 0; padding: var(--s-5) var(--s-4) calc(var(--s-5) + env(safe-area-inset-bottom)); }

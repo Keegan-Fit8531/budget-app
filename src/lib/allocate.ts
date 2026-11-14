@@ -122,3 +122,26 @@ export function undoAllocation(b: Budget, u: AllocationUndo): void {
     if (item) item.amount = amount;
   }
 }
+
+/**
+ * Extra already added for this pay only (e.g. $300 to Misc savings) to places Optimise can send money,
+ * as an allocation, so Optimise can show it and hand it out again even without its own undo record.
+ * Amounts automatic balancing set are left out: they're its, not yours.
+ */
+export function existingExtras(b: Budget, period: Period): (AllocationUndo & { allocs: { targetId: string; amount: Cents }[] }) | null {
+  const o = b.overrides?.[period.start];
+  if (!o) return null;
+  const auto = b.autoBalanced?.[period.start] ?? {};
+  const plan = planFor(b, period);
+  const undo: AllocationUndo = { periodStart: period.start, overrides: {}, split: {}, items: {} };
+  const allocs: { targetId: string; amount: Cents }[] = [];
+  for (const t of allocationTargets(b)) {
+    const id = t.accountId;
+    if (!id || t.kind === 'spend' || o[id] === undefined || id in undo.overrides || auto[id]?.to === o[id]) continue;
+    const usual = plan.accounts.find((a) => a.account.id === id)?.usual;
+    if (usual === undefined || o[id] <= usual) continue;
+    undo.overrides[id] = null;
+    allocs.push({ targetId: t.id, amount: o[id] - usual });
+  }
+  return allocs.length ? { ...undo, allocs } : null;
+}
