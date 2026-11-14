@@ -3,7 +3,7 @@ import { Icon } from '../components/Icon';
 import { DayPicker, useDayView } from '../components/DayPicker';
 import { MonthTracker, PayProjectionView } from '../components/MonthTracker';
 import { fmtDay, fmtShort, monthName, todayISO } from '../lib/dates';
-import { accountMode, balanceOn, depositFor, estimateBalance, forecastBalances, smoothAmount } from '../lib/balances';
+import { accountMode, balanceOn, balanceToday, depositFor, forecastBalances, outflows, smoothAmount } from '../lib/balances';
 import { periodContaining, type Period } from '../lib/engine';
 import { centsToInput, money, parseMoney } from '../lib/money';
 import { useBudget } from '../lib/store';
@@ -28,8 +28,9 @@ export function Accounts() {
   const dayIdx = dv.dayIdx;
   const goPay = dv.goPay;
 
-  // Estimated total on the chosen day, across accounts whose balance can be worked out.
-  const onDay = accounts.map((a) => ({ a, v: live ? estimateBalance(budget, a.id, today) : balanceOn(budget, a.id, day, today) })).filter((x) => x.v !== undefined);
+  // Estimated total on the chosen day, across accounts whose balance can be worked out. Today: before
+  // today's payments come out, the same figure as each card's headline, so the cards add up to it.
+  const onDay = accounts.map((a) => ({ a, v: live ? balanceToday(budget, a.id, today) : balanceOn(budget, a.id, day, today) })).filter((x) => x.v !== undefined);
   const known = onDay.map((x) => x.a);
   const total = onDay.reduce((t, x) => t + (x.v ?? 0), 0);
 
@@ -78,8 +79,11 @@ function BalanceCard({ account: a, view, day, onPick }: { account: Account; view
   const isPay = a.id === s.payAccountId;
   const mode = accountMode(budget, a.id);
 
-  const now = estimateBalance(budget, a.id, today);
+  // Today: what's in the account before today's payments come out, the same figure as the tracker's
+  // "In the account" (a bill dated today may not have left the bank yet, so it's still to come).
+  const now = balanceToday(budget, a.id, today);
   const shown = view ? balanceOn(budget, a.id, day, today) : now;
+  const dueToday = !view && outflows(budget, a.id, today, today).length > 0;
 
   const forecast = entry && !isPay ? forecastBalances(budget, a.id, 6, today) : [];
   const lowest = forecast.reduce<number | undefined>((m, r) => (r.end === undefined ? m : m === undefined ? r.end : Math.min(m, r.end)), undefined);
@@ -109,7 +113,7 @@ function BalanceCard({ account: a, view, day, onPick }: { account: Account; view
         {shown !== undefined && !editing && (
           <div style={{ textAlign: 'right' }}>
             <b style={{ fontSize: 22 }} className={shown < 0 ? 'neg' : ''}>{money(shown)}</b>
-            <span className="small muted" style={{ display: 'block' }}>{view ? `${day > today ? 'estimated' : 'on'} ${fmtShort(day)}` : entry!.asOf === today ? 'today' : 'estimated now'}</span>
+            <span className="small muted" style={{ display: 'block' }}>{view ? `${day > today ? 'estimated' : 'on'} ${fmtShort(day)}` : entry!.asOf === today ? 'today' : dueToday ? "estimated, before today's bills" : 'estimated now'}</span>
           </div>
         )}
       </div>
@@ -128,7 +132,9 @@ function BalanceCard({ account: a, view, day, onPick }: { account: Account; view
         <div className="between small">
           <span className="muted">
             You entered {money(entry.amount)} on {fmtShort(entry.asOf)}
-            {entry.asOf !== today ? '. Payments and paydays since then are counted in the estimate.' : '.'}
+            {entry.asOf === today ? '.' : dueToday
+              ? ". Payments and paydays since then are counted in the estimate; today's bills are still to come."
+              : '. Payments and paydays since then are counted in the estimate.'}
           </span>
           <button className="btn small" onClick={() => { setText(centsToInput(now ?? entry.amount)); setEditing(true); }}>Update balance</button>
         </div>

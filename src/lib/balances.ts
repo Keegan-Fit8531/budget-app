@@ -239,6 +239,23 @@ export function estimateBalance(b: Budget, accountId: string, date: ISODate, tod
   return bal - outflows(b, accountId, addDays(entry.asOf, 1), date).reduce((t, o) => t + o.amount, 0);
 }
 
+/**
+ * What's in an account today, before today's payments come out (a bill dated today may not have left
+ * the bank yet, so it counts as still to come). A balance entered today is used as-is; an older one is
+ * rolled forward to yesterday, plus today's deposit when today is payday (it lands before the bills).
+ * Undefined without an entered balance. The Accounts card's headline and the tracker's "In the account"
+ * both show this, so they always agree; `estimateBalance` (end of day) is for projections.
+ */
+export function balanceToday(b: Budget, accountId: string, today: ISODate = todayISO()): Cents | undefined {
+  const entry = b.balances?.[accountId];
+  if (!entry || entry.asOf > today) return undefined;
+  if (entry.asOf === today) return entry.amount;
+  const rolled = estimateBalance(b, accountId, addDays(today, -1), today);
+  if (rolled === undefined) return undefined;
+  const period = periodContaining(today, b.settings);
+  return rolled + (today === period.start ? depositFor(b, accountId, period, today) : 0);
+}
+
 export interface PeriodForecast { period: Period; deposit: Cents; out: Cents; end: Cents | undefined }
 
 /** Balance forecast for `count` pay periods starting with the one containing `today`. */
@@ -300,13 +317,8 @@ export function billTracker(b: Budget, accountId: string, today: ISODate = today
   const paid = rows.filter((r) => r.status === 'paid').reduce((t, r) => t + r.amount, 0);
   const toCome = rows.filter((r) => r.status !== 'paid').reduce((t, r) => t + r.amount, 0);
   const deposit = depositFor(b, accountId, period, today);
-  // Balance before today's bills: a balance entered today is used as-is; an older one is rolled forward
-  // to yesterday, plus today's deposit when today is payday (it lands before the bills come out).
-  const entry = b.balances?.[accountId];
-  const rolled = entry && entry.asOf < today ? estimateBalance(b, accountId, addDays(today, -1), today) : undefined;
-  const entered = entry && entry.asOf <= today
-    ? (entry.asOf === today ? entry.amount : rolled === undefined ? undefined : rolled + (today === period.start ? deposit : 0))
-    : undefined;
+  // Balance before today's bills, from the balance you entered (the same figure as the card's headline).
+  const entered = balanceToday(b, accountId, today);
   // Without an entered balance: assume this pay's deposit minus what's been paid so far.
   const balance = entered ?? deposit - paid;
   let left = balance;
