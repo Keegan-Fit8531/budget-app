@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { convert } from '../lib/engine';
 import { todayISO } from '../lib/dates';
-import { centsToInput, money, parseMoney } from '../lib/money';
+import { cash, centsToInput, parseMoney } from '../lib/money';
 import { newId, useBudget } from '../lib/store';
 import type { Frequency, Item } from '../lib/types';
 import { Icon } from './Icon';
@@ -61,7 +61,7 @@ export function ItemModal({ item, accountId, onClose }: { item?: Item; accountId
       <div className="modal" role="dialog" aria-modal="true" aria-labelledby="item-title" onClick={(e) => e.stopPropagation()}>
         <div className="between">
           <h2 id="item-title" className="h2">{item ? 'Edit cost' : 'Add a cost'}</h2>
-          <button className="icon-btn" aria-label="Close" onClick={onClose}><Icon name="x" /></button>
+          <button className="icon-btn plain" aria-label="Close" onClick={onClose}><Icon name="x" /></button>
         </div>
 
         <label className="field">Name
@@ -81,10 +81,10 @@ export function ItemModal({ item, accountId, onClose }: { item?: Item; accountId
 
         {cents !== null && cents > 0 && freq !== 'once' && (
           <div className="conv" aria-label="Same cost in other frequencies">
-            <span>{money(convert(cents, freq, 'week'))} / week</span>
-            <span>{money(convert(cents, freq, 'fortnight'))} / fortnight</span>
-            <span>{money(convert(cents, freq, 'month'))} / month avg</span>
-            <span>{money(convert(cents, freq, 'year'))} / year</span>
+            <span>{cash(convert(cents, freq, 'week'))} / week</span>
+            <span>{cash(convert(cents, freq, 'fortnight'))} / fortnight</span>
+            <span>{cash(convert(cents, freq, 'month'))} / month avg</span>
+            <span>{cash(convert(cents, freq, 'year'))} / year</span>
           </div>
         )}
 
@@ -112,7 +112,7 @@ export function ItemModal({ item, accountId, onClose }: { item?: Item; accountId
         </label>
 
         {freq === 'weekly' && (
-          <label className="row" style={{ fontSize: 14, cursor: 'pointer', minHeight: 44 }}>
+          <label className="check-row">
             <input type="checkbox" checked={inWeeks} onChange={(e) => setInWeeks(e.target.checked)} style={{ width: 20, height: 20, accentColor: 'var(--brand)' }} />
             <span>Show in "Weeks this pay" on the Planner</span>
           </label>

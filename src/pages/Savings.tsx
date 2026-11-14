@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Donut } from '../components/Donut';
 import { Icon } from '../components/Icon';
+import { PageHead } from '../components/ui';
 import { GoalCosts } from '../components/GoalCosts';
 import { GoalGifts, PeopleChips, savedSlices, tracksPeople } from '../components/GoalGifts';
 import { summariseCosts } from '../lib/goalcosts';
@@ -11,7 +12,7 @@ import { nextColor } from '../lib/colors';
 import { fmtShort, monthName, todayISO } from '../lib/dates';
 import { averageSplit, planFor } from '../lib/engine';
 import { PayNav, useViewPeriod } from '../lib/period';
-import { centsToInput, money, parseMoney } from '../lib/money';
+import { cash, centsToInput, parseMoney } from '../lib/money';
 import { forecast } from '../lib/savings';
 import { newId, useBudget } from '../lib/store';
 import type { SavingsGoal } from '../lib/types';
@@ -31,32 +32,28 @@ export function Savings() {
 
   return (
     <>
-      <header className="between">
-        <div>
-          <h1 className="h1">Savings</h1>
-          <p className="small muted">Goals, how they're tracking, and what each payday puts towards them.</p>
-        </div>
+      <PageHead title="Savings" sub="Goals, how they're tracking, and what each payday puts towards them.">
+        <PayNav compact />
         <button className="btn primary" onClick={() => setModal({})}><Icon name="plus" /> Add goal</button>
-      </header>
-      <div className="card" style={{ padding: '10px 14px' }}><PayNav compact /></div>
+      </PageHead>
 
-      <section style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12 }}>
-        <div className="stat" style={{ background: 'var(--card)' }}><span className="small muted">Saved so far</span><b>{money(saved)}</b></div>
-        <div className="stat" style={{ background: 'var(--card)' }}>
+      <section className="stats">
+        <div className="stat"><span className="small muted">Saved so far</span><b>{cash(saved)}</b></div>
+        <div className="stat">
           <span className="small muted">{monthName(period.start)} pay</span>
-          <b>{money(goals.reduce((t, g) => t + (plan.accounts.find((a) => a.account.id === g.accountId)?.funded ?? 0), 0))}</b>
-          <span className="small muted">normally {money(goals.reduce((t, g) => t + averageSplit(budget, g.accountId), 0))}</span>
+          <b>{cash(goals.reduce((t, g) => t + (plan.accounts.find((a) => a.account.id === g.accountId)?.funded ?? 0), 0))}</b>
+          <span className="small muted">normally {cash(goals.reduce((t, g) => t + averageSplit(budget, g.accountId), 0))}</span>
         </div>
         {kiwi > 0 && (
-          <div className="stat" style={{ background: 'var(--card)' }}><span className="small muted">KiwiSaver each pay</span><b>{money(kiwi)}</b><span className="small muted">you + employer, from your payslip</span></div>
+          <div className="stat"><span className="small muted">KiwiSaver each pay</span><b>{cash(kiwi)}</b><span className="small muted">you + employer</span></div>
         )}
       </section>
 
       {goals.length === 0 && <p className="muted">Add a goal to start tracking your savings.</p>}
 
-      <SavingsChart budget={budget} />
-
       {forecasts.map((f) => <GoalCard key={f.goal.id} f={f} plan={plan} period={period} onEdit={() => setModal({ goal: f.goal })} />)}
+
+      <SavingsChart budget={budget} />
 
       {modal && <GoalModal goal={modal.goal} onClose={() => setModal(null)} />}
     </>
@@ -80,10 +77,10 @@ function GoalCard({ f, plan, period, onEdit }: { f: ReturnType<typeof forecast>;
   // Costs already paid by someone directly (not from the fund) count as covered.
   const direct = paidDirect(g);
   const pct = aim ? Math.min(100, ((g.balance + direct) / aim) * 100) : 0;
-  const color = acc?.color ?? '#22C55E';
+  const color = acc?.color ?? 'var(--brand-2)';
   const slices = people && savedSlices(budget, g, aim).length
     ? savedSlices(budget, g, aim)
-    : aim ? [{ label: 'Saved', value: g.balance, color }, ...(direct ? [{ label: 'Paid already', value: direct, color: '#94A3B8' }] : []), { label: 'To go', value: Math.max(0, aim - g.balance - direct), color: 'var(--soft)' }]
+    : aim ? [{ label: 'Saved', value: g.balance, color }, ...(direct ? [{ label: 'Paid already', value: direct, color: 'var(--muted)' }] : []), { label: 'To go', value: Math.max(0, aim - g.balance - direct), color: 'var(--soft)' }]
     : [{ label: 'Saved', value: 1, color }];
   const usual = averageSplit(budget, g.accountId);
   const thisPay = funded?.funded ?? 0;
@@ -99,13 +96,13 @@ function GoalCard({ f, plan, period, onEdit }: { f: ReturnType<typeof forecast>;
   let status: { text: string; tone: 'pos' | 'neg' | 'muted' };
   if (c && c.leftAtTarget !== undefined) {
     status = c.leftAtTarget < 0
-      ? { text: `${money(-c.leftAtTarget, { whole: true })} short of the costs by ${when}${c.neededPerPay ? ` · send ${money(c.neededPerPay, { whole: true })} a pay to cover it` : ''}`, tone: 'neg' }
-      : { text: `Costs covered by ${when}, with ${money(c.leftAtTarget, { whole: true })} spare`, tone: 'pos' };
+      ? { text: `${cash(-c.leftAtTarget, { whole: true })} short of the costs by ${when}${c.neededPerPay ? ` · send ${cash(c.neededPerPay, { whole: true })} a pay to cover it` : ''}`, tone: 'neg' }
+      : { text: `Costs covered by ${when}, with ${cash(c.leftAtTarget, { whole: true })} spare`, tone: 'pos' };
   } else if (g.target && f.remaining === 0) status = { text: 'Goal reached', tone: 'pos' };
-  else if (f.onTrack === false && f.requiredPerPay !== undefined) status = { text: `Behind: send ${money(f.requiredPerPay, { whole: true })} a pay to reach it by ${when}`, tone: 'neg' };
+  else if (f.onTrack === false && f.requiredPerPay !== undefined) status = { text: `Behind: send ${cash(f.requiredPerPay, { whole: true })} a pay to reach it by ${when}`, tone: 'neg' };
   else if (f.onTrack === true) status = { text: `On track for ${when}`, tone: 'pos' };
   else if (g.target && f.reachedBy) status = { text: `Reached by about ${monthName(f.reachedBy)} ${f.reachedBy.slice(0, 4)}`, tone: 'muted' };
-  else status = { text: `About ${money(f.projected, { whole: true })} in 12 pays`, tone: 'muted' };
+  else status = { text: `About ${cash(f.projected, { whole: true })} in 12 pays`, tone: 'muted' };
 
   const tabs: { id: Tab; label: string }[] = [
     { id: 'costs', label: costs.length ? `Costs · ${costs.length}` : 'Costs' },
@@ -114,9 +111,9 @@ function GoalCard({ f, plan, period, onEdit }: { f: ReturnType<typeof forecast>;
   ];
 
   return (
-    <section className="card" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-      <div className="between" style={{ flexWrap: 'nowrap', alignItems: 'flex-start' }}>
-        <div style={{ minWidth: 0 }}>
+    <section className="card stack gap-12">
+      <div className="between nowrap top">
+        <div className="min0">
           <h2 className="h2">{g.name}</h2>
           {(() => {
             const sub = [acc && !acc.name.toLowerCase().includes(g.name.toLowerCase()) ? acc.name : null, g.note].filter(Boolean).join(' · ');
@@ -126,28 +123,28 @@ function GoalCard({ f, plan, period, onEdit }: { f: ReturnType<typeof forecast>;
         <button className="btn small" onClick={onEdit}><Icon name="edit" size={16} /> Edit</button>
       </div>
 
-      <div className="row" style={{ flexWrap: 'nowrap', gap: 16, alignItems: 'center' }}>
-        <Donut size={104} slices={slices}>
-          <b style={{ fontSize: 16 }}>{aim ? `${Math.round(pct)}%` : money(g.balance, { whole: true })}</b>
-          <span className="small muted">{direct ? 'covered' : 'saved'}</span>
+      <div className="row nowrap gap-16">
+        <Donut size={96} slices={slices}>
+          <b className="h3">{aim ? `${Math.round(pct)}%` : cash(g.balance, { whole: true })}</b>
+          <span className="xs muted">{direct ? 'covered' : 'saved'}</span>
         </Donut>
-        <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 4 }}>
-          <span style={{ fontSize: 22, fontWeight: 700, lineHeight: 1.1 }}>{money(g.balance, { whole: true })}</span>
-          <span className="small muted">{direct ? `saved + ${money(direct, { whole: true })} paid already · ` : ''}{aim ? `of ${money(aim, { whole: true })}${g.target ? ' target' : ' costs'} · ` : ''}updated {fmtShort(g.asOf)}</span>
-          <span className={`small ${status.tone}`} style={{ fontWeight: 600 }}>{status.text}</span>
+        <div className="grow stack gap-2">
+          <span className="fig">{cash(g.balance, { whole: true })}</span>
+          <span className="small muted">{direct ? `saved + ${cash(direct, { whole: true })} paid already · ` : ''}{aim ? `of ${cash(aim, { whole: true })}${g.target ? ' target' : ' costs'} · ` : ''}updated {fmtShort(g.asOf)}</span>
+          <span className={`small strong ${status.tone}`}>{status.text}</span>
           <span className="small muted">
-            {monthName(period.start)} pay {money(thisPay, { whole: true })}{thisPay !== usual ? ` (usually ${money(usual, { whole: true })})` : ''}
+            {monthName(period.start)} pay {cash(thisPay, { whole: true })}{thisPay !== usual ? ` (usually ${cash(usual, { whole: true })})` : ''}
             {f.periodsLeft !== undefined ? ` · ${f.periodsLeft} pays left` : ''}
-            {g.otherPerPay ? ` · +${money(g.otherPerPay, { whole: true })} a pay from elsewhere` : ''}
+            {g.otherPerPay ? ` · +${cash(g.otherPerPay, { whole: true })} a pay from elsewhere` : ''}
           </span>
         </div>
       </div>
 
       {people && <PeopleChips goal={g} />}
 
-      <div className="seg" role="tablist" aria-label={`${g.name} details`} style={{ alignSelf: 'stretch', display: 'flex' }}>
+      <div className="seg fill" role="tablist" aria-label={`${g.name} details`}>
         {tabs.map((t) => (
-          <button key={t.id} role="tab" aria-selected={tab === t.id} aria-pressed={tab === t.id} onClick={() => setTab(t.id)} style={{ flex: 1, paddingInline: 6 }}>{t.label}</button>
+          <button key={t.id} role="tab" aria-selected={tab === t.id} onClick={() => setTab(t.id)}>{t.label}</button>
         ))}
       </div>
 
@@ -222,7 +219,7 @@ export function GoalModal({ goal, onClose }: { goal?: SavingsGoal; onClose: () =
       <div className="modal" role="dialog" aria-modal="true" aria-labelledby="goal-title" onClick={(e) => e.stopPropagation()}>
         <div className="between">
           <h2 id="goal-title" className="h2">{goal ? `Edit ${goal.name}` : 'Add a savings goal'}</h2>
-          <button className="icon-btn" aria-label="Close" onClick={onClose}><Icon name="x" /></button>
+          <button className="icon-btn plain" aria-label="Close" onClick={onClose}><Icon name="x" /></button>
         </div>
         <label className="field">Name
           <input autoFocus={!goal} value={name} onChange={(e) => { setName(e.target.value); setErr(''); }} placeholder="Emergency fund" />

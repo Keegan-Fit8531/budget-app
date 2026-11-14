@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { addDays, fmtDay, monthName, todayISO } from '../lib/dates';
+import { addDays, fmtDay, fmtShort, monthName, todayISO } from '../lib/dates';
 import { periodContaining, shiftPeriod, type Period } from '../lib/engine';
 import { useBudget } from '../lib/store';
 import { Icon } from './Icon';
@@ -41,41 +41,52 @@ export function useDayView(key: string): DayView {
   };
 }
 
-/** ‹ November pay › plus a slider for the day in it. */
+/**
+ * The pay and day being looked at, on one line: ‹ October pay · this pay ›, Fri 13 Nov · today.
+ * Looking at a different day is something done now and then, so the slider for it sits behind
+ * the calendar button (and stays open while a day other than today is chosen).
+ */
 export function DayPicker({ dv }: { dv: DayView }) {
   const { offset, view, day, today, dayIdx, goPay, setDay } = dv;
   const setIdx = (i: number) => setDay(addDays(view.start, Math.max(0, Math.min(view.days - 1, i))));
   const now = today >= view.start && today <= view.end;
+  const moved = offset > 0 || day !== today;
+  const [picking, setPicking] = useState(false);
+  const open = picking || day !== today;
   return (
-    <div className="card" style={{ padding: '10px 14px' }}>
-      <div className="row" style={{ gap: 8 }}>
-        {offset > 0
-          ? <button className="icon-btn" aria-label="Previous pay" onClick={() => goPay(offset - 1)}><Icon name="left" /></button>
-          : <span style={{ width: 44, flex: '0 0 44px' }} aria-hidden="true" />}
-        <div style={{ minWidth: 0, flex: 1 }}>
-          <b style={{ fontSize: 16 }}>{monthName(view.start)} pay{now ? ' · this pay' : offset === 1 ? ' · next pay' : ''}</b>
-          <p className="small muted">{fmtDay(view.start)} – {fmtDay(view.end)} · {day === today ? 'today' : day > today ? 'projected' : 'earlier'}</p>
+    <div className="card stack gap-8" style={{ padding: 'var(--s-3) var(--s-4)' }}>
+      <div className="between nowrap">
+        <div className="min0">
+          <b className="block">{monthName(view.start)} pay{now ? ' · this pay' : offset === 1 ? ' · next pay' : ''}</b>
+          <span className="small muted block">
+            {day === today ? `Today, ${fmtShort(day)}` : `${fmtDay(day)} · ${day > today ? 'projected' : 'earlier'}`} · day {dayIdx + 1} of {view.days}
+          </span>
         </div>
-        <button className="icon-btn" aria-label="Next pay" onClick={() => goPay(offset + 1)}><Icon name="right" /></button>
-        {(offset > 0 || day !== today) && <button className="btn small ghost" onClick={() => goPay(0)}>Today</button>}
-      </div>
-      <div style={{ borderTop: '1px solid var(--line)', marginTop: 10, paddingTop: 10, display: 'flex', flexDirection: 'column', gap: 6 }}>
-        <div className="between small">
-          <b>{fmtDay(day)}{day === today ? ' · today' : ''}</b>
-          <span className="muted">day {dayIdx + 1} of {view.days}</span>
-        </div>
-        <div className="row" style={{ gap: 8, flexWrap: 'nowrap' }}>
-          <button className="icon-btn" aria-label="Previous day" onClick={() => setIdx(dayIdx - 1)} disabled={dayIdx === 0}><Icon name="left" /></button>
-          <input type="range" min={0} max={view.days - 1} value={dayIdx} onChange={(e) => setIdx(Number(e.target.value))}
-            aria-label="Day in this pay" style={{ flex: 1, accentColor: 'var(--brand)', minHeight: 44 }} />
-          <button className="icon-btn" aria-label="Next day" onClick={() => setIdx(dayIdx + 1)} disabled={dayIdx === view.days - 1}><Icon name="right" /></button>
-        </div>
-        <div className="row" style={{ gap: 6, flexWrap: 'wrap' }}>
-          <button className="btn small ghost" onClick={() => setIdx(0)}>Payday</button>
-          {now && day !== today && <button className="btn small ghost" onClick={() => setDay(today)}>Today</button>}
-          <button className="btn small ghost" onClick={() => setIdx(view.days - 1)}>Day before next pay</button>
+        <div className="row gap-4 day-steps" style={{ flex: '0 0 auto' }}>
+          {moved && <button className="btn small ghost" onClick={() => { goPay(0); setPicking(false); }}>Today</button>}
+          <button className={`icon-btn plain has-tip${open ? ' on' : ''}`} data-tip="Look at another day" aria-label="Look at another day" aria-expanded={open}
+            onClick={() => setPicking(!open)} disabled={day !== today}><Icon name="calendar" /></button>
+          <button className="icon-btn plain" aria-label="Previous pay" disabled={offset === 0} onClick={() => goPay(offset - 1)}><Icon name="left" /></button>
+          <button className="icon-btn plain" aria-label="Next pay" onClick={() => goPay(offset + 1)}><Icon name="right" /></button>
         </div>
       </div>
+      {open && (
+        <div className="stack gap-4" style={{ borderTop: '1px solid var(--line)', paddingTop: 'var(--s-2)' }}>
+          <div className="row nowrap gap-8">
+            <button className="icon-btn plain" aria-label="Previous day" onClick={() => setIdx(dayIdx - 1)} disabled={dayIdx === 0}><Icon name="left" /></button>
+            <input type="range" min={0} max={view.days - 1} value={dayIdx} onChange={(e) => setIdx(Number(e.target.value))}
+              aria-label="Day in this pay" aria-valuetext={fmtDay(day)} className="grow" style={{ minHeight: 'var(--tap)' }} />
+            <button className="icon-btn plain" aria-label="Next day" onClick={() => setIdx(dayIdx + 1)} disabled={dayIdx === view.days - 1}><Icon name="right" /></button>
+          </div>
+          <div className="between small">
+            <span className="muted">{fmtDay(view.start)} – {fmtDay(view.end)}</span>
+            <span className="row wrap gap-4">
+              <button className="btn small ghost" onClick={() => setIdx(0)}>Payday</button>
+              <button className="btn small ghost" onClick={() => setIdx(view.days - 1)}>Day before next pay</button>
+            </span>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

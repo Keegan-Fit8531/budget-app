@@ -1,6 +1,6 @@
 import { createContext, useContext, useMemo, useState, type ReactNode } from 'react';
 import { Icon } from '../components/Icon';
-import { fmtDay, monthName, todayISO } from './dates';
+import { fmtDay, fmtShort, monthName, todayISO } from './dates';
 import { budgetPeriod, shiftPeriod, upcomingPayPeriod, type Period, type View } from './engine';
 import { useBudget } from './store';
 
@@ -72,23 +72,41 @@ export function ViewModes() {
   );
 }
 
-/** ‹ November pay › — moves every page that follows the selected pay. */
+/**
+ * ‹ November pay › — moves every page that follows the selected pay.
+ * On the Planner and Insights it's the page title; elsewhere (`compact`) it's a small control in the header.
+ */
 export function PayNav({ title, compact }: { title?: string; compact?: boolean }) {
   const { offset, setOffset, period, earliest } = useViewPeriod();
+  const steps = (
+    <div className="pay-nav-steps">
+      <button className="icon-btn plain" aria-label="Previous pay period" disabled={period.start <= earliest.start} onClick={() => setOffset(offset - 1)}><Icon name="left" /></button>
+      <button className="icon-btn plain" aria-label="Next pay period" onClick={() => setOffset(offset + 1)}><Icon name="right" /></button>
+    </div>
+  );
+  if (compact) {
+    return (
+      <div className="pay-nav compact">
+        <div className="min0">
+          <b className="block">{monthName(period.start)} pay</b>
+          <span className="xs muted block">{fmtShort(period.start)} – {fmtShort(period.end)} · {period.days} days</span>
+        </div>
+        <div className="row gap-4">
+          {offset !== 0 && <button className="btn small ghost" onClick={() => setOffset(0)}>Next pay</button>}
+          {steps}
+        </div>
+      </div>
+    );
+  }
   return (
-    <div className="row" style={{ gap: compact ? 8 : 12 }}>
-      {period.start > earliest.start
-        ? <button className="icon-btn" aria-label="Previous pay period" onClick={() => setOffset(offset - 1)}><Icon name="left" /></button>
-        : <span style={{ width: 44, flex: '0 0 44px' }} aria-hidden="true" />}
-      <div style={{ minWidth: 0 }}>
-        {compact
-          ? <b style={{ fontSize: 16 }}>{monthName(period.start)} pay</b>
-          : <h1 className="h1">{title ?? `${monthName(period.start)} pay`}</h1>}
+    <div className="pay-nav grow">
+      <div className="min0">
+        <h1 className="h1">{title ?? `${monthName(period.start)} pay`}</h1>
         <p className="small muted">
-          {fmtDay(period.start)} – {fmtDay(period.end)} · {period.days} days{compact ? '' : ` · next pay ${fmtDay(period.nextPayday)}`}
+          {title ? `${monthName(period.start)} pay · ${fmtShort(period.start)} – ${fmtShort(period.end)}` : `${fmtDay(period.start)} – ${fmtDay(period.end)}`} · {period.days} days
         </p>
       </div>
-      <button className="icon-btn" aria-label="Next pay period" onClick={() => setOffset(offset + 1)}><Icon name="right" /></button>
+      {steps}
       {offset !== 0 && <button className="btn small ghost" onClick={() => setOffset(0)}>Next pay</button>}
     </div>
   );

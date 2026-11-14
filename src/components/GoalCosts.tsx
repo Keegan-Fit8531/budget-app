@@ -1,17 +1,18 @@
 import { useRef, useState } from 'react';
-import { PALETTE } from '../lib/colors';
+import { colorAt } from '../lib/colors';
 import { addDays, fmtDay, fmtShort, todayISO } from '../lib/dates';
 import { periodContaining } from '../lib/engine';
 import { costCategories, leftOn, removeSpend, spendFromGoal, spentOn, summariseCosts } from '../lib/goalcosts';
-import { centsToInput, money, parseMoney } from '../lib/money';
+import { cash, centsToInput, parseMoney } from '../lib/money';
 import { newId, useBudget } from '../lib/store';
 import type { ReactNode } from 'react';
 import type { GoalCost, SavingsGoal } from '../lib/types';
 import { CostCategoriesModal } from './CostCategories';
-import { Donut, Legend } from './Donut';
+import { Donut } from './Donut';
 import { NEW_PERSON, PersonPicker } from './GoalGifts';
 import { addPerson, paidShares, peopleOf } from '../lib/contributions';
 import { Icon } from './Icon';
+import { Chevron, Disclosure, Dot } from './ui';
 
 /** Costs paid from a savings goal (e.g. the wedding): what's due when, and whether the fund will cover it. */
 export function GoalCosts({ goal }: { goal: SavingsGoal }) {
@@ -31,7 +32,7 @@ export function GoalCosts({ goal }: { goal: SavingsGoal }) {
   const s = summariseCosts(budget, goal, today);
   const costs = goal.costs ?? [];
   const cats = costCategories(budget);
-  const catColor = (c: string) => PALETTE[Math.max(0, cats.indexOf(c)) % PALETTE.length];
+  const catColor = (c: string) => colorAt(Math.max(0, cats.indexOf(c)));
 
   const groups = cats.filter((cat) => costs.some((c) => (c.category ?? cats[0]) === cat)).map((cat) => {
     const inCat = (c: GoalCost) => (c.category ?? cats[0]) === cat;
@@ -47,55 +48,50 @@ export function GoalCosts({ goal }: { goal: SavingsGoal }) {
   });
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-      <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+    <div className="stack gap-12">
+      {costs.length === 0 && <p className="small muted">Add the costs this has to cover (venue, photographer…), with due dates if they have one. They're checked against what you'll have saved.</p>}
+
+      {costs.length > 0 && (
+        // What's left to pay, with the split by category as a small ring; each category's share is on its row.
+        <div className="row gap-16">
+          <Donut size={72} slices={groups.map((g) => ({ label: g.cat, value: g.total, color: catColor(g.cat) }))} />
+          <div className="grow">
+            <span className="fig-sm block">{cash(s.toPay, { whole: true })} <span className="small muted" style={{ fontWeight: 500 }}>still to pay</span></span>
+            <span className="small muted">of {cash(s.total, { whole: true })}{s.paid > 0 ? ` · ${cash(s.paid, { whole: true })} paid` : ''}</span>
+          </div>
+        </div>
+      )}
+
+      <div className="row wrap gap-8">
         <button className="btn small primary" onClick={() => setModal({})}><Icon name="plus" size={16} /> Add cost</button>
         {costs.length > 0 && <button className="btn small" onClick={() => setSpending(true)}>Spend money</button>}
         <button className="btn small ghost" onClick={() => setEditCats(true)}>Categories</button>
       </div>
 
-      {costs.length === 0 && <p className="small muted">Add the costs this has to cover (venue, photographer…), with due dates if they have one. They're checked against what you'll have saved.</p>}
-
       {costs.length > 0 && (
         <>
-          <div>
-            <div className="between small">
-              <span><b>{money(s.toPay, { whole: true })}</b> <span className="muted">still to pay of {money(s.total, { whole: true })}</span></span>
-              {s.paid > 0 && <span className="muted">{money(s.paid, { whole: true })} paid</span>}
-            </div>
-          </div>
-          {/* Share of costs by category. */}
-          <div className="row" style={{ flexWrap: 'wrap', gap: 20, alignItems: 'center' }}>
-            <Donut size={130} slices={groups.map((g) => ({ label: g.cat, value: g.total, color: catColor(g.cat) }))}>
-              <span className="small muted">Costs</span>
-              <b style={{ fontSize: 16 }}>{money(s.total, { whole: true })}</b>
-            </Donut>
-            <Legend slices={groups.map((g) => ({ label: g.cat, value: g.total, color: catColor(g.cat) }))} />
-          </div>
-
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <div className="stack gap-8">
             {groups.map((g) => {
               const expanded = openGroups.includes(g.cat);
               return (
-                <div key={g.cat} className="cost-group" style={{ ['--group' as string]: catColor(g.cat) }}>
-                  <button className="between cost-group-head" aria-expanded={expanded} onClick={() => toggleGroup(g.cat)}
-                    style={{ width: '100%', background: 'none', border: 0, color: 'inherit', font: 'inherit', cursor: 'pointer', textAlign: 'left', flexWrap: 'nowrap', borderBottom: expanded ? undefined : 0 }}>
-                    <span className="row" style={{ gap: 8, minWidth: 0 }}>
-                      <span className="dot" style={{ background: catColor(g.cat) }} />
-                      <span style={{ minWidth: 0 }}>
-                        <b style={{ fontSize: 15 }}>{g.cat}</b>
-                        <span className="small muted" style={{ display: 'block' }}>
-                          {g.open.length + g.done.length} cost{g.open.length + g.done.length === 1 ? '' : 's'}
-                          {g.left === 0 ? ' · all paid' : g.left !== g.total ? ` · ${money(g.left, { whole: true })} to pay` : ''}
+                <div key={g.cat} className="cost-group">
+                  <button className="cost-group-head" aria-expanded={expanded} onClick={() => toggleGroup(g.cat)}>
+                    <span className="row gap-8 min0">
+                      <Dot color={catColor(g.cat)} />
+                      <span className="min0">
+                        <b className="block">{g.cat}</b>
+                        <span className="small muted block">
+                          {g.open.length + g.done.length} cost{g.open.length + g.done.length === 1 ? '' : 's'} · {s.total ? Math.round((g.total / s.total) * 100) : 0}%
+                          {g.left === 0 ? ' · all paid' : g.left !== g.total ? ` · ${cash(g.left, { whole: true })} to pay` : ''}
                         </span>
                       </span>
                     </span>
-                    <span className="row" style={{ gap: 10, flexWrap: 'nowrap' }}>
-                      <span style={{ textAlign: 'right' }}>
-                        <b style={{ display: 'block' }}>{money(g.total, { whole: true })}</b>
-                        {g.left > 0 && <span className={`small ${g.short ? 'neg' : 'pos'}`}>{g.short ? `${money(g.short, { whole: true })} short` : 'Covered'}</span>}
+                    <span className="row nowrap gap-8">
+                      <span className="right">
+                        <b className="block num">{cash(g.total, { whole: true })}</b>
+                        {g.left > 0 && <span className={`xs ${g.short ? 'neg' : 'muted'}`}>{g.short ? `${cash(g.short, { whole: true })} short` : 'Covered'}</span>}
                       </span>
-                      <span aria-hidden="true" style={{ display: 'inline-flex', transform: expanded ? 'rotate(180deg)' : 'none', transition: 'transform .15s' }}><Icon name="down" size={18} /></span>
+                      <Chevron />
                     </span>
                   </button>
                   {expanded && (
@@ -103,14 +99,14 @@ export function GoalCosts({ goal }: { goal: SavingsGoal }) {
                       {g.open.map((c) => (
                         <CostRow key={c.cost.id} goal={goal} cost={c.cost} open={openId === c.cost.id} onToggle={() => setOpenId(openId === c.cost.id ? null : c.cost.id)}
                           onEdit={() => setModal({ cost: c.cost })}
-                          status={<span className={`small ${!c.by ? 'muted' : c.covered ? 'pos' : 'neg'}`}>{!c.by ? 'Needs a date' : c.covered ? 'Covered' : `${money(c.short, { whole: true })} short`}</span>}
+                          status={<span className={`xs ${!c.by ? 'muted' : c.covered ? 'muted' : 'neg'}`}>{!c.by ? 'Needs a date' : c.covered ? 'Covered' : `${cash(c.short, { whole: true })} short`}</span>}
                           due={c.cost.due ? `Due ${fmtShort(c.cost.due)}` : undefined} />
                       ))}
                       {g.done.map((c) => (
                         <CostRow key={c.id} goal={goal} cost={c} done open={openId === c.id} onToggle={() => setOpenId(openId === c.id ? null : c.id)}
                           onEdit={() => setModal({ cost: c })}
-                          status={<span className="small pos">{!c.paid ? 'Spent' : c.paidOutside ? `Paid by ${paidShares(c).map((x) => x.person).join(' & ') || '…'}` : 'Paid'}</span>}
-                          due={c.paidOn ? `Paid ${fmtShort(c.paidOn)} ${c.paidOn.slice(0, 4)}${paidShares(c).length > 1 ? ` · ${paidShares(c).map((x) => `${x.person} ${money(x.amount, { whole: true })}`).join(' + ')}` : c.paidOutside ? ' · not from the fund' : ''}` : c.due ? fmtShort(c.due) : undefined} />
+                          status={<span className="xs pos">{!c.paid ? 'Spent' : c.paidOutside ? `Paid by ${paidShares(c).map((x) => x.person).join(' & ') || '…'}` : 'Paid'}</span>}
+                          due={c.paidOn ? `Paid ${fmtShort(c.paidOn)} ${c.paidOn.slice(0, 4)}${paidShares(c).length > 1 ? ` · ${paidShares(c).map((x) => `${x.person} ${cash(x.amount, { whole: true })}`).join(' + ')}` : c.paidOutside ? ' · not from the fund' : ''}` : c.due ? fmtShort(c.due) : undefined} />
                       ))}
                     </div>
                   )}
@@ -118,12 +114,14 @@ export function GoalCosts({ goal }: { goal: SavingsGoal }) {
               );
             })}
           </div>
-          <p className="small muted">
-            {goal.targetDate
-              ? <>Costs without a due date are checked against {fmtDay(goal.targetDate)} (the last pay that counts is {fmtDay(periodContaining(addDays(goal.targetDate, -1), budget.settings).start)}). </>
-              : <>Set a target date with Edit to check costs without a due date. </>}
-            "Covered" means the fund should have enough by then. Tap a group to see its costs.
-          </p>
+          <Disclosure title="What “Covered” means">
+            <p className="small muted">
+              The fund should have enough by the time the cost is due.{' '}
+              {goal.targetDate
+                ? <>Costs without a due date are checked against {fmtDay(goal.targetDate)} (the last pay that counts is {fmtDay(periodContaining(addDays(goal.targetDate, -1), budget.settings).start)}).</>
+                : <>Set a target date with Edit to check costs without a due date.</>}
+            </p>
+          </Disclosure>
         </>
       )}
 
@@ -176,7 +174,7 @@ function CostModal({ goal, cost, onClose }: { goal: SavingsGoal; cost?: GoalCost
       if (rows.some((r) => !r.person)) return fail('Enter who paid it.', 'split');
       if (rows.some((r) => r.amount === null || r.amount <= 0)) return fail('Enter how much each person paid.', 'split');
       const sum = rows.reduce((t, r) => t + (r.amount ?? 0), 0);
-      if (sum !== c) return fail(`The amounts add up to ${money(sum)}, but the cost is ${money(c)}.`, 'split');
+      if (sum !== c) return fail(`The amounts add up to ${cash(sum)}, but the cost is ${cash(c)}.`, 'split');
       if (new Set(rows.map((r) => r.person)).size !== rows.length) return fail('Each person can only be listed once.', 'split');
     }
     update((b) => {
@@ -221,7 +219,7 @@ function CostModal({ goal, cost, onClose }: { goal: SavingsGoal; cost?: GoalCost
       <div className="modal" role="dialog" aria-modal="true" aria-labelledby="cost-title" onClick={(e) => e.stopPropagation()}>
         <div className="between">
           <h2 id="cost-title" className="h2">{cost ? `Edit ${cost.name}` : `${goal.name}: add a cost`}</h2>
-          <button className="icon-btn" aria-label="Close" onClick={onClose}><Icon name="x" /></button>
+          <button className="icon-btn plain" aria-label="Close" onClick={onClose}><Icon name="x" /></button>
         </div>
         <label className="field">What it is
           <input ref={nameRef} autoFocus={!cost} value={name} onChange={(e) => { setName(e.target.value); setErr(''); }} placeholder="Wedding bands" />
@@ -245,8 +243,8 @@ function CostModal({ goal, cost, onClose }: { goal: SavingsGoal; cost?: GoalCost
             </label>
           )}
         </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          <span style={{ fontSize: 14, fontWeight: 600 }}>Paid?</span>
+        <div className="stack gap-8">
+          <span className="h3">Paid?</span>
           <div className="seg" role="group" aria-label="Paid?" style={{ display: 'flex' }}>
             <button aria-pressed={pay === 'no'} onClick={() => setPay('no')} style={{ flex: 1, paddingInline: 6 }}>Not yet</button>
             <button aria-pressed={pay === 'fund'} onClick={() => setPay('fund')} style={{ flex: 1, paddingInline: 6 }}>From the fund</button>
@@ -258,10 +256,10 @@ function CostModal({ goal, cost, onClose }: { goal: SavingsGoal; cost?: GoalCost
             const total = parseMoney(amount) ?? 0;
             const sum = split.reduce((t, r) => t + (split.length === 1 && !r.amount.trim() ? total : parseMoney(r.amount) ?? 0), 0);
             return (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <div className="stack gap-8">
                 {split.map((r, i) => (
-                  <div key={r.key} className="row" style={{ gap: 8, alignItems: 'flex-end', flexWrap: 'nowrap' }}>
-                    <div style={{ flex: 1, minWidth: 0 }}>
+                  <div key={r.key} className="row gap-8 bottom nowrap">
+                    <div className="grow">
                       <PersonPicker goal={goal} value={r.person} label={i === 0 ? 'Paid by' : 'And'}
                         onChange={(v) => { setSplit((sp) => sp.map((x) => (x.key === r.key ? { ...x, person: v } : x))); setErr(''); }} />
                     </div>
@@ -283,7 +281,7 @@ function CostModal({ goal, cost, onClose }: { goal: SavingsGoal; cost?: GoalCost
                   })}><Icon name="plus" size={16} /> Add another person</button>
                   {fieldErr('split')}
                   {split.length > 1 && total > 0 && (
-                    <b className={sum === total ? 'pos' : 'neg'}>{sum === total ? 'Adds up' : sum < total ? `${money(total - sum)} still to split` : `${money(sum - total)} too much`}</b>
+                    <b className={sum === total ? 'pos' : 'neg'}>{sum === total ? 'Adds up' : sum < total ? `${cash(total - sum)} still to split` : `${cash(sum - total)} too much`}</b>
                   )}
                 </div>
               </div>
@@ -298,8 +296,8 @@ function CostModal({ goal, cost, onClose }: { goal: SavingsGoal; cost?: GoalCost
           )}
         </div>
         {pay === 'no' && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            <div className="row" style={{ gap: 8, alignItems: 'flex-end' }}>
+          <div className="stack gap-6">
+            <div className="row gap-8 bottom">
               <label className="field" style={{ flex: 1 }}>Due date (optional)
                 <input type="date" value={due} onChange={(e) => setDue(e.target.value)} />
               </label>
@@ -342,51 +340,51 @@ function CostRow({ goal, cost, status, due, done, open, onToggle, onEdit }: {
     <div style={{ borderBottom: '1px solid var(--line)' }}>
       <div className={`list-row${done ? ' muted' : ''}`} style={{ borderBottom: 0 }}>
         <button onClick={onEdit} style={{ flex: 1, minWidth: 0, textAlign: 'left', background: 'none', border: 0, padding: 0, cursor: 'pointer', color: 'inherit', font: 'inherit', overflowWrap: 'anywhere' }}>
-          <span style={{ display: 'block' }}>{done ? <s>{cost.name}</s> : cost.name}</span>
-          {(due || (spent > 0 && !done)) && <span className="small muted">{[due, spent > 0 && !done ? `${money(spent)} spent of ${money(cost.amount)}` : ''].filter(Boolean).join(' · ')}</span>}
+          <span className="block">{done ? <s>{cost.name}</s> : cost.name}</span>
+          {(due || (spent > 0 && !done)) && <span className="small muted">{[due, spent > 0 && !done ? `${cash(spent)} spent of ${cash(cost.amount)}` : ''].filter(Boolean).join(' · ')}</span>}
         </button>
         <span style={{ textAlign: 'right', flex: '0 0 auto' }}>
-          <b style={{ display: 'block', whiteSpace: 'nowrap' }}>{money(done ? Math.max(cost.amount, spent) : left, { whole: true })}</b>
-          {spent > cost.amount ? <span className="small neg" style={{ display: 'block' }}>{money(spent - cost.amount)} over</span> : status}
+          <b style={{ display: 'block', whiteSpace: 'nowrap' }}>{cash(done ? Math.max(cost.amount, spent) : left, { whole: true })}</b>
+          {spent > cost.amount ? <span className="small neg block">{cash(spent - cost.amount)} over</span> : status}
         </span>
         <button className="btn small ghost" onClick={onEdit} style={{ flex: '0 0 auto', paddingInline: 8 }} aria-label={`Edit ${cost.name}`}><Icon name="edit" size={16} /></button>
       </div>
       {spends.length > 0 && (
         <button className="btn small ghost" onClick={onToggle} aria-expanded={open} style={{ marginBottom: 6, minHeight: 30 }}>
-          {open ? 'Hide' : 'Show'} {spends.length} spend{spends.length === 1 ? '' : 's'} · {money(spent)} spent
+          {open ? 'Hide' : 'Show'} {spends.length} spend{spends.length === 1 ? '' : 's'} · {cash(spent)} spent
         </button>
       )}
       {open && spends.length > 0 && (
-        <div style={{ marginBottom: 10, background: 'var(--bg)', borderRadius: 12, padding: '4px 12px' }}>
+        <div className="inset" style={{ marginBottom: 10 }}>
           {spends.map((x) => (
             <div key={x.id} className="list-row small">
               <span style={{ width: 56, flex: '0 0 56px' }}>{fmtShort(x.date)}</span>
-              <span style={{ flex: 1, minWidth: 0 }}>{x.note || 'Spent'}</span>
-              <b>{money(x.amount)}</b>
-              <button className="btn small ghost" aria-label={`Remove ${money(x.amount)} spent on ${fmtShort(x.date)}`}
+              <span className="grow">{x.note || 'Spent'}</span>
+              <b>{cash(x.amount)}</b>
+              <button className="btn small ghost" aria-label={`Remove ${cash(x.amount)} spent on ${fmtShort(x.date)}`}
                 onClick={() => setUndo({ id: x.id, amount: x.amount, date: x.date })}>
                 <Icon name="x" size={14} />
               </button>
             </div>
           ))}
-          <div className="list-row small"><span style={{ flex: 1 }}><b>Total spent</b></span><b>{money(spent)}</b></div>
-          <div className="list-row small muted"><span style={{ flex: 1 }}>Budgeted {money(cost.amount)}</span><span>{spent > cost.amount ? `${money(spent - cost.amount)} over` : `${money(cost.amount - spent)} left`}</span></div>
+          <div className="list-row small"><span className="grow"><b>Total spent</b></span><b>{cash(spent)}</b></div>
+          <div className="list-row small muted"><span className="grow">Budgeted {cash(cost.amount)}</span><span>{spent > cost.amount ? `${cash(spent - cost.amount)} over` : `${cash(cost.amount - spent)} left`}</span></div>
         </div>
       )}
       {undo && (
         <div className="modal-back" onClick={() => setUndo(null)}>
           <div className="modal" role="dialog" aria-modal="true" aria-labelledby="undo-spend-title" onClick={(e) => e.stopPropagation()}>
             <div className="between">
-              <h2 id="undo-spend-title" className="h2">Remove {money(undo.amount)} spent on {fmtShort(undo.date)}?</h2>
-              <button className="icon-btn" aria-label="Close" onClick={() => setUndo(null)}><Icon name="x" /></button>
+              <h2 id="undo-spend-title" className="h2">Remove {cash(undo.amount)} spent on {fmtShort(undo.date)}?</h2>
+              <button className="icon-btn plain" aria-label="Close" onClick={() => setUndo(null)}><Icon name="x" /></button>
             </div>
             <p className="small muted">
-              It comes off {cost.name} either way. Choose what happens to the saved balance, now {money(goal.balance)}.
+              It comes off {cost.name} either way. Choose what happens to the saved balance, now {cash(goal.balance)}.
             </p>
-            <button className="btn primary" onClick={() => undoSpend(true)}>Put {money(undo.amount)} back: balance becomes {money(goal.balance + undo.amount)}</button>
-            <button className="btn" onClick={() => undoSpend(false)}>Leave the balance at {money(goal.balance)}</button>
+            <button className="btn primary" onClick={() => undoSpend(true)}>Put {cash(undo.amount)} back: balance becomes {cash(goal.balance + undo.amount)}</button>
+            <button className="btn" onClick={() => undoSpend(false)}>Leave the balance at {cash(goal.balance)}</button>
             <p className="small muted">Leave it if the balance already shows the real amount (e.g. you've updated it since, or the spend was more than was saved).</p>
-            <div className="row" style={{ justifyContent: 'flex-end' }}>
+            <div className="row end">
               <button className="btn" onClick={() => setUndo(null)}>Cancel</button>
             </div>
           </div>
@@ -434,7 +432,7 @@ function SpendModal({ goal, onClose }: { goal: SavingsGoal; onClose: () => void 
       <div className="modal" role="dialog" aria-modal="true" aria-labelledby="spend-title" onClick={(e) => e.stopPropagation()}>
         <div className="between">
           <h2 id="spend-title" className="h2">{goal.name}: spend money</h2>
-          <button className="icon-btn" aria-label="Close" onClick={onClose}><Icon name="x" /></button>
+          <button className="icon-btn plain" aria-label="Close" onClick={onClose}><Icon name="x" /></button>
         </div>
         <div className="form-grid">
           <label className="field">Amount spent
@@ -446,7 +444,7 @@ function SpendModal({ goal, onClose }: { goal: SavingsGoal; onClose: () => void 
         </div>
         <label className="field">What it was for
           <select value={costId} onChange={(e) => setCostId(e.target.value)}>
-            {costs.map((x) => <option key={x.id} value={x.id}>{x.name} ({money(leftOn(x))} left)</option>)}
+            {costs.map((x) => <option key={x.id} value={x.id}>{x.name} ({cash(leftOn(x))} left)</option>)}
             <option value="new">New cost…</option>
           </select>
         </label>
@@ -473,12 +471,12 @@ function SpendModal({ goal, onClose }: { goal: SavingsGoal; onClose: () => void 
         </label>
         {c !== null && c > 0 && (
           <p className="small muted">
-            Takes {money(c)} off the saved balance{target ? ` and off ${target.name}: ${money(leftOn(target))} → ${money(Math.max(0, leftOn(target) - c))} left` : ', and adds it to the list as spent'}.
-            {target && c > leftOn(target) ? ` That's ${money(c - leftOn(target))} more than was budgeted.` : ''}
+            Takes {cash(c)} off the saved balance{target ? ` and off ${target.name}: ${cash(leftOn(target))} → ${cash(Math.max(0, leftOn(target) - c))} left` : ', and adds it to the list as spent'}.
+            {target && c > leftOn(target) ? ` That's ${cash(c - leftOn(target))} more than was budgeted.` : ''}
           </p>
         )}
         {err && <p className="error" role="alert">{err}</p>}
-        <div className="row" style={{ justifyContent: 'flex-end' }}>
+        <div className="row end">
           <button className="btn" onClick={onClose}>Cancel</button>
           <button className="btn primary" onClick={save}>Spend</button>
         </div>

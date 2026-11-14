@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { modeOf } from '../lib/balances';
-import { centsToInput, money, parseMoney } from '../lib/money';
+import { cash, centsToInput, parseMoney } from '../lib/money';
 import type { PaydayMode } from '../lib/types';
 import { useBudget } from '../lib/store';
 
@@ -30,17 +30,17 @@ export function PaydayControl({ accountId, autoLabel, autoHint, sends, needs }: 
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-      <label className="row" style={{ fontSize: 14, cursor: 'pointer', minHeight: 44 }}>
+    <div className="stack gap-8">
+      <label className="check-row">
         <input type="checkbox" checked={auto} onChange={(e) => set({ mode: e.target.checked ? 'exact' : 'fixed' })}
           style={{ width: 20, height: 20, accentColor: 'var(--brand)' }} />
         <span>
           <b>{autoLabel}</b>
-          <span className="small muted" style={{ display: 'block' }}>{autoHint}</span>
+          <span className="small muted block">{autoHint}</span>
         </span>
       </label>
       {auto ? (
-        <p className="small">This pay sends <b>{money(sends)}</b>.{sends !== needs && <span className="muted"> Its costs come to {money(needs)}; the amount was adjusted for this pay.</span>}</p>
+        <p className="small">This pay sends <b>{cash(sends)}</b>.{sends !== needs && <span className="muted"> Its costs come to {cash(needs)}; the amount was adjusted for this pay.</span>}</p>
       ) : (
         <label className="field" style={{ maxWidth: 260 }}>Sent each payday (NZD)
           <input inputMode="decimal" value={text} onChange={(e) => setText(e.target.value)}

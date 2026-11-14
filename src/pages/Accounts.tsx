@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react';
-import { Icon } from '../components/Icon';
 import { DayPicker, useDayView } from '../components/DayPicker';
 import { MonthTracker, PayProjectionView } from '../components/MonthTracker';
 import { fmtDay, fmtShort, monthName, todayISO } from '../lib/dates';
 import { accountMode, balanceOn, depositFor, estimateBalance, forecastBalances, smoothAmount } from '../lib/balances';
 import { periodContaining, type Period } from '../lib/engine';
-import { centsToInput, money, parseMoney } from '../lib/money';
+import { cash, centsToInput, parseMoney } from '../lib/money';
+import { AccIcon, Chevron, Disclosure, PageHead } from '../components/ui';
 import { useBudget } from '../lib/store';
 import type { Account } from '../lib/types';
 
@@ -35,34 +35,30 @@ export function Accounts() {
 
   return (
     <>
-      <header>
-        <h1 className="h1">Accounts</h1>
-        <p className="small muted">
-          What's in each account and what it's for, up to next pay on {fmtDay(period.nextPayday)}. Update a balance whenever you check your banking app.
-        </p>
-      </header>
-
-      {known.length > 0 && (
-        <section style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12 }}>
-          <div className="stat" style={{ background: 'var(--card)' }}>
-            <span className="small muted">{live ? `Across ${known.length} account${known.length === 1 ? '' : 's'}` : `Estimated on ${fmtDay(day)}`}</span>
-            <b>{money(total)}</b>
-            {!live && <span className="small muted">across {known.length} account{known.length === 1 ? '' : 's'}{known.length < accounts.length ? ` (${accounts.length - known.length} without a balance)` : ''}</span>}
-          </div>
-          {live
-            ? <div className="stat" style={{ background: 'var(--card)' }}><span className="small muted">Next pay</span><b>{fmtShort(period.nextPayday)}</b><span className="small muted">in {Math.max(0, Math.round((Date.parse(period.nextPayday) - Date.parse(today)) / 86400000))} days</span></div>
-            : <div className="stat" style={{ background: 'var(--card)' }}><span className="small muted">{`${monthName(view.start)} pay${offset === 0 ? ' (this pay)' : ''}`}</span><b>{fmtShort(view.start)} – {fmtShort(view.end)}</b><span className="small muted">day {dayIdx + 1} of {view.days}</span></div>}
-        </section>
-      )}
+      <PageHead title="Accounts" sub={`What's in each account and what it's for, up to next pay on ${fmtDay(period.nextPayday)}. Update a balance whenever you check your banking app.`} />
 
       <DayPicker dv={dv} />
 
-      {accounts.map((a) => <BalanceCard key={a.id} account={a} view={live ? undefined : view} day={day} onPick={(i) => { goPay(i); window.scrollTo({ top: 0, behavior: 'smooth' }); }} />)}
+      {known.length > 0 && (
+        <section className="stats">
+          <div className="stat">
+            <span className="small muted">{live ? `Across ${known.length} account${known.length === 1 ? '' : 's'}` : `Estimated on ${fmtDay(day)}`}</span>
+            <b>{cash(total)}</b>
+            {!live && <span className="small muted">across {known.length} account{known.length === 1 ? '' : 's'}{known.length < accounts.length ? ` (${accounts.length - known.length} without a balance)` : ''}</span>}
+          </div>
+          {live
+            ? <div className="stat"><span className="small muted">Next pay</span><b>{fmtShort(period.nextPayday)}</b><span className="small muted">in {Math.max(0, Math.round((Date.parse(period.nextPayday) - Date.parse(today)) / 86400000))} days</span></div>
+            : <div className="stat"><span className="small muted">{`${monthName(view.start)} pay${offset === 0 ? ' (this pay)' : ''}`}</span><b>{fmtShort(view.start)} – {fmtShort(view.end)}</b><span className="small muted">day {dayIdx + 1} of {view.days}</span></div>}
+        </section>
+      )}
 
-      <div className="tip">
-        <Icon name="bulb" />
-        <span>{payAcc ? `${payAcc.name} isn't shown: pay lands there and is sent on to these accounts on payday. ` : ''}Savings balances are kept with their goals in <a href="#/savings">Savings</a>. What payday sends to each account is set in <a href="#/deposits">Deposits</a>.</span>
+      <div className="cards-2">
+        {accounts.map((a) => <BalanceCard key={a.id} account={a} view={live ? undefined : view} day={day} onPick={(i) => { goPay(i); window.scrollTo({ top: 0, behavior: 'smooth' }); }} />)}
       </div>
+
+      <p className="note">
+        {payAcc ? `${payAcc.name} isn't shown: pay lands there and is sent on to these accounts on payday. ` : ''}Savings balances are kept with their goals in <a href="#/savings">Savings</a>. What payday sends to each account is set in <a href="#/deposits">Deposits</a>.
+      </p>
     </>
   );
 }
@@ -73,6 +69,10 @@ function BalanceCard({ account: a, view, day, onPick }: { account: Account; view
   const s = budget.settings;
   const entry = budget.balances?.[a.id];
   const [editing, setEditing] = useState(false);
+  // The payments behind the figures are a click away; open or closed is remembered per account.
+  const openKey = `paydays.accounts.open.${a.id}`;
+  const [open, setOpenState] = useState(() => { try { return localStorage.getItem(openKey) === 'open'; } catch { return false; } });
+  const setOpen = (v: boolean) => { setOpenState(v); try { localStorage.setItem(openKey, v ? 'open' : 'closed'); } catch { /* ignore */ } };
   const [text, setText] = useState(entry ? centsToInput(entry.amount) : '');
   const [err, setErr] = useState('');
   const isPay = a.id === s.payAccountId;
@@ -83,6 +83,7 @@ function BalanceCard({ account: a, view, day, onPick }: { account: Account; view
 
   const forecast = entry && !isPay ? forecastBalances(budget, a.id, 6, today) : [];
   const lowest = forecast.reduce<number | undefined>((m, r) => (r.end === undefined ? m : m === undefined ? r.end : Math.min(m, r.end)), undefined);
+  const tracked = !isPay && budget.items.some((i) => i.accountId === a.id);
 
   function save() {
     const c = parseMoney(text);
@@ -92,30 +93,30 @@ function BalanceCard({ account: a, view, day, onPick }: { account: Account; view
   }
 
   const modeText = isPay ? 'Pay lands here'
-    : mode === 'smooth' ? `Steady · ${money(view ? depositFor(budget, a.id, view, today) : smoothAmount(budget, a.id))} ${view ? `on ${fmtShort(view.start)}` : 'next pay'}`
+    : mode === 'smooth' ? `Steady · ${cash(view ? depositFor(budget, a.id, view, today) : smoothAmount(budget, a.id))} ${view ? `on ${fmtShort(view.start)}` : 'next pay'}`
     : mode === 'exact' ? 'Exact amount each pay'
-    : `${money(budget.split.find((l) => l.accountId === a.id)?.amount ?? 0)} each pay`;
+    : `${cash(budget.split.find((l) => l.accountId === a.id)?.amount ?? 0)} each pay`;
 
   return (
-    <section className="card" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      <div className="between" style={{ flexWrap: 'nowrap', alignItems: 'flex-start' }}>
-        <div className="row" style={{ minWidth: 0 }}>
-          <span className="acc-icon" style={{ background: a.color }}><Icon name={isPay ? 'wallet' : 'bank'} /></span>
-          <div style={{ minWidth: 0 }}>
+    <section className="card stack gap-12">
+      <div className="between nowrap top">
+        <div className="row min0">
+          <AccIcon color={a.color} name={isPay ? 'wallet' : 'bank'} />
+          <div className="min0">
             <h2 className="h2">{a.name}</h2>
             <p className="small muted">{modeText}</p>
           </div>
         </div>
         {shown !== undefined && !editing && (
-          <div style={{ textAlign: 'right' }}>
-            <b style={{ fontSize: 22 }} className={shown < 0 ? 'neg' : ''}>{money(shown)}</b>
-            <span className="small muted" style={{ display: 'block' }}>{view ? `${day > today ? 'estimated' : 'on'} ${fmtShort(day)}` : entry!.asOf === today ? 'today' : 'estimated now'}</span>
+          <div className="right">
+            <b className={`fig ${shown < 0 ? 'neg' : ''}`}>{cash(shown)}</b>
+            <span className="small muted block">{view ? `${day > today ? 'estimated' : 'on'} ${fmtShort(day)}` : entry!.asOf === today ? 'today' : 'estimated now'}</span>
           </div>
         )}
       </div>
 
-      {editing || !entry ? (
-        <div className="row" style={{ flexWrap: 'wrap', alignItems: 'flex-end' }}>
+      {(editing || !entry) && (
+        <div className="row wrap bottom">
           <label className="field" style={{ flex: '1 1 180px', maxWidth: 260 }}>Balance right now
             <input inputMode="decimal" value={text} autoFocus={editing} placeholder="0.00"
               onChange={(e) => { setText(e.target.value); setErr(''); }} onKeyDown={(e) => e.key === 'Enter' && save()} />
@@ -124,41 +125,47 @@ function BalanceCard({ account: a, view, day, onPick }: { account: Account; view
           {editing && <button className="btn" onClick={() => setEditing(false)}>Cancel</button>}
           {err && <p className="error" role="alert" style={{ width: '100%' }}>{err}</p>}
         </div>
-      ) : (
-        <div className="between small">
-          <span className="muted">
-            You entered {money(entry.amount)} on {fmtShort(entry.asOf)}
-            {entry.asOf !== today ? '. Payments and paydays since then are counted in the estimate.' : '.'}
-          </span>
-          <button className="btn small" onClick={() => { setText(centsToInput(now ?? entry.amount)); setEditing(true); }}>Update balance</button>
-        </div>
       )}
 
-      {!isPay && budget.items.some((i) => i.accountId === a.id) && (view
-        ? <PayProjectionView budget={budget} account={a} period={view} day={day} today={today} />
-        : <MonthTracker budget={budget} account={a} today={today} />)}
+      {tracked && (view
+        ? <PayProjectionView budget={budget} account={a} period={view} day={day} today={today} open={open} />
+        : <MonthTracker budget={budget} account={a} today={today} open={open} />)}
 
-      {forecast.length > 0 && (
-        <details>
-          <summary className="small" style={{ cursor: 'pointer', minHeight: 32, fontWeight: 600 }}>
-            Next 6 pays{lowest !== undefined ? ` · lowest ${money(lowest)}` : ''}
-          </summary>
-          <div style={{ marginTop: 6 }}>
-            <div className="list-row small muted" style={{ paddingTop: 4 }}>
-              <span style={{ flex: 1 }}>Pay</span><span style={{ width: 80, textAlign: 'right' }}>In</span><span style={{ width: 80, textAlign: 'right' }}>Out</span><span style={{ width: 90, textAlign: 'right' }}>Ends with</span>
-            </div>
-            {forecast.map((r, i) => (
-              <div className="list-row small" key={r.period.start} role="button" tabIndex={0} title="See this pay day by day"
-                style={{ cursor: 'pointer', background: view?.start === r.period.start ? 'var(--soft)' : undefined }}
-                onClick={() => onPick(i)} onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && onPick(i)}>
-                <span style={{ flex: 1 }}>{monthName(r.period.start).slice(0, 3)} {r.period.start.slice(2, 4)}</span>
-                <span style={{ width: 80, textAlign: 'right' }}>{r.deposit ? money(r.deposit, { whole: true }) : '—'}</span>
-                <span style={{ width: 80, textAlign: 'right' }}>{money(r.out, { whole: true })}</span>
-                <b style={{ width: 90, textAlign: 'right' }} className={r.end !== undefined && r.end < 0 ? 'neg' : ''}>{r.end !== undefined ? money(r.end, { whole: true }) : '—'}</b>
-              </div>
-            ))}
+      {open && forecast.length > 0 && (
+        <Disclosure title="Next 6 pays" meta={lowest !== undefined ? `lowest ${cash(lowest)}` : undefined}>
+          <div className="table-scroll">
+            <table className="table">
+              <thead><tr><th>Pay</th><th>In</th><th>Out</th><th>Ends with</th></tr></thead>
+              <tbody>
+                {forecast.map((r, i) => (
+                  <tr key={r.period.start} role="button" tabIndex={0} title="See this pay day by day" style={{ cursor: 'pointer' }}
+                    className={view?.start === r.period.start ? 'picked' : undefined}
+                    onClick={() => onPick(i)} onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && onPick(i)}>
+                    <td>{monthName(r.period.start).slice(0, 3)} {r.period.start.slice(2, 4)}</td>
+                    <td>{r.deposit ? cash(r.deposit, { whole: true }) : '—'}</td>
+                    <td>{cash(r.out, { whole: true })}</td>
+                    <td><b className={r.end !== undefined && r.end < 0 ? 'neg' : ''}>{r.end !== undefined ? cash(r.end, { whole: true }) : '—'}</b></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
-        </details>
+        </Disclosure>
+      )}
+
+      {open && entry && !editing && (
+        <p className="small muted">
+          {entry.asOf === today ? `You entered ${cash(entry.amount)} today.` : `You entered ${cash(entry.amount)} on ${fmtShort(entry.asOf)}. Payments and paydays since then are counted in the estimate.`}
+        </p>
+      )}
+
+      {entry && !editing && (
+        <div className="between nowrap">
+          {tracked || forecast.length > 0
+            ? <button type="button" className="disc-head" aria-expanded={open} onClick={() => setOpen(!open)}>{open ? 'Hide details' : 'Details'}<Chevron size={16} /></button>
+            : <span />}
+          <button className="btn small" onClick={() => { setText(centsToInput(now ?? entry.amount)); setEditing(true); }}>Update balance</button>
+        </div>
       )}
     </section>
   );

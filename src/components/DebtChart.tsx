@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent } from 'react';
+import { Disclosure } from './ui';
+import { tone } from '../lib/colors';
 import { monthName, todayISO } from '../lib/dates';
 import { debtPerPay, debtSchedules, historyOwed, owed, projectedOwed } from '../lib/debts';
 import { periodContaining, shiftPeriod, type Period } from '../lib/engine';
-import { money } from '../lib/money';
+import { cash } from '../lib/money';
 import type { Budget, Debt } from '../lib/types';
 
 interface Point {
@@ -53,7 +55,7 @@ export function DebtChart({ budget }: { budget: Budget }) {
   const [wrapRef, width] = useWidth<HTMLDivElement>();
 
   const chosen: Debt[] = sel === 'all' ? debts : debts.filter((d) => d.id === sel);
-  const color = sel === 'all' ? '#6366F1' : (budget.accounts.find((a) => a.id === chosen[0]?.accountId)?.color ?? '#6366F1');
+  const color = sel === 'all' ? 'var(--brand-2)' : tone(budget.accounts.find((a) => a.id === chosen[0]?.accountId)?.color ?? chosen[0]?.color);
 
   const points = useMemo<Point[]>(() => {
     const cur = periodContaining(today, s);
@@ -121,16 +123,16 @@ export function DebtChart({ budget }: { budget: Budget }) {
 
   const h = hover !== null ? points[hover] : null;
   const paidOff = points.find((p, i) => i > nowI && p.forecast === 0 && (points[i - 1]?.forecast ?? 1) > 0);
-  const summary = `${chosen.length === 1 ? chosen[0].name : 'All debts'}: ${money(points[nowI]?.forecast ?? 0)} owed now` +
+  const summary = `${chosen.length === 1 ? chosen[0].name : 'All debts'}: ${cash(points[nowI]?.forecast ?? 0)} owed now` +
     (paidOff ? `, paid off by ${monthName(paidOff.period.start)} ${paidOff.period.start.slice(0, 4)}` : '') + '.';
 
   return (
-    <section className="card" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-      <div className="between">
+    <section className="card stack gap-12">
+      <div className="card-head">
         <h2 className="h2">Balance over time</h2>
         <span className="small muted">{summary}</span>
       </div>
-      <div className="row" style={{ flexWrap: 'wrap', gap: 8 }}>
+      <div className="row wrap gap-8">
         <div className="seg" role="group" aria-label="Which debt">
           <button aria-pressed={sel === 'all'} onClick={() => setSel('all')}>All debts</button>
           {debts.map((d) => <button key={d.id} aria-pressed={sel === d.id} onClick={() => setSel(d.id)}>{d.name}</button>)}
@@ -140,10 +142,10 @@ export function DebtChart({ budget }: { budget: Budget }) {
         </div>
       </div>
 
-      <div className="row small muted" style={{ gap: 16, flexWrap: 'wrap' }} aria-hidden="true">
-        <span className="row" style={{ gap: 6 }}><svg width="18" height="4"><line x1="0" y1="2" x2="18" y2="2" stroke={color} strokeWidth="2" strokeLinecap="round" /></svg>Owed (recorded)</span>
-        <span className="row" style={{ gap: 6 }}><svg width="18" height="4"><line x1="0" y1="2" x2="18" y2="2" stroke={color} strokeWidth="2" strokeDasharray="4 3" strokeLinecap="round" /></svg>Owed (forecast)</span>
-        <span className="row" style={{ gap: 6 }}><svg width="10" height="10"><rect width="10" height="10" rx="2" fill={color} opacity="0.55" /></svg>Payments each pay</span>
+      <div className="key" aria-hidden="true">
+        <span><svg width="18" height="4"><line x1="0" y1="2" x2="18" y2="2" stroke={color} strokeWidth="2" strokeLinecap="round" /></svg>Owed (recorded)</span>
+        <span><svg width="18" height="4"><line x1="0" y1="2" x2="18" y2="2" stroke={color} strokeWidth="2" strokeDasharray="4 3" strokeLinecap="round" /></svg>Owed (forecast)</span>
+        <span><svg width="10" height="10"><rect width="10" height="10" rx="2" fill={color} opacity="0.55" /></svg>Payments each pay</span>
       </div>
 
       <div ref={wrapRef} style={{ position: 'relative', width: '100%' }}>
@@ -207,11 +209,7 @@ export function DebtChart({ budget }: { budget: Budget }) {
         </svg>
 
         {h && (
-          <div role="status" style={{
-            position: 'absolute', top: 8, left: Math.min(Math.max(0, x(hover!) + 12), width - 190), width: 178, pointerEvents: 'none',
-            background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 12, padding: '10px 12px',
-            boxShadow: '0 6px 20px rgba(0,0,0,0.12)', fontSize: 13, display: 'flex', flexDirection: 'column', gap: 4,
-          }}>
+          <div role="status" className="pop-card" style={{ position: 'absolute', top: 8, left: Math.min(Math.max(0, x(hover!) + 12), width - 190), width: 178 }}>
             <span className="muted">{monthName(h.period.start)} {h.period.start.slice(0, 4)} pay{h.isNow ? ' · now' : ''}</span>
             {h.actual !== undefined && <TipRow color={color} dashed={false} value={h.actual} label={h.isNow ? 'owed now' : 'owed (recorded)'} />}
             {h.forecast !== undefined && !h.isNow && <TipRow color={color} dashed value={h.forecast} label="owed (forecast)" />}
@@ -221,41 +219,40 @@ export function DebtChart({ budget }: { budget: Budget }) {
         )}
       </div>
 
-      <details>
-        <summary className="small" style={{ cursor: 'pointer', fontWeight: 600, minHeight: 32 }}>Show as a table</summary>
-        <div style={{ overflowX: 'auto', marginTop: 6 }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, fontVariantNumeric: 'tabular-nums' }}>
+      <Disclosure title="Show as a table">
+        <div className="table-scroll">
+          <table className="table">
             <thead>
-              <tr className="muted" style={{ textAlign: 'right' }}>
-                <th style={{ textAlign: 'left', padding: '6px 4px', fontWeight: 500 }}>Pay</th>
-                <th style={{ padding: '6px 4px', fontWeight: 500 }}>Owed</th>
-                <th style={{ padding: '6px 4px', fontWeight: 500 }}>Payments</th>
+              <tr>
+                <th>Pay</th>
+                <th>Owed</th>
+                <th>Payments</th>
               </tr>
             </thead>
             <tbody>
               {points.map((p) => (
-                <tr key={p.period.start} style={{ borderTop: '1px solid var(--line)', textAlign: 'right' }}>
-                  <td style={{ textAlign: 'left', padding: '6px 4px' }}>{monthName(p.period.start)} {p.period.start.slice(0, 4)}{p.isNow ? ' (now)' : ''}</td>
-                  <td style={{ padding: '6px 4px' }}>{p.actual !== undefined ? money(p.actual) : p.forecast !== undefined ? `${money(p.forecast)} forecast` : '—'}</td>
-                  <td style={{ padding: '6px 4px' }}>{p.payment ? money(p.payment) : '—'}</td>
+                <tr key={p.period.start}>
+                  <td>{monthName(p.period.start)} {p.period.start.slice(0, 4)}{p.isNow ? ' (now)' : ''}</td>
+                  <td>{p.actual !== undefined ? cash(p.actual) : p.forecast !== undefined ? `${cash(p.forecast)} forecast` : '—'}</td>
+                  <td>{p.payment ? cash(p.payment) : '—'}</td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
-      </details>
+      </Disclosure>
     </section>
   );
 }
 
 function TipRow({ color, value, label, dashed, bar }: { color: string; value: number; label: string; dashed?: boolean; bar?: boolean }) {
   return (
-    <span className="row" style={{ gap: 8 }}>
+    <span className="row gap-8">
       <svg width="14" height="10" aria-hidden="true">
         {bar ? <rect y="1" width="10" height="8" rx="2" fill={color} opacity="0.7" />
           : <line x1="0" y1="5" x2="14" y2="5" stroke={color} strokeWidth="2" strokeDasharray={dashed ? '4 3' : undefined} strokeLinecap="round" />}
       </svg>
-      <b>{money(value)}</b><span className="muted">{label}</span>
+      <b>{cash(value)}</b><span className="muted">{label}</span>
     </span>
   );
 }

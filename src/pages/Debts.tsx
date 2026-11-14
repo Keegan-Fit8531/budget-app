@@ -1,13 +1,14 @@
 import { useEffect, useMemo, useState } from 'react';
 import { DebtChart } from '../components/DebtChart';
 import { Icon } from '../components/Icon';
+import { AccIcon, Chevron, PageHead } from '../components/ui';
 import { PaydayControl } from '../components/PaydayControl';
-import { nextColor } from '../lib/colors';
+import { nextColor, tone } from '../lib/colors';
 import { addDays, fmtDay, fmtShort, monthName, ordinal, todayISO, type ISODate } from '../lib/dates';
 import { applyPayment, beforeStatement, debtAdvice, debtPerPay, debtSchedules, gemPlan, historyOwed, owed, type DebtAdvice, PLAN_LABEL, plannedOwed, planSchedule, projectedOwed, recordHistory, suggestPlan, unplanned } from '../lib/debts';
 import { periodContaining, planFor, upcomingPayPeriod } from '../lib/engine';
 import { DayPicker, useDayView } from '../components/DayPicker';
-import { centsToInput, money, parseMoney } from '../lib/money';
+import { cash, centsToInput, parseMoney } from '../lib/money';
 import { newId, useBudget } from '../lib/store';
 import type { Cents, Debt, DebtPlan, PlanType } from '../lib/types';
 
@@ -63,88 +64,47 @@ export function Debts() {
   const totalOnDay = onDay.every((v) => v !== undefined) ? onDay.reduce<number>((t, v) => t + (v ?? 0), 0) : undefined;
   const totalLimit = debts.reduce((t, d) => t + (d.limit ?? 0), 0);
   const cardOwed = debts.filter((d) => d.limit).reduce((t, d) => t + (owedOn(d) ?? owed(d)), 0);
-  const thisPay = debts.reduce((t, d) => t + (plan.accounts.find((a) => a.account.id === d.accountId)?.funded ?? 0), 0);
   const ends = debts.flatMap((d) => debtSchedules(d, s, debtPerPay(budget, d))).map((x) => x.paidOffBy).filter(Boolean) as ISODate[];
   const debtFree = debts.some((d) => d.plans.some((p) => p.remaining > 0)) && ends.length ? ends.sort()[ends.length - 1] : undefined;
 
+  const offRecommended = advice.filter((a) => a.recommended !== a.sending);
+
   return (
     <>
-      <header className="between">
-        <div>
-          <h1 className="h1">Debts</h1>
-          <p className="small muted">Cards, Afterpay and people you owe. Payments here feed into each payday.</p>
-        </div>
+      <PageHead title="Debts" sub="Cards, Afterpay and people you owe. Payments here feed into each payday.">
         <button className="btn primary" onClick={() => setDebtModal({})}><Icon name="plus" /> Add debt</button>
-      </header>
+      </PageHead>
       <DayPicker dv={dv} />
 
-      <section style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12 }}>
-        <div className="stat" style={{ background: 'var(--card)' }}>
+      <section className="stats">
+        <div className="stat">
           <span className="small muted">{day === today ? 'Total owed today' : `Owed on ${fmtDay(day)}`}</span>
-          <b>{totalOnDay !== undefined ? money(totalOnDay) : '—'}</b>
-          {day !== today && <span className="small muted">{day > today ? `projected · ${money(totalOwed, { whole: true })} today` : totalOnDay === undefined ? 'no record that far back' : 'from your records'}</span>}
+          <b>{totalOnDay !== undefined ? cash(totalOnDay) : '—'}</b>
+          {day !== today && <span className="small muted">{day > today ? `projected · ${cash(totalOwed, { whole: true })} today` : totalOnDay === undefined ? 'no record that far back' : 'from your records'}</span>}
         </div>
-        <div className="stat" style={{ background: 'var(--card)' }}><span className="small muted">Credit used</span><b>{totalLimit ? `${Math.round((cardOwed / totalLimit) * 100)}%` : '—'}</b><span className="small muted">{money(cardOwed, { whole: true })} of {money(totalLimit, { whole: true })}</span></div>
-        <div className="stat" style={{ background: 'var(--card)' }}><span className="small muted">{monthName(period.start)} pay sends</span><b>{money(thisPay)}</b></div>
-        <div className="stat" style={{ background: 'var(--card)' }}><span className="small muted">Debt-free by</span><b>{debtFree ? monthYear(debtFree) : totalOwed ? '—' : 'Now'}</b></div>
+        <div className="stat"><span className="small muted">Credit used</span><b>{totalLimit ? `${Math.round((cardOwed / totalLimit) * 100)}%` : '—'}</b><span className="small muted">{cash(cardOwed, { whole: true })} of {cash(totalLimit, { whole: true })}</span></div>
+        {advice.length > 0 && (
+          <div className="stat">
+            <span className="small muted">{fmtShort(nextPeriod.start)} pay sends</span>
+            <b>{cash(sendTotal)}</b>
+            <span className={`small ${sendTotal < recTotal ? 'neg' : 'muted'}`}>{sendTotal === recTotal ? 'as recommended' : `recommended ${cash(recTotal)}`}</span>
+          </div>
+        )}
+        <div className="stat"><span className="small muted">Debt-free by</span><b>{debtFree ? monthYear(debtFree) : totalOwed ? '—' : 'Now'}</b></div>
       </section>
 
-      {debts.length > 0 && (
-        <section className="card" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          <div className="between">
-            <div>
-              <h2 className="h2">Recommended for your {fmtShort(nextPeriod.start)} pay</h2>
-              <p className="small muted">{fmtDay(nextPeriod.start)} – {fmtDay(nextPeriod.end)}, worked out for each debt on its own terms.</p>
-            </div>
-            {advice.some((a) => a.recommended !== a.sending) && (
-              <button className="btn small primary" onClick={() => applyRecommended(advice.filter((a) => a.recommended !== a.sending))}>Use all recommended</button>
-            )}
-          </div>
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14, fontVariantNumeric: 'tabular-nums' }}>
-              <thead>
-                <tr className="small muted" style={{ textAlign: 'right' }}>
-                  <th style={{ textAlign: 'left', padding: '6px 4px', fontWeight: 500 }}>Debt</th>
-                  <th style={{ padding: '6px 4px', fontWeight: 500 }}>Recommended</th>
-                  <th style={{ padding: '6px 4px', fontWeight: 500 }}>Sending</th>
-                </tr>
-              </thead>
-              <tbody>
-                {advice.map((a) => {
-                  const acc = budget.accounts.find((x) => x.id === a.debt.accountId);
-                  const diff = a.sending - a.recommended;
-                  return (
-                    <tr key={a.debt.id} style={{ borderTop: '1px solid var(--line)', verticalAlign: 'top' }}>
-                      <td style={{ padding: '10px 4px' }}>
-                        <span className="row" style={{ gap: 8 }}><span className="dot" style={{ background: acc?.color }} /><b>{a.debt.name}</b></span>
-                        <span className="small muted" style={{ display: 'block', marginTop: 4, maxWidth: 420 }}>{a.reason}</span>
-                      </td>
-                      <td style={{ padding: '10px 4px', textAlign: 'right' }}><b>{money(a.recommended)}</b></td>
-                      <td style={{ padding: '10px 4px', textAlign: 'right' }}>
-                        {money(a.sending)}
-                        {diff !== 0 && (
-                          <span className={`small ${diff < 0 ? 'neg' : 'muted'}`} style={{ display: 'block' }}>
-                            {diff < 0 ? `${money(-diff)} under` : `${money(diff)} over`}
-                          </span>
-                        )}
-                        {diff !== 0 && <button className="btn small ghost" style={{ marginTop: 4, padding: '0 6px' }} onClick={() => applyRecommended([a])}>Use</button>}
-                      </td>
-                    </tr>
-                  );
-                })}
-                <tr style={{ borderTop: '2px solid var(--line)' }}>
-                  <td style={{ padding: '10px 4px' }}><b>Total</b></td>
-                  <td style={{ padding: '10px 4px', textAlign: 'right' }}><b>{money(recTotal)}</b></td>
-                  <td style={{ padding: '10px 4px', textAlign: 'right' }}><b>{money(sendTotal)}</b></td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </section>
+      {/* Recommended against what's being sent, worked out for each debt on its own terms. */}
+      {offRecommended.length > 0 && (
+        <div className="tip between">
+          <span>
+            <b>{offRecommended.length === 1 ? `${offRecommended[0].debt.name} isn't` : `${offRecommended.length} debts aren't`} on the recommended amount</b> for your {fmtShort(nextPeriod.start)} pay
+            ({fmtShort(nextPeriod.start)} – {fmtShort(nextPeriod.end)}). Open a debt to see why.
+          </span>
+          <button className="btn small primary" onClick={() => applyRecommended(offRecommended)}>Use {offRecommended.length === 1 ? 'recommended' : 'all recommended'}</button>
+        </div>
       )}
 
-      {debts.length > 0 && <DebtChart budget={budget} />}
-
+      <div className="stack gap-12">
       {debts.map((d) => {
         const acc = budget.accounts.find((a) => a.id === d.accountId) ?? (d.color ? { color: d.color } : undefined);
         const schedules = debtSchedules(d, s, debtPerPay(budget, d));
@@ -155,52 +115,65 @@ export function Debts() {
         const funded = plan.accounts.find((a) => a.account.id === d.accountId);
         const isOpen = open.includes(d.id);
         const adv = advice.find((a) => a.debt.id === d.id);
+        const diff = adv ? adv.sending - adv.recommended : 0;
+        const upcoming = schedules.flatMap((x) => x.payments).filter((x) => x.date > day).sort((a, b) => a.date.localeCompare(b.date));
+        const nextDue = upcoming[0] ? ` · next ${cash(upcoming.filter((x) => x.date === upcoming[0].date).reduce((t, x) => t + x.amount, 0))} on ${fmtShort(upcoming[0].date)}` : '';
         return (
-          <section key={d.id} className="card" style={{ display: 'flex', flexDirection: 'column', gap: 14, padding: isOpen ? undefined : '6px 12px' }}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: isOpen ? 0 : '8px 4px' }}>
-              <button className="acc-head" aria-expanded={isOpen} onClick={() => toggle(d.id)} style={{ padding: 0, minHeight: 44 }}>
-                <span className="acc-icon" style={{ background: acc?.color ?? '#999' }}><Icon name={d.kind === 'person' || d.payroll ? 'send' : 'card'} /></span>
-                <span style={{ flex: 1, minWidth: 0 }}>
-                  <h2 className="h2">{d.name}</h2>
-                  <span className="small muted">
-                    {day === today
-                      ? <>{money(o)} owed{d.limit ? ` · ${money(d.limit - o, { whole: true })} available` : ''}</>
-                      : <>{oDay !== undefined ? `${money(oDay)} owed on ${fmtShort(day)}` : `no record for ${fmtShort(day)}`}{d.limit && oDay !== undefined ? ` · ${money(d.limit - oDay, { whole: true })} available` : ''} <span className="muted">({money(o)} today)</span></>}
-                    {(() => { const n = schedules.flatMap((x) => x.payments).filter((x) => x.date > day).sort((a, b) => a.date.localeCompare(b.date)); return n[0] ? ` · next ${money(n.filter((x) => x.date === n[0].date).reduce((t, x) => t + x.amount, 0))} on ${fmtShort(n[0].date)}` : ''; })()}
-                  </span>
+          <section key={d.id} className="acc-section">
+            {/* Closed: what's owed, when the next payment is, and what each pay sends. The rest is inside. */}
+            <button className="acc-head" aria-expanded={isOpen} onClick={() => toggle(d.id)}>
+              <AccIcon color={acc?.color} name={d.kind === 'person' || d.payroll ? 'send' : 'card'} />
+              <span className="grow">
+                <span className="h2 block">{d.name}</span>
+                <span className="small muted block">
+                  {day === today
+                    ? `${cash(o)} owed`
+                    : oDay !== undefined ? `${cash(oDay)} owed on ${fmtShort(day)} (${cash(o)} today)` : `no record for ${fmtShort(day)}`}
+                  {nextDue}
                 </span>
-                <span style={{ transform: isOpen ? 'rotate(180deg)' : 'none', display: 'grid' }}><Icon name="down" /></span>
-              </button>
-              {adv && <AllocationRow advice={adv} onApply={() => applyRecommended([adv])} />}
-              {d.payroll && <p className="small muted">Taken from your salary: about {money(d.payroll.perPay)} each payday, before pay reaches you. Not part of the payday split.</p>}
-            </div>
-            {isOpen && (<>
+              </span>
+              {(adv || d.payroll) && (
+                <span className="right" style={{ flex: '0 0 auto' }}>
+                  <b className="num block">{cash(adv ? adv.sending : d.payroll!.perPay)}<span className="small muted" style={{ fontWeight: 500 }}> a pay</span></b>
+                  <span className={`xs ${diff < 0 ? 'neg' : 'muted'}`}>{!adv ? 'from your salary' : diff === 0 ? 'as recommended' : diff < 0 ? `${cash(-diff)} under` : `${cash(diff)} over`}</span>
+                </span>
+              )}
+              <Chevron />
+            </button>
+            {isOpen && (
+            <div className="acc-body">
             <div className="between">
               <span className="small muted">{KIND_LABEL[d.kind]}{d.rate ? ` · ${d.rate}% p.a.` : ''}</span>
               <button className="btn small" onClick={() => setDebtModal({ debt: d })}><Icon name="edit" size={16} /> Edit</button>
             </div>
-            {adv && <p className="small"><b>Recommended {money(adv.recommended)}</b> for the {fmtShort(nextPeriod.start)} pay. <span className="muted">{adv.reason}</span></p>}
+            {d.payroll && <p className="small muted">Taken from your salary: about {cash(d.payroll.perPay)} each payday, before pay reaches you. Not part of the payday split.</p>}
+            {adv && (
+              <div className="stack gap-8">
+                <AllocationRow advice={adv} onApply={() => applyRecommended([adv])} />
+                <p className="small muted"><b>Why {cash(adv.recommended)}</b> for the {fmtShort(nextPeriod.start)} pay: {adv.reason}</p>
+              </div>
+            )}
 
             <BalanceEditor debt={d} color={acc?.color} used={used} onAddPlan={() => setPlanModal({ debt: d, prefill: unplanned(d) })} />
 
             {gem && (
-              <div className="tip" style={{ flexDirection: 'column', gap: 8 }}>
-                <div className="row" style={{ gap: 10, alignItems: 'flex-start' }}>
+              <div className="tip stack gap-8">
+                <div className="row top gap-8">
                   <Icon name="bulb" />
                   <span>
                     Gem splits each payment itself:{' '}
-                    {gem.instalmentsDue > 0 && <><b>equal-payment plans' monthly amounts first</b> ({money(gem.instalmentsDue)}), then </>}
-                    other purchases{unplanned(d) > 0 ? ` (${money(unplanned(d))})` : ''}, then <b>interest-free plans in order of expiry date</b>, soonest first.
+                    {gem.instalmentsDue > 0 && <><b>equal-payment plans' monthly amounts first</b> ({cash(gem.instalmentsDue)}), then </>}
+                    other purchases{unplanned(d) > 0 ? ` (${cash(unplanned(d))})` : ''}, then <b>interest-free plans in order of expiry date</b>, soonest first.
                     You can't choose which plan a payment goes to.
                   </span>
                 </div>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 8 }}>
-                  <div className="stat" style={{ background: 'var(--card)' }}><span className="small muted">To avoid any interest</span><b>{money(gem.recommended)}</b><span className="small muted">a pay</span></div>
-                  <div className="stat" style={{ background: 'var(--card)' }}><span className="small muted">Gem's minimum</span><b>{money(gem.minimum)}</b><span className="small muted">this month</span></div>
-                  <div className="stat" style={{ background: 'var(--card)' }}><span className="small muted">You're paying</span><b className={gem.perPay < gem.recommended ? 'neg' : ''}>{money(gem.perPay)}</b><span className="small muted">a pay</span></div>
+                <div className="trio">
+                  <div className="stat" style={{ background: 'var(--card)' }}><span className="small muted">No interest</span><b>{cash(gem.recommended)}</b><span className="xs muted">a pay</span></div>
+                  <div className="stat" style={{ background: 'var(--card)' }}><span className="small muted">Minimum</span><b>{cash(gem.minimum)}</b><span className="xs muted">this month</span></div>
+                  <div className="stat" style={{ background: 'var(--card)' }}><span className="small muted">You're paying</span><b className={gem.perPay < gem.recommended ? 'neg' : ''}>{cash(gem.perPay)}</b><span className="xs muted">a pay</span></div>
                 </div>
                 {gem.perPay < gem.recommended && (
-                  <span className="small error">At {money(gem.perPay)} a pay, some interest-free plans won't be cleared in time. See the warnings below.</span>
+                  <span className="small error">At {cash(gem.perPay)} a pay, some interest-free plans won't be cleared in time. See the warnings below.</span>
                 )}
               </div>
             )}
@@ -213,25 +186,24 @@ export function Debts() {
               const next = sch.payments.find((x) => x.date >= period.start);
               const done = p.original > 0 ? Math.max(0, Math.min(100, ((p.original - p.remaining) / p.original) * 100)) : 0;
               return (
-                <button key={p.id} onClick={() => setPlanModal({ debt: d, plan: p })}
-                  style={{ textAlign: 'left', border: '1px solid var(--line)', borderRadius: 14, padding: 14, background: 'none', cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: 6 }}>
-                  <div className="between" style={{ flexWrap: 'nowrap' }}>
-                    <b style={{ minWidth: 0 }}>{p.name}</b>
-                    <b>{money(p.remaining)}</b>
+                <button key={p.id} className="plan-row" onClick={() => setPlanModal({ debt: d, plan: p })}>
+                  <div className="between nowrap">
+                    <b className="min0">{p.name}</b>
+                    <b className="num">{cash(p.remaining)}</b>
                   </div>
                   <span className="small muted">
                     {PLAN_LABEL[p.type]}{p.months && p.type !== 'afterpay' && p.type !== 'balance' ? ` · ${p.months} months` : ''}
-                    {' · '}bought {fmtShort(p.purchaseDate)} for {money(p.original)}
+                    {' · '}bought {fmtShort(p.purchaseDate)} for {cash(p.original)}
                   </span>
-                  <div className="bar" style={{ marginTop: 2 }}><div style={{ width: `${done}%`, background: acc?.color }} /></div>
+                  <div className="bar" style={{ marginTop: 2 }}><div style={{ width: `${done}%`, background: tone(acc?.color) }} /></div>
                   <span className="small">
                     {p.remaining <= 0 ? 'Paid off'
                       : [
-                        next ? `Next ${money(next.amount)} on ${fmtShort(next.date)}${p.instalments?.find((i) => i.date === next.date)?.label ? ` (${p.instalments.find((i) => i.date === next.date)!.label})` : ''}` : null,
+                        next ? `Next ${cash(next.amount)} on ${fmtShort(next.date)}${p.instalments?.find((i) => i.date === next.date)?.label ? ` (${p.instalments.find((i) => i.date === next.date)!.label})` : ''}` : null,
                         p.instalments?.length ? `${p.instalments.length} left` : null,
                         sch.paidOffBy ? `paid off by ${fmtShort(sch.paidOffBy)} ${sch.paidOffBy.slice(0, 4)}` : null,
                         sch.deadline && p.type !== 'afterpay' ? `interest-free until ${fmtShort(sch.deadline)} ${sch.deadline.slice(0, 4)}` : null,
-                        sch.interest ? `${money(sch.interest)} interest` : null,
+                        sch.interest ? `${cash(sch.interest)} interest` : null,
                       ].filter(Boolean).join(' · ')}
                   </span>
                   {sch.warning && <span className="small error">{sch.warning}</span>}
@@ -239,7 +211,7 @@ export function Debts() {
               );
             })}
 
-            <div className="row" style={{ flexWrap: 'wrap' }}>
+            <div className="row wrap gap-8">
               <button className="btn small" onClick={() => setPlanModal({ debt: d })}>
                 <Icon name="plus" size={16} /> {d.kind === 'person' || d.kind === 'loan' ? 'Add amount owed' : 'Add purchase'}
               </button>
@@ -251,13 +223,17 @@ export function Debts() {
                 autoLabel="Pay exactly what's due each payday"
                 autoHint="Adds up this pay's plan payments and Afterpay instalments." />
               {funded && funded.diff !== null && funded.diff < 0 && (
-                <p className="small error" style={{ marginTop: 6 }}>This pay's plans need {money(funded.need)}, so sending {money(funded.funded)} is {money(-funded.diff)} short.</p>
+                <p className="small error" style={{ marginTop: 6 }}>This pay's plans need {cash(funded.need)}, so sending {cash(funded.funded)} is {cash(-funded.diff)} short.</p>
               )}
             </div>}
-            </>)}
+            </div>
+            )}
           </section>
         );
       })}
+      </div>
+
+      {debts.length > 0 && <DebtChart budget={budget} />}
 
       {payModal && <PaymentModal debt={payModal} onClose={() => setPayModal(null)} />}
       {planModal && <PlanModal debt={planModal.debt} plan={planModal.plan} prefill={planModal.prefill} onClose={() => setPlanModal(null)} />}
@@ -348,7 +324,7 @@ function PlanModal({ debt, plan, prefill, onClose }: { debt: Debt; plan?: DebtPl
       <div className="modal" role="dialog" aria-modal="true" aria-labelledby="plan-title" onClick={(e) => e.stopPropagation()}>
         <div className="between">
           <h2 id="plan-title" className="h2">{plan ? `Edit ${plan.name}` : `${debt.name}: ${isPerson ? 'add amount owed' : 'add purchase'}`}</h2>
-          <button className="icon-btn" aria-label="Close" onClick={onClose}><Icon name="x" /></button>
+          <button className="icon-btn plain" aria-label="Close" onClick={onClose}><Icon name="x" /></button>
         </div>
         <label className="field">{isPerson ? 'What it’s for' : 'What you bought'}
           <input autoFocus={!plan} value={name} onChange={(e) => { setName(e.target.value); setErr(''); }} placeholder={isPerson ? 'Scooter' : 'Couch'} />
@@ -397,12 +373,12 @@ function PlanModal({ debt, plan, prefill, onClose }: { debt: Debt; plan?: DebtPl
             <span>
               {preview.payments.length === 0 && !preview.warning ? 'Nothing left to pay.' : null}
               {preview.payments.length > 0 && `${preview.payments.length} payment${preview.payments.length === 1 ? '' : 's'}`}
-              {nextPay ? `, next ${money(nextPay.amount)} on ${fmtShort(nextPay.date)}` : ''}
+              {nextPay ? `, next ${cash(nextPay.amount)} on ${fmtShort(nextPay.date)}` : ''}
               {preview.paidOffBy ? `. Paid off by ${fmtShort(preview.paidOffBy)} ${preview.paidOffBy.slice(0, 4)}` : ''}
               {preview.deadline && type !== 'afterpay' ? `, before interest-free ends ${fmtShort(preview.deadline)} ${preview.deadline.slice(0, 4)}` : ''}
-              {preview.interest ? `. About ${money(preview.interest)} interest` : ''}
+              {preview.interest ? `. About ${cash(preview.interest)} interest` : ''}
               {preview.payments.length > 0 ? '.' : ''}
-              {preview.warning && <span className="error" style={{ display: 'block' }}>{preview.warning}</span>}
+              {preview.warning && <span className="error block">{preview.warning}</span>}
             </span>
           </div>
         )}
@@ -461,7 +437,7 @@ export function DebtModal({ debt, onClose, onDelete }: { debt?: Debt; onClose: (
       <div className="modal" role="dialog" aria-modal="true" aria-labelledby="debt-title" onClick={(e) => e.stopPropagation()}>
         <div className="between">
           <h2 id="debt-title" className="h2">{debt ? `Edit ${debt.name}` : 'Add a debt'}</h2>
-          <button className="icon-btn" aria-label="Close" onClick={onClose}><Icon name="x" /></button>
+          <button className="icon-btn plain" aria-label="Close" onClick={onClose}><Icon name="x" /></button>
         </div>
         <label className="field">Name
           <input autoFocus={!debt} value={name} onChange={(e) => { setName(e.target.value); setErr(''); }} placeholder="Gem Visa" />
@@ -562,7 +538,7 @@ function BalanceEditor({ debt: d, color, used, onAddPlan }: { debt: Debt; color?
 
   if (editing) {
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+      <div className="stack gap-8">
         <div className="form-grid">
           <label className="field">Owed now
             <input inputMode="decimal" autoFocus value={owedText} onChange={(e) => onOwed(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && save()} />
@@ -573,9 +549,9 @@ function BalanceEditor({ debt: d, color, used, onAddPlan }: { debt: Debt; color?
             </label>
           ) : null}
         </div>
-        {d.limit ? <p className="small muted">Enter either one; the other fills in from your {money(d.limit, { whole: true })} limit.</p> : null}
+        {d.limit ? <p className="small muted">Enter either one; the other fills in from your {cash(d.limit, { whole: true })} limit.</p> : null}
         {err && <p className="error" role="alert">{err}</p>}
-        <div className="row" style={{ flexWrap: 'wrap' }}>
+        <div className="row wrap">
           <button className="btn primary small" onClick={save}>Save balance</button>
           <button className="btn small" onClick={() => setEditing(false)}>Cancel</button>
           {d.balance && <button className="btn small ghost" onClick={clear}>Use plan totals instead</button>}
@@ -585,12 +561,12 @@ function BalanceEditor({ debt: d, color, used, onAddPlan }: { debt: Debt; color?
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+    <div className="stack gap-6">
       <div className="between small">
-        <span><b style={{ fontSize: 18 }}>{money(o)}</b> owed</span>
-        {d.limit ? <span className="muted"><b className={d.limit - o < 0 ? 'neg' : ''}>{money(d.limit - o)}</b> available of {money(d.limit, { whole: true })}</span> : null}
+        <span><b className="fig-sm">{cash(o)}</b> owed</span>
+        {d.limit ? <span className="muted"><b className={d.limit - o < 0 ? 'neg' : ''}>{cash(d.limit - o)}</b> available of {cash(d.limit, { whole: true })}</span> : null}
       </div>
-      {d.limit ? <div className="bar"><div style={{ width: `${used}%`, background: used > 80 ? '#EF4444' : color }} /></div> : null}
+      {d.limit ? <div className="bar"><div style={{ width: `${used}%`, background: used > 80 ? 'var(--bad)' : tone(color) }} /></div> : null}
       <div className="between small">
         <span className="muted">
           {d.balance ? `Balance checked ${fmtShort(d.balance.asOf)}${d.balance.asOf.slice(0, 4) !== today.slice(0, 4) ? ` ${d.balance.asOf.slice(0, 4)}` : ''}` : 'From your plans below'}
@@ -600,14 +576,14 @@ function BalanceEditor({ debt: d, color, used, onAddPlan }: { debt: Debt; color?
       {d.balance && extra > 0 && d.rules !== 'gem' && unscheduled && (
         <div className="tip">
           <Icon name="bulb" />
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            <span>{money(extra)} of this isn't in a payment plan{planned ? ` (plans cover ${money(planned)})` : ''}, so no payments are scheduled for it.</span>
+          <div className="stack gap-8">
+            <span>{cash(extra)} of this isn't in a payment plan{planned ? ` (plans cover ${cash(planned)})` : ''}, so no payments are scheduled for it.</span>
             <button className="btn small" style={{ alignSelf: 'flex-start' }} onClick={onAddPlan}>Add it as a plan</button>
           </div>
         </div>
       )}
       {d.balance && planned > o && (
-        <p className="small error">Your plans add up to {money(planned)}, more than the {money(o)} balance. Update the plans' amounts still owed.</p>
+        <p className="small error">Your plans add up to {cash(planned)}, more than the {cash(o)} balance. Update the plans' amounts still owed.</p>
       )}
     </div>
   );
@@ -644,7 +620,7 @@ function PaymentModal({ debt, onClose }: { debt: Debt; onClose: () => void }) {
 
   function save() {
     if (amount === null || amount <= 0) return setErr('Enter how much you paid.');
-    if (amount > total + 100) return setErr(`That's more than the ${money(total)} owed.`);
+    if (amount > total + 100) return setErr(`That's more than the ${cash(total)} owed.`);
     update((b) => {
       const d = (b.debts ?? []).find((x) => x.id === debt.id);
       if (d) applyPayment(d, amount, b.settings, date);
@@ -658,13 +634,13 @@ function PaymentModal({ debt, onClose }: { debt: Debt; onClose: () => void }) {
       <div className="modal" role="dialog" aria-modal="true" aria-labelledby="pay-title" onClick={(e) => e.stopPropagation()}>
         <div className="between">
           <h2 id="pay-title" className="h2">{debt.name}: record a payment</h2>
-          <button className="icon-btn" aria-label="Close" onClick={onClose}><Icon name="x" /></button>
+          <button className="icon-btn plain" aria-label="Close" onClick={onClose}><Icon name="x" /></button>
         </div>
-        <p className="small muted">Pays off what's due soonest first, then the next due date, and so on. {money(total)} owed.</p>
-        <div className="row" style={{ flexWrap: 'wrap', gap: 8 }}>
+        <p className="small muted">Pays off what's due soonest first, then the next due date, and so on. {cash(total)} owed.</p>
+        <div className="row wrap gap-8">
           {quick.map((q) => (
             <button key={q.label} className="btn small" onClick={() => { setText(centsToInput(q.amount)); setErr(''); }}>
-              {q.label}: {money(q.amount)}
+              {q.label}: {cash(q.amount)}
             </button>
           ))}
         </div>
@@ -683,20 +659,20 @@ function PaymentModal({ debt, onClose }: { debt: Debt; onClose: () => void }) {
           </div>
         )}
         {preview && (
-          <div className="tip" style={{ flexDirection: 'column', gap: 6 }}>
+          <div className="tip stack gap-6">
             <b>This pays off</b>
             {preview.applied.map((a, i) => (
-              <div key={i} className="between small" style={{ flexWrap: 'nowrap' }}>
+              <div key={i} className="between small nowrap">
                 <span>{a.planName} <span className="muted">· due {fmtShort(a.date)}{a.cleared ? '' : ' (part)'}</span></span>
-                <b>{money(a.amount)}</b>
+                <b>{cash(a.amount)}</b>
               </div>
             ))}
-            {preview.leftover > 0 && <span className="small">{money(preview.leftover)} more than is scheduled — it comes off the balance.</span>}
-            <span className="small muted">Left owing afterwards: {money(Math.max(0, total - (amount ?? 0)))}</span>
+            {preview.leftover > 0 && <span className="small">{cash(preview.leftover)} more than is scheduled — it comes off the balance.</span>}
+            <span className="small muted">Left owing afterwards: {cash(Math.max(0, total - (amount ?? 0)))}</span>
           </div>
         )}
         {err && <p className="error" role="alert">{err}</p>}
-        <div className="row" style={{ justifyContent: 'flex-end' }}>
+        <div className="row end">
           <button className="btn" onClick={onClose}>Cancel</button>
           <button className="btn primary" onClick={save}>Record payment</button>
         </div>
@@ -728,27 +704,27 @@ function AllocationRow({ advice: a, onApply }: { advice: DebtAdvice; onApply: ()
   }
 
   return (
-    <div className="row" style={{ flexWrap: 'wrap', gap: 10, alignItems: 'flex-end' }}>
-      <div className="stat" style={{ padding: '8px 12px', minWidth: 120 }}>
+    <div className="row wrap bottom gap-8">
+      <div className="stat tight" style={{ minWidth: 120 }}>
         <span className="small muted">Recommended</span>
-        <b style={{ fontSize: 17, marginTop: 2 }}>{money(a.recommended)}</b>
+        <b>{cash(a.recommended)}</b>
       </div>
-      <label className="field" style={{ width: 140 }}>
-        <span>Allocated each pay</span>
+      <label className="field" style={{ width: 150 }}>
+        <span>Sent each pay</span>
         <input inputMode="decimal" value={text} aria-label={`${a.debt.name} amount each pay`}
           onFocus={() => setFocused(true)} onChange={(e) => setText(e.target.value)} onBlur={commit}
           onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
-          style={{ minHeight: 40, fontWeight: 600 }} />
+          style={{ fontWeight: 600 }} />
       </label>
       {diff !== 0 && (
         <>
-          <span className={`small ${diff < 0 ? 'neg' : 'muted'}`} style={{ paddingBottom: 10 }}>
-            {diff < 0 ? `${money(-diff)} under` : `${money(diff)} over`}
+          <span className={`small ${diff < 0 ? 'neg' : 'muted'}`} style={{ paddingBottom: 12 }}>
+            {diff < 0 ? `${cash(-diff)} under` : `${cash(diff)} over`}
           </span>
-          <button className="btn small primary" style={{ marginBottom: 2 }} onClick={onApply}>Apply {money(a.recommended, { whole: a.recommended % 100 === 0 })}</button>
+          <button className="btn primary" onClick={onApply}>Use {cash(a.recommended)}</button>
         </>
       )}
-      {diff === 0 && <span className="small pos" style={{ paddingBottom: 10 }}>On recommended</span>}
+      {diff === 0 && <span className="small muted" style={{ paddingBottom: 12 }}>As recommended</span>}
     </div>
   );
 }

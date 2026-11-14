@@ -1,7 +1,12 @@
 import { useRef, useState, type PointerEvent, type ReactNode } from 'react';
-import { money } from '../lib/money';
+import { tone } from '../lib/colors';
+import { cash } from '../lib/money';
+import { Dot } from './ui';
 
 export interface Slice { label: string; value: number; color: string }
+
+/** The gap between slices, as a share of the whole ring, so neighbours never touch. */
+const GAP = 0.004;
 
 /**
  * A pie (ring) chart. Hover or tap a slice to see who/what it is, its share and the amount;
@@ -14,9 +19,11 @@ export function Donut({ slices, size = 200, children }: { slices: Slice[]; size?
   const total = shown.reduce((s, x) => s + x.value, 0) || 1;
   let acc = 0;
   const ranges = shown.map((s) => { const a = acc / total; acc += s.value; return [a, acc / total] as const; });
-  const stops = shown.map((s, i) => {
-    const c = hover && hover.i !== i ? `color-mix(in srgb, ${s.color} 35%, var(--card))` : s.color;
-    return `${c} ${ranges[i][0] * 100}% ${ranges[i][1] * 100}%`;
+  const gap = shown.length > 1 ? GAP : 0;
+  const stops = shown.flatMap((s, i) => {
+    const c = hover && hover.i !== i ? `color-mix(in srgb, ${tone(s.color)} 35%, var(--card))` : tone(s.color);
+    const end = Math.max(ranges[i][0], ranges[i][1] - gap);
+    return [`${c} ${ranges[i][0] * 100}% ${end * 100}%`, ...(gap ? [`var(--card) ${end * 100}% ${ranges[i][1] * 100}%`] : [])];
   });
   const pct = (s: Slice) => Math.round((s.value / total) * 100);
   const label = shown.map((s) => `${s.label} ${pct(s)}%`).join(', ');
@@ -37,18 +44,13 @@ export function Donut({ slices, size = 200, children }: { slices: Slice[]; size?
   return (
     <div ref={ref} className="donut" role="img" aria-label={label}
       onPointerMove={pick} onPointerDown={pick} onPointerLeave={(e) => { if (e.pointerType === 'mouse') setHover(null); }}
-      style={{ position: 'relative', width: size, height: size, flex: '0 0 auto', touchAction: 'manipulation', background: stops.length ? `conic-gradient(${stops.join(',')})` : 'var(--soft)' }}>
-      <div style={{ width: size * 0.66, height: size * 0.66 }}>{children}</div>
+      style={{ position: 'relative', width: size, height: size, touchAction: 'manipulation', background: stops.length ? `conic-gradient(${stops.join(',')})` : 'var(--soft)' }}>
+      <div style={{ width: size * 0.68, height: size * 0.68 }}>{children}</div>
       {h && hover && (
-        <div role="tooltip" style={{
-          position: 'absolute', left: '50%', bottom: '100%', transform: 'translate(-50%, -6px)',
-          background: 'var(--ink)', color: 'var(--card)', borderRadius: 10, padding: '6px 10px', fontSize: 13, lineHeight: 1.3,
-          whiteSpace: 'nowrap', pointerEvents: 'none', zIndex: 5, display: 'block', textAlign: 'left', width: 'auto', height: 'auto', boxShadow: '0 4px 14px rgba(0,0,0,.18)',
-        }}>
-          <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: 2, background: h.color, marginRight: 6 }} />
-          <b>{h.label}</b> · {pct(h)}%
-          {shown.length > 1 && <span style={{ display: 'block', opacity: 0.8 }}>{money(h.value, { whole: true })}</span>}
-        </div>
+        <span role="tooltip" className="pop" style={{ position: 'absolute', left: '50%', bottom: '100%', transform: 'translate(-50%, -6px)', whiteSpace: 'nowrap', zIndex: 5 }}>
+          <span className="row gap-6"><Dot color={h.color} small /><b>{h.label}</b> · {pct(h)}%</span>
+          {shown.length > 1 && <span className="block" style={{ opacity: 0.8 }}>{cash(h.value, { whole: true })}</span>}
+        </span>
       )}
     </div>
   );
@@ -60,13 +62,35 @@ export function Legend({ slices, amounts }: { slices: Slice[]; amounts?: boolean
   const shown = slices.filter((s) => s.value > 0);
   if (amounts) shown.sort((a, b) => b.value - a.value);
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, fontSize: 14, flex: '1 1 180px', minWidth: 0 }}>
+    <div className="legend">
       {shown.map((s) => (
-        <div key={s.label} className="row" style={{ gap: 10 }}>
-          <span className="dot" style={{ background: s.color }} />
-          <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.label}</span>
-          {amounts && <span className="num muted">{money(s.value, { whole: true })}</span>}
-          <b className="num" style={amounts ? { width: 38, textAlign: 'right' } : undefined}>{Math.round((s.value / total) * 100)}%</b>
+        <div key={s.label} className="legend-row">
+          <Dot color={s.color} />
+          <span className="grow clip">{s.label}</span>
+          {amounts && <span className="num muted">{cash(s.value, { whole: true })}</span>}
+          <b className="num pct">{Math.round((s.value / total) * 100)}%</b>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * A ranked list for many items (e.g. every account): name, amount and share, each with its own
+ * thin bar. Easier to read than a ring with a dozen slices, and the colour is only a mark.
+ */
+export function BarList({ slices }: { slices: Slice[] }) {
+  const shown = slices.filter((s) => s.value > 0).sort((a, b) => b.value - a.value);
+  const total = shown.reduce((s, x) => s + x.value, 0) || 1;
+  const max = shown[0]?.value || 1;
+  return (
+    <div className="bar-list" role="list">
+      {shown.map((s) => (
+        <div key={s.label} className="bar-list-row" role="listitem">
+          <span className="row gap-8 min0"><Dot color={s.color} /><span className="clip">{s.label}</span></span>
+          <span className="num muted">{cash(s.value, { whole: true })}</span>
+          <b className="num right">{Math.round((s.value / total) * 100)}%</b>
+          <div className="track" aria-hidden="true"><div style={{ width: `${(s.value / max) * 100}%`, background: tone(s.color) }} /></div>
         </div>
       ))}
     </div>

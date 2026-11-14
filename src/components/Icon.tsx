@@ -20,7 +20,8 @@ const PATHS: Record<string, string> = {
   send: 'M4 12h14 M13 6l6 6-6 6',
   check: 'M5 12l5 5 9-10',
   upload: 'M12 16V4 M7 9l5-5 5 5 M4 20h16',
-  info: 'M12 11v6 M12 7h.01',
+  info: 'M12 3a9 9 0 1 0 0 18a9 9 0 1 0 0-18z M12 11v5 M12 8h.01',
+  calendar: 'M5 5h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2z M3 10h18 M8 3v4 M16 3v4',
   transfer: 'M4 8h14 M14 4l4 4-4 4 M20 16H6 M10 12l-4 4 4 4',
 };
 

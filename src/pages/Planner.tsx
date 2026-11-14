@@ -4,6 +4,7 @@ import { applyBalance, autoPays, balancePay, restoreOverrides, type BalanceResul
 import { accountMode, leftoverBeforeBudget, topsUp } from '../lib/balances';
 import { Donut, Legend } from '../components/Donut';
 import { Icon } from '../components/Icon';
+import { AccIcon, Disclosure, Dot } from '../components/ui';
 import { WeeksView } from '../components/WeeksView';
 import { PayNav, useViewPeriod, ViewModes } from '../lib/period';
 import { clearOptimiseUndo, OptimiseModal, readOptimiseUndo, type OptimiseUndo } from '../components/OptimiseModal';
@@ -13,7 +14,7 @@ import { addDays, fmtDay, fmtShort, monthName, todayISO } from '../lib/dates';
 import {
   averageSplit, convert, firstBudgetPay, isAuto, planFor, plannedAverage, shiftPeriod, upcomingPayPeriod, type View,
 } from '../lib/engine';
-import { cash, centsToInput, moneyParts, parseMoney } from '../lib/money';
+import { cash, moneyParts, centsToInput, parseMoney } from '../lib/money';
 import { useBudget } from '../lib/store';
 import type { Cents, PaydayMode } from '../lib/types';
 
@@ -34,13 +35,6 @@ export function Planner() {
   // The account card whose details pop-up is open.
   const [openCard, setOpenCard] = useState<string | null>(null);
   const [payEdit, setPayEdit] = useState<string | null>(null);
-  // "What's different this pay" starts open, and stays how you leave it (remembered on this device).
-  const [notesOpen, setNotesOpen] = useState(() => { try { return localStorage.getItem('paydays.planner.notes') !== 'closed'; } catch { return true; } });
-  function toggleNotes(open: boolean) {
-    if (open === notesOpen) return;
-    setNotesOpen(open);
-    try { localStorage.setItem('paydays.planner.notes', open ? 'open' : 'closed'); } catch { /* ignore */ }
-  }
   const [slipMsg, setSlipMsg] = useState<{ ok: boolean; text: string } | null>(null);
   // Last "Balance this pay": what changed and why, plus what to restore on Undo.
   const [optimiseOpen, setOptimiseOpen] = useState(false);
@@ -122,11 +116,15 @@ export function Planner() {
     a.account.id !== budget.settings.payAccountId && (a.funded !== 0 || a.need !== 0));
 
   // The chart follows the view: this pay, this pay per week / fortnight, or the average of the next 12 pays
-  // per month / added up for the year (the same amounts the cards and Total budgeted show).
-  const slices = plan.accounts
-    .filter((a) => a.account.id !== budget.settings.payAccountId)
-    .map((a) => ({ label: a.account.name, value: longRun ? v(planned?.get(a.account.id)?.sent ?? 0) : v(a.funded), color: a.account.color }))
-    .filter((x) => x.value > 0);
+  // per month / added up for the year (the same amounts the cards and Total budgeted show). It's by group;
+  // each account's own amount is on its card below, and its share is on Insights.
+  const sentOf = (a: (typeof plan.accounts)[number]) => Math.max(0, longRun ? v(planned?.get(a.account.id)?.sent ?? 0) : v(a.funded));
+  const split_ = plan.accounts.filter((a) => a.account.id !== budget.settings.payAccountId);
+  const grouped = new Set(budget.groups.map((g) => g.id));
+  const slices = [
+    ...budget.groups.map((g) => ({ label: g.name, color: g.color, value: split_.filter((a) => a.account.groupId === g.id).reduce((t, a) => t + sentOf(a), 0) })),
+    { label: 'Other', color: 'var(--muted)', value: split_.filter((a) => !grouped.has(a.account.groupId)).reduce((t, a) => t + sentOf(a), 0) },
+  ].filter((x) => x.value > 0);
 
   const debtAccounts = new Set((budget.debts ?? []).map((d) => d.accountId));
   const goalAccounts = new Set((budget.savings ?? []).map((g) => g.accountId));
@@ -242,16 +240,16 @@ export function Planner() {
 
   return (
     <>
-      <header className="between">
+      <header className="page-head">
         <PayNav />
         <ViewModes />
       </header>
 
       <section className="grid-2">
-        <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <div className="card stack gap-16">
           <div>
-            <div className="between" style={{ flexWrap: 'nowrap', alignItems: 'flex-start', gap: 12 }}>
-              <div style={{ minWidth: 0 }}>
+            <div className="between nowrap top">
+              <div className="min0">
                 <p className="eyebrow">{!known ? 'Total budgeted' : split
                   ? `Left after plan, per ${mode} · this pay's ${period.days} days are ${(period.days / spanDays).toFixed(1)} ${mode}s`
                   : mode === 'month' ? 'Left after plan, per month (average of the next 12 pays)'
@@ -263,36 +261,36 @@ export function Planner() {
               </div>
               {/* Put what's left over to work (once the pay is balanced). */}
               {!avg && known && canOptimise && (
-                <button className="icon-btn has-tip tip-left" data-tip="Optimise: choose where the leftover goes" aria-label="Optimise: choose where the leftover goes"
-                  onClick={() => setOptimiseOpen(true)} style={{ background: 'var(--brand)', color: '#fff', borderColor: 'var(--brand)' }}>
+                <button className="icon-btn brand has-tip tip-left" data-tip="Optimise: choose where the leftover goes" aria-label="Optimise: choose where the leftover goes"
+                  onClick={() => setOptimiseOpen(true)}>
                   <Icon name="bulb" />
                 </button>
               )}
             </div>
             {(!known || plan.leftover < 0) && (
               <p className="small muted" style={{ marginTop: 8 }}>
-                {!known ? 'Add your pay to see what\u2019s left.' : `You've budgeted ${cash(-plan.leftover)} more than this pay.`}
+                {!known ? 'Add your pay to see what’s left.' : `You've budgeted ${cash(-plan.leftover)} more than this pay.`}
               </p>
             )}
             {!avg && undoHere && (
               <p className="small" style={{ marginTop: 6 }}>
-                Leftover put to work ({undoHere.label}). <button className="btn small ghost" style={{ minHeight: 28, padding: '0 8px' }} onClick={undoOptimise}>Undo</button>
+                Leftover put to work ({undoHere.label}). <button className="btn link" onClick={undoOptimise}>Undo</button>
               </p>
             )}
           </div>
 
           <div className="pay-stats">
             <div className="stat">
-              <div className="between" style={{ flexWrap: 'nowrap', gap: 6, minHeight: 32 }}>
-                <span className="small muted row" style={{ gap: 6, flexWrap: 'nowrap' }}>
+              <div className="between nowrap gap-6" style={{ minHeight: 32 }}>
+                <span className="small muted row nowrap gap-6">
                   {plan.payIsActual ? 'Pay received' : 'Pay'}
                   {estimated && (
                     <button className="pill" title={estimateWhy} aria-expanded={estOpen} aria-label={`Estimate. ${estimateWhy}`} onClick={() => setEstOpen(!estOpen)}
-                      style={{ background: 'var(--card)', color: 'var(--muted)', cursor: 'pointer', border: 0, font: 'inherit', fontSize: 12, fontWeight: 600 }}>Estimate</button>
+                      style={{ background: 'var(--card)' }}>Estimate</button>
                   )}
                 </span>
                 {payEdit === null && (
-                  <span className="row" style={{ gap: 4, flexWrap: 'nowrap' }}>
+                  <span className="row nowrap gap-4">
                     <button className="icon-btn mini has-tip" data-tip={plan.payIsActual ? 'Change pay' : 'Type in your pay'} aria-label={plan.payIsActual ? 'Change pay' : 'Type pay'}
                       onClick={() => setPayEdit(centsToInput(plan.pay))}><Icon name="edit" size={16} /></button>
                     <button className="icon-btn mini has-tip" data-tip="Upload payslip (PDF)" aria-label="Upload payslip"
@@ -306,10 +304,10 @@ export function Planner() {
                 <b className={known ? '' : 'muted'}>{known ? cash(v(plan.pay)) : 'Not in yet'}</b>
               ) : (
                 <>
-                  <input aria-label="Actual pay" inputMode="decimal" autoFocus value={payEdit} onChange={(e) => setPayEdit(e.target.value)}
+                  <input className="input" aria-label="Actual pay" inputMode="decimal" autoFocus value={payEdit} onChange={(e) => setPayEdit(e.target.value)}
                     onKeyDown={(e) => { if (e.key === 'Enter') savePay(); if (e.key === 'Escape') setPayEdit(null); }}
-                    style={{ marginTop: 4, width: '100%', minHeight: 36, borderRadius: 8, border: '1px solid var(--line)', padding: '0 8px', background: 'var(--card)' }} />
-                  <span className="row" style={{ gap: 6, marginTop: 6 }}>
+                    style={{ marginTop: 4, minHeight: 36 }} />
+                  <span className="row gap-6" style={{ marginTop: 6 }}>
                     <button className="btn small primary" onClick={savePay}>Save</button>
                     <button className="btn small" onClick={() => setPayEdit(null)}>Cancel</button>
                   </span>
@@ -327,7 +325,7 @@ export function Planner() {
 
           {/* Balancing is automatic, so it only speaks up when there's something left to do. */}
           {!avg && known && (autoHere ? plan.leftover < 0 : needsBalance || adjustments.length > 0) && (
-            <div className={autoHere || plan.leftover < 0 ? 'alert small' : 'tip small'} role="status" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 8 }}>
+            <div className={`${autoHere || plan.leftover < 0 ? 'alert' : 'tip'} small stack gap-8`} role="status">
               <span>
                 {autoHere
                   ? <><b>Still {cash(-plan.leftover)} short.</b> Every safe trim has been made; the rest needs a bigger change, like lower rent or bills.</>
@@ -336,7 +334,7 @@ export function Planner() {
                     : passedNote ?? 'Adjusted by hand for this pay.'}
               </span>
               {!autoHere && (needsBalance || canReset) && (
-                <span className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+                <span className="row wrap gap-8">
                   {needsBalance && <button className="btn small primary" onClick={balanceThisPay}>{adjustments.length ? 'Re-balance' : 'Balance this pay'}</button>}
                   {canReset && <button className="btn small" onClick={resetToDefaults}>Reset to defaults</button>}
                 </span>
@@ -345,22 +343,22 @@ export function Planner() {
             </div>
           )}
 
+          {/* A detail, so it's behind a click; it opens by itself when the pay is short. */}
           {!avg && (notes.length > 0 || usualTotal > plan.pay) && (
-            <details className="notes" open={notesOpen || plan.leftover < 0}
-              onToggle={(e) => toggleNotes((e.currentTarget as HTMLDetailsElement).open)}>
-              <summary>What's different this pay{notes.length ? ` · ${notes.length}` : ''}</summary>
+            <Disclosure ruled wide title="What's different this pay" meta={notes.length || undefined}
+              storageKey="paydays.planner.notes" forceOpen={plan.leftover < 0}>
               <div className="notes-list">
                 {notes.map((x) => (
                   <div key={x.a.account.id} className="notes-row">
-                    <span className="dot" style={{ background: x.a.account.color }} />
-                    <span style={{ minWidth: 0 }}>
+                    <Dot color={x.a.account.color} />
+                    <span className="min0">
                       <b>{x.a.account.name}</b>
-                      {x.why.map((w) => <span key={w} className="small muted" style={{ display: 'block' }}>{w}</span>)}
-                      {x.why.length === 0 && <span className="small muted" style={{ display: 'block' }}>Usually about {cash(x.usual, { whole: true })}</span>}
+                      {x.why.map((w) => <span key={w} className="small muted block">{w}</span>)}
+                      {x.why.length === 0 && <span className="small muted block">Usually about {cash(x.usual, { whole: true })}</span>}
                     </span>
-                    <span className="num" style={{ textAlign: 'right' }}>
+                    <span className="num right">
                       <b>{cash(x.a.funded)}</b>
-                      {Math.abs(x.extra) > 2000 && <span className={`small ${x.extra > 0 ? 'neg' : 'pos'}`} style={{ display: 'block' }}>{x.extra > 0 ? '+' : '−'}{cash(Math.abs(x.extra), { whole: true })}</span>}
+                      {Math.abs(x.extra) > 2000 && <span className={`small block ${x.extra > 0 ? 'neg' : 'pos'}`}>{x.extra > 0 ? '+' : '−'}{cash(Math.abs(x.extra), { whole: true })}</span>}
                     </span>
                   </div>
                 ))}
@@ -368,21 +366,22 @@ export function Planner() {
                   <span className="small muted">Even in a normal pay your budget is {cash(usualTotal - plan.pay, { whole: true })} more than your pay.</span>
                 )}
               </div>
-            </details>
+            </Disclosure>
           )}
         </div>
 
-        <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-          <h2 className="h2">{split ? `Where this pay goes, per ${mode}` : mode === 'month' ? 'Where pay goes, per month' : mode === 'year' ? 'Where pay goes over a year' : 'Where this pay goes'}</h2>
+        <div className="card stack gap-16">
+          <div className="card-head">
+            <h2 className="h2">{split ? `Where this pay goes, per ${mode}` : mode === 'month' ? 'Where pay goes, per month' : mode === 'year' ? 'Where pay goes over a year' : 'Where this pay goes'}</h2>
+            <a href="#/insights" className="btn small ghost">By account</a>
+          </div>
           {/* The chart sits in the middle of whatever height the card has, so both cards end level. */}
-          <div style={{ flex: 1, display: 'flex', flexWrap: 'wrap', alignItems: 'center', alignContent: 'center', gap: 24 }}>
-            <Donut slices={slices} size={170}>
-              <span className="small muted">Budgeted</span>
-              <b style={{ fontSize: 19 }}>{cash(totalBudgeted, { whole: true })}</b>
+          <div className="chart-row">
+            <Donut slices={slices} size={150}>
+              <span className="xs muted">Budgeted</span>
+              <b className="fig-sm">{cash(totalBudgeted, { whole: true })}</b>
             </Donut>
-            <div style={{ flex: '1 1 220px', minWidth: 0, display: 'flex' }}>
-              <Legend slices={slices} amounts />
-            </div>
+            <Legend slices={slices} amounts />
           </div>
         </div>
       </section>
@@ -394,16 +393,16 @@ export function Planner() {
             {shorts.map((s) => `${s.account.name} needs ${cash(-(s.diff ?? 0))} more`).join(' · ')}
             {' '}this {period.days}-day period.
             {shorts.some((s) => s.account.kind === 'bank' && !budget.balances?.[s.account.id]) && (
-              <> That's unless it's already in {shorts.length === 1 ? 'the account' : 'those accounts'}: <a href="#/accounts" style={{ color: 'inherit', fontWeight: 600 }}>enter the balance in Accounts</a> to check.</>
+              <> That's unless it's already in {shorts.length === 1 ? 'the account' : 'those accounts'}: <a href="#/accounts">enter the balance in Accounts</a> to check.</>
             )}
           </span>
         </div>
       )}
 
-      <section style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-        <div className="between">
+      <section className="stack gap-12">
+        <div className="card-head">
           <h2 className="h2">Payday split</h2>
-          <a href="#/deposits" className="small" style={{ fontWeight: 600, textDecoration: 'none' }}>Edit accounts</a>
+          <a href="#/deposits" className="btn small ghost">Edit accounts</a>
         </div>
 
         <div className="acc-grid">
@@ -437,26 +436,23 @@ export function Planner() {
                     : `${a.dues.length} costs due · ${cash(a.need)}`;
             // Everything about the account beyond its amount lives in a pop-up, opened by tapping the card.
             const adjusted = a.usual !== undefined && a.usual !== a.funded;
+            // Only a problem (short) or something to act on (spare) is coloured; the rest stays quiet.
             const pill = (
               <>
                 {diff !== null && diff !== 0 && (
                   <span className={`pill ${diff < 0 ? 'bad' : 'good'}`}>{diff < 0 ? `${cash(-diff, { whole: Math.abs(diff) >= 10000 })} short` : `+${cash(diff, { whole: diff >= 10000 })} spare`}</span>
                 )}
-                {diff === 0 && <span className="pill good">Exactly right</span>}
+                {diff === 0 && <span className="pill">Exactly right</span>}
                 {ends !== undefined && (
-                  <span className={`pill ${ends < 0 ? 'bad' : 'good'}`} title="Estimated balance at the end of this pay period">
+                  <span className={`pill ${ends < 0 ? 'bad' : ''}`} title="Estimated balance at the end of this pay period">
                     {ends < 0 ? `${cash(-ends, { whole: true })} short` : `Ends ${cash(ends, { whole: true })}`}
                   </span>
                 )}
               </>
             );
-            const amount = <>{isPay && !known ? '—' : cash(funded)}{split && !(isPay && !known) && <small className="muted" style={{ fontSize: 13, fontWeight: 500 }}> /{mode === 'week' ? 'wk' : 'fn'}</small>}</>;
+            const amount = <>{isPay && !known ? '—' : cash(funded)}{split && !(isPay && !known) && <small className="muted small" style={{ fontWeight: 500 }}> /{mode === 'week' ? 'wk' : 'fn'}</small>}</>;
             const amountClass = funded < 0 && (known || !isPay) ? 'neg' : '';
-            const icon = (
-              <span className="acc-icon" style={{ background: a.account.color }}>
-                <Icon name={a.account.kind === 'external' ? 'send' : isPay ? 'wallet' : 'bank'} />
-              </span>
-            );
+            const icon = <AccIcon color={a.account.color} name={a.account.kind === 'external' ? 'send' : isPay ? 'wallet' : 'bank'} />;
             // Each cost this pay (e.g. food, car gas, scooter gas, or every bill in Misc bills).
             const byName = new Map<string, { name: string; amount: Cents; dates: string[] }>();
             if (!longRun) for (const d of a.dues) {
@@ -475,46 +471,46 @@ export function Planner() {
             const isOpen = openCard === a.account.id;
             return (
               <Fragment key={a.account.id}>
-              <button className="acc-card" style={{ background: `${a.account.color}22` }} aria-haspopup="dialog"
+              <button className="acc-card" aria-haspopup="dialog"
                 aria-label={`${a.account.name}: details`} onClick={() => setOpenCard(a.account.id)}>
-                <div className="between" style={{ flexWrap: 'nowrap' }}>{icon}{pill}</div>
+                <div className="between nowrap">{icon}{pill}</div>
                 <p className="acc-name">{a.account.name}</p>
-                <div className="between" style={{ flexWrap: 'nowrap', alignItems: 'flex-end' }}>
+                <div className="between nowrap bottom">
                   <p className={`amt ${amountClass}`}>{amount}</p>
-                  <span className="acc-more" aria-hidden="true"><Icon name="info" size={18} stroke={2.6} /></span>
+                  <span className="acc-more" aria-hidden="true"><Icon name="info" size={18} /></span>
                 </div>
               </button>
               {isOpen && (
                 <div className="modal-back" onClick={() => setOpenCard(null)}>
                   <div className="modal" role="dialog" aria-modal="true" aria-labelledby="acc-title" onClick={(e) => e.stopPropagation()}>
-                    <div className="between" style={{ flexWrap: 'nowrap' }}>
-                      <span className="row" style={{ gap: 12, minWidth: 0 }}>
+                    <div className="between nowrap">
+                      <span className="row min0">
                         {icon}
-                        <span style={{ minWidth: 0 }}>
+                        <span className="min0">
                           <h2 id="acc-title" className="h2">{a.account.name}</h2>
                           <span className="small muted">{monthName(period.start)} pay · {fmtShort(period.start)} – {fmtShort(period.end)}</span>
                         </span>
                       </span>
-                      <button className="icon-btn" aria-label="Close" autoFocus onClick={() => setOpenCard(null)}><Icon name="x" /></button>
+                      <button className="icon-btn plain" aria-label="Close" autoFocus onClick={() => setOpenCard(null)}><Icon name="x" /></button>
                     </div>
 
                     <div className="stat">
-                      <div className="between" style={{ flexWrap: 'nowrap' }}>
+                      <div className="between nowrap">
                         <span className="small muted">{isPay ? 'Left here after the plan' : longRun ? 'Sent on average' : 'Payday sends'}</span>
                         {pill}
                       </div>
-                      <b className={amountClass} style={{ fontSize: 26 }}>{amount}</b>
-                      <span className="small muted" style={{ display: 'block', marginTop: 4 }}>{detail}</span>
-                      {adjusted && <span className="small" style={{ display: 'block', marginTop: 4 }}>Adjusted this pay · usually {cash(a.usual!)}</span>}
+                      <b className={`fig ${amountClass}`}>{amount}</b>
+                      <span className="small muted">{detail}</span>
+                      {adjusted && <span className="small">Adjusted this pay · usually {cash(a.usual!)}</span>}
                       {carry !== 0 && (
-                        <span className={`small ${carry < 0 ? 'neg' : 'pos'}`} style={{ display: 'block', marginTop: 4 }}>
+                        <span className={`small ${carry < 0 ? 'neg' : 'pos'}`}>
                           {carry < 0 ? `Includes ${cash(-carry, { whole: true })} the ${monthName(shiftPeriod(period, -1, budget.settings).start)} pay left short` : `${cash(carry, { whole: true })} left from ${monthName(shiftPeriod(period, -1, budget.settings).start)} counted`}
                         </span>
                       )}
                     </div>
 
                     {why.length > 0 && (
-                      <div className="tip small" style={{ flexDirection: 'column', gap: 4 }}>
+                      <div className="tip small stack gap-4">
                         <b>Different this pay</b>
                         {why.map((w) => <span key={w}>{w}</span>)}
                       </div>
@@ -523,7 +519,7 @@ export function Planner() {
                     {rows.length > 0 && (
                       <div>
                         <div className="between" style={{ marginBottom: 6 }}>
-                          <h3 style={{ fontSize: 15 }}>{rows.length} cost{rows.length === 1 ? '' : 's'} this pay{split ? `, per ${mode}` : ''}</h3>
+                          <h3 className="h3">{rows.length} cost{rows.length === 1 ? '' : 's'} this pay{split ? `, per ${mode}` : ''}</h3>
                           <b className="num">{cash(v(a.need))}</b>
                         </div>
                         <div className="cost-rows">
@@ -532,7 +528,7 @@ export function Planner() {
                             const same = r.dates.length > 1 && Number.isInteger(each);
                             return (
                               <span key={r.name} className="cost-row">
-                                <span style={{ minWidth: 0 }}>
+                                <span className="min0">
                                   <span className="cost-name">{r.name}</span>
                                   <span className="cost-meta muted">
                                     {same ? `${r.dates.length} × ${cash(each, { whole: each % 100 === 0 })}` : r.dates.length === 1 ? fmtShort(r.dates[0]) : `${r.dates.length} payments`}
@@ -566,43 +562,45 @@ export function Planner() {
         </div>
       </section>
 
-      {!avg && <WeeksView budget={budget} period={period} plan={plan} />}
-
       {!avg && (
-        <section className="card">
-          <div className="between" style={{ marginBottom: 8 }}>
-            <h2 className="h2">{isCurrent ? 'Coming up before next pay' : 'Due this period'}</h2>
-            <span className="small muted">{upcoming.length} payments</span>
-          </div>
-          {dues.length === 0 && <p className="muted small">Nothing else due this period.</p>}
-          {/* One heading per day (Today, Tomorrow, Wed 18 Nov) with that day's total, then what's due. */}
-          {dayGroups(dues).map(([date, list]) => (
-            <div key={date} className="due-day">
-              <div className="due-day-head">
-                <span>{date === today ? 'Today' : date === addDays(today, 1) ? 'Tomorrow' : fmtDay(date)}</span>
-                {list.length > 1 && <span className="num">{cash(list.reduce((t, d) => t + d.item.amount, 0))}</span>}
-              </div>
-              {list.map((d, i) => {
-                const acc = budget.accounts.find((a) => a.id === d.item.accountId);
-                return (
-                  <div className="list-row" key={`${d.item.id}-${d.date}-${i}`}>
-                    <span className="dot" style={{ background: acc?.color }} />
-                    <span style={{ flex: 1, minWidth: 0 }}>
-                      {d.item.name}
-                      {acc && acc.name !== d.item.name && <span className="small muted"> · {acc.name}</span>}
-                    </span>
-                    <b className="num">{cash(d.item.amount)}</b>
-                  </div>
-                );
-              })}
+        <div className="planner-lower two">
+          <WeeksView budget={budget} period={period} plan={plan} />
+
+          <section className="card">
+            <div className="card-head" style={{ marginBottom: 8 }}>
+              <h2 className="h2">{isCurrent ? 'Coming up before next pay' : 'Due this period'}</h2>
+              <span className="small muted">{upcoming.length} payment{upcoming.length === 1 ? '' : 's'}</span>
             </div>
-          ))}
-          {upcoming.length > 8 && (
-            <button className="btn small ghost" style={{ marginTop: 8 }} onClick={() => setShowAllDues(!showAllDues)}>
-              {showAllDues ? 'Show fewer' : `Show all ${upcoming.length}`}
-            </button>
-          )}
-        </section>
+            {dues.length === 0 && <p className="muted small">Nothing else due this period.</p>}
+            {/* One heading per day (Today, Tomorrow, Wed 18 Nov) with that day's total, then what's due. */}
+            {dayGroups(dues).map(([date, list]) => (
+              <div key={date} className="due-day">
+                <div className="due-day-head">
+                  <span>{date === today ? 'Today' : date === addDays(today, 1) ? 'Tomorrow' : fmtDay(date)}</span>
+                  {list.length > 1 && <span className="num">{cash(list.reduce((t, d) => t + d.item.amount, 0))}</span>}
+                </div>
+                {list.map((d, i) => {
+                  const acc = budget.accounts.find((a) => a.id === d.item.accountId);
+                  return (
+                    <div className="list-row" key={`${d.item.id}-${d.date}-${i}`}>
+                      <Dot color={acc?.color} />
+                      <span className="grow">
+                        {d.item.name}
+                        {acc && acc.name !== d.item.name && <span className="small muted"> · {acc.name}</span>}
+                      </span>
+                      <b className="num">{cash(d.item.amount)}</b>
+                    </div>
+                  );
+                })}
+              </div>
+            ))}
+            {upcoming.length > 8 && (
+              <button className="btn small ghost" style={{ marginTop: 8 }} onClick={() => setShowAllDues(!showAllDues)}>
+                {showAllDues ? 'Show fewer' : `Show all ${upcoming.length}`}
+              </button>
+            )}
+          </section>
+        </div>
       )}
       {optimiseOpen && <OptimiseModal period={period} leftover={plan.leftover} onClose={() => setOptimiseOpen(false)} onApplied={(u) => setOptUndo(u)} />}
     </>
