@@ -10,6 +10,7 @@ import { nextColor } from '../lib/colors';
 import { CostCategoriesEditor } from '../components/CostCategories';
 import { newId, readVersions, useBudget } from '../lib/store';
 import { pairingLink, readSyncConfig, SyncError, type SyncConfig } from '../lib/sync';
+import { readTheme, saveTheme, type Theme } from '../lib/theme';
 import type { Budget, RuleBucket } from '../lib/types';
 
 const RULES = [
@@ -22,6 +23,7 @@ const RULES = [
 const ordinal = (n: number) => `${n}${n % 100 >= 11 && n % 100 <= 13 ? 'th' : ['th', 'st', 'nd', 'rd'][n % 10] ?? 'th'}`;
 
 export function Settings() {
+  const [theme, setTheme] = useState<Theme>(readTheme);
   const { budget, update, replace, reset, sync } = useBudget();
   const s = budget.settings;
   const [payText, setPayText] = useState(centsToInput(s.expectedPay));
@@ -145,6 +147,18 @@ export function Settings() {
             </label>
           ))}
         </div>
+      </section>
+
+      <section className="card stack gap-12">
+        <h2 className="h2">Appearance</h2>
+        <div className="seg" role="group" aria-label="Appearance" style={{ alignSelf: 'flex-start' }}>
+          {(['auto', 'light', 'dark'] as const).map((t) => (
+            <button key={t} aria-pressed={theme === t} onClick={() => { setTheme(t); saveTheme(t); }}>
+              {t === 'auto' ? 'Match device' : t === 'light' ? 'Light' : 'Dark'}
+            </button>
+          ))}
+        </div>
+        <p className="small muted">Just for this device.</p>
       </section>
 
       <Section title="Pay history" summary={history.length ? `${history.length} pay${history.length === 1 ? '' : 's'} recorded · latest ${cash(history[0][1])}` : 'No pays recorded yet'}>

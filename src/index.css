@@ -109,6 +109,25 @@
     color-scheme: dark;
   }
 }
+/* Dark chosen in Settings, whatever the device is set to. */
+:root[data-theme="dark"] {
+  --bg: #0E1618; --card: #172225; --soft: #1F2E32; --line: #2B3C41;
+  --ink: #ECF1F0; --muted: #9FADAF;
+  --brand: #1F7385; --brand-2: #7CC6D4; --on-brand: #FFFFFF;
+  --accent: #E8B24A; --on-accent: #18262B;
+  --good: #5ED19A; --good-bg: #12372A; --bad: #FF9482; --bad-bg: #46211B;
+  --side-bg: #101C1F; --side-ink: #B8C7CA; --side-strong: #FFFFFF;
+  --scrim: rgba(0, 0, 0, 0.6);
+  --shadow-pop: 0 8px 24px rgba(0, 0, 0, 0.45);
+  --shadow-seg: 0 1px 2px rgba(0, 0, 0, 0.4);
+  /* The same hues, stepped for a dark surface. */
+  --pal-teal: #1AA89B; --pal-indigo: #6977D3; --pal-moss: #779E4B; --pal-plum: #A45B9F;
+  --pal-ochre: #B8892D; --pal-rose: #B94769; --pal-sky: #3F9BCB; --pal-clay: #C66846;
+  --pal-blue: #528ED9; --pal-green: #4AA969; --pal-brick: #CA564D; --pal-cyan: #57B5BF;
+  --pal-orange: #D78032; --pal-orchid: #C282D0; --pal-brown: #9B785C; --pal-slate: #7D8F9E;
+  --pal-stone: #89867E;
+  color-scheme: dark;
+}
 
 /* ---------- Base ---------- */
 * { box-sizing: border-box; }
@@ -284,7 +303,8 @@ h1, h2, h3, p { margin: 0; }
 }
 /* Pay and Total budgeted, side by side (stacked on a narrow phone so the pay's icons fit) */
 .pay-stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--s-3); }
-@media (max-width: 420px) { .pay-stats { grid-template-columns: minmax(0, 1fr); gap: var(--s-2); } }
+/* Pay has a label, a pill and two buttons: two boxes side by side only fit once there is room. */
+@media (max-width: 520px) { .pay-stats { grid-template-columns: minmax(0, 1fr); gap: var(--s-2); } }
 /* Three figures in a row that never wrap their labels (e.g. in the account / still to come / spare) */
 .trio { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--s-2); }
 .trio .stat { padding: 10px var(--s-3); }
@@ -359,6 +379,7 @@ select::-ms-expand { display: none; }
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%239FADAF' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
   }
 }
+:root[data-theme="dark"] select { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%239FADAF' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E"); }
 .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: var(--s-3); }
 .form-grid.bottom { align-items: end; }
 .form-grid.tight { grid-template-columns: repeat(auto-fit, minmax(90px, 1fr)); }

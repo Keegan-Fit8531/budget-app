@@ -1,8 +1,11 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
+import { applyTheme, readTheme } from './lib/theme';
 import App from './App';
 import { BudgetProvider } from './lib/store';
 import './index.css';
+
+applyTheme(readTheme());
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
