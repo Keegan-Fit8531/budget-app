@@ -40,6 +40,8 @@ export interface BalanceResult {
 export const DEBT_RATIO_GUIDE = 0.2;
 
 const dollarsUp = (c: Cents) => Math.ceil(c / 100) * 100;
+/** Savings trimmed by balancing land on a round $50 (e.g. $1,250, not $1,263.40), so they're easy to track. */
+export const SAVINGS_STEP: Cents = 5000;
 
 /**
  * Work out one-pay changes that bring a short pay back to $0 or better, in best-practice order:
@@ -98,10 +100,12 @@ export function balancePay(input: Budget, period: Period, today: ISODate = today
   const topUps = shortAccounts.reduce((t, s) => t + s.short, 0);
   let short = topUps - plan.leftover;
   const protectedIds = new Set(shortAccounts.map((s) => s.accountId));
-  const cut = (accountId: string, name: string, amount: Cents, reason: string) => {
+  // step: round what's left to send down to a multiple of this (savings), so a little more may be trimmed than needed.
+  const cut = (accountId: string, name: string, amount: Cents, reason: string, step?: Cents) => {
     if (short <= 0 || amount <= 0 || protectedIds.has(accountId) || keep.has(accountId)) return;
     const from = funded(accountId);
-    const take = Math.min(amount, dollarsUp(short), from);
+    let take = Math.min(amount, dollarsUp(short), from);
+    if (step) take = Math.min(amount, from, from - Math.floor((from - short) / step) * step);
     if (take <= 0) return;
     changes.push({ accountId, name, from, to: from - take, reason });
     short -= take;
@@ -148,7 +152,7 @@ export function balancePay(input: Budget, period: Period, today: ISODate = today
     const savers = plan.accounts
       .filter((a) => !debtIds.has(a.account.id) && savingGroups.has(a.account.groupId) && a.funded > 0)
       .sort((x, y) => y.funded - x.funded);
-    for (const a of savers) cut(a.account.id, a.account.name, a.funded, 'Saved a bit less this pay only. It can catch up next pay.');
+    for (const a of savers) cut(a.account.id, a.account.name, a.funded, 'Saved a bit less this pay only (rounded to $50). It can catch up next pay.', SAVINGS_STEP);
     // 4. Money put aside for later costs (a WOF, tyres): there's no date to meet, so it can wait a pay.
     //    Only what's put aside is paused; bills paid from the same account still get their money.
     for (const a of plan.accounts) {

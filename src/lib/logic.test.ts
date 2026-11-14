@@ -273,6 +273,20 @@ describe('automatic balancing', () => {
     expect(b.autoBalanced?.['2026-10-20']).toBeDefined();
     expect(b.overrides?.['2026-10-20']).toEqual({ sv: 25000 });
   });
+  it('trims savings to a round $50, leaving the few dollars over as leftover', () => {
+    // $5,000 pay: $1,030 to Fun and $4,263.40 to the wedding fund is $293.40 short.
+    const b = budget();
+    b.accounts.push({ id: 'wed', name: 'Wedding', kind: 'bank', color: '#000', groupId: 'savings' }, { id: 'fun', name: 'Fun', kind: 'bank', color: '#000', groupId: 'lifestyle' });
+    b.split.push({ accountId: 'wed', amount: 426340, mode: 'fixed' }, { accountId: 'fun', amount: 103000, mode: 'fixed' });
+    const p = periodContaining('2026-11-20', b.settings);
+    const r = balancePay(b, p, '2026-11-14');
+    const wed = r.changes.find((c) => c.accountId === 'wed')!;
+    expect(wed.to).toBe(395000); // not $3,970.00
+    expect(r.after).toBe(2000);
+    expect(wed.to % 5000).toBe(0);
+    expect(r.after).toBeGreaterThanOrEqual(0);
+    expect(r.after).toBeLessThan(5000);
+  });
 });
 
 describe('money put aside (a car fund)', () => {
