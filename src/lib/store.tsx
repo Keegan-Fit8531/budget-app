@@ -50,6 +50,14 @@ function tidy(b: Budget): Budget {
     for (const i of b.items) if (i.frequency !== 'once' && /set.?aside/i.test(`${i.name} ${i.note ?? ''}`)) i.setAside = true;
     b.flags.push('set-aside-costs');
   }
+  // The wedding fund's balanced amounts round to $50, once (you can change it on the account after).
+  if (!b.flags.includes('wedding-round-50')) {
+    for (const g of b.savings) {
+      const a = b.accounts.find((x) => x.id === g.accountId);
+      if (a && /wedding/i.test(g.name) && a.round === undefined) a.round = 5000;
+    }
+    b.flags.push('wedding-round-50');
+  }
   return b;
 }
 

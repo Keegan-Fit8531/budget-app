@@ -7,6 +7,7 @@ import { depositFor, exactNeed, modeOf, smoothAmount, topsUp } from '../lib/bala
 import { averageNeed, convert, isSetAside, itemDates, periodContaining, planFor, setAsidePerPay, shiftPeriod } from '../lib/engine';
 import { PayNav, useViewPeriod } from '../lib/period';
 import { cash, centsToInput, parseMoney } from '../lib/money';
+import { RoundSetting } from '../components/PaydayControl';
 import { nextColor } from '../lib/colors';
 import { newId, useBudget } from '../lib/store';
 import { asideNames, balancedMode } from '../lib/rebalance';
@@ -178,6 +179,8 @@ function AccountSection({ account: a, open, onToggle, periodNeed, periodSends, p
                   {periodSends !== (mode === 'smooth' ? steady : periodNeed) && mode !== 'fixed' ? ` The pay being viewed sends ${cash(periodSends)}.` : ''}
                 </p>
               )}
+
+              <RoundSetting accountId={a.id} />
 
               {mode === 'fixed' && (
                 <>

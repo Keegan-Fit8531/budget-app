@@ -273,10 +273,10 @@ describe('automatic balancing', () => {
     expect(b.autoBalanced?.['2026-10-20']).toBeDefined();
     expect(b.overrides?.['2026-10-20']).toEqual({ sv: 25000 });
   });
-  it('trims savings to a round $50, leaving the few dollars over as leftover', () => {
+  it('an account set to round to $50 is trimmed to a round $50, the few dollars over left over', () => {
     // $5,000 pay: $1,030 to Fun and $4,263.40 to the wedding fund is $293.40 short.
     const b = budget();
-    b.accounts.push({ id: 'wed', name: 'Wedding', kind: 'bank', color: '#000', groupId: 'savings' }, { id: 'fun', name: 'Fun', kind: 'bank', color: '#000', groupId: 'lifestyle' });
+    b.accounts.push({ id: 'wed', name: 'Wedding', kind: 'bank', color: '#000', groupId: 'savings', round: 5000 }, { id: 'fun', name: 'Fun', kind: 'bank', color: '#000', groupId: 'lifestyle' });
     b.split.push({ accountId: 'wed', amount: 426340, mode: 'fixed' }, { accountId: 'fun', amount: 103000, mode: 'fixed' });
     const p = periodContaining('2026-11-20', b.settings);
     const r = balancePay(b, p, '2026-11-14');
@@ -286,6 +286,20 @@ describe('automatic balancing', () => {
     expect(wed.to % 5000).toBe(0);
     expect(r.after).toBeGreaterThanOrEqual(0);
     expect(r.after).toBeLessThan(5000);
+    // Rounding off: trimmed by exactly what's short.
+    b.accounts.find((a) => a.id === 'wed')!.round = 0;
+    expect(balancePay(b, p, '2026-11-14').changes.find((c) => c.accountId === 'wed')!.to).toBe(396940);
+  });
+
+  it('a short account set to round tops up to the next round amount', () => {
+    const b = budget();
+    b.accounts.push({ id: 'bills', name: 'Bills', kind: 'bank', color: '#000', groupId: 'needs', round: 5000 });
+    b.split.push({ accountId: 'bills', amount: 10000, mode: 'fixed' });
+    b.items.push({ id: 'p', name: 'Power', amount: 13210, frequency: 'monthly', start: '2026-01-25', accountId: 'bills' });
+    const p = periodContaining('2026-11-20', b.settings);
+    b.overrides = { [p.start]: { bills: 10000 } }; // $100 set for this pay: $32.10 short
+    const c = balancePay(b, p, '2026-11-14').changes.find((x) => x.accountId === 'bills')!;
+    expect(c.to).toBe(15000); // needs $132.10: $150, not $132.10
   });
 });
 

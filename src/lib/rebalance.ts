@@ -40,8 +40,6 @@ export interface BalanceResult {
 export const DEBT_RATIO_GUIDE = 0.2;
 
 const dollarsUp = (c: Cents) => Math.ceil(c / 100) * 100;
-/** Savings trimmed by balancing land on a round $50 (e.g. $1,250, not $1,263.40), so they're easy to track. */
-export const SAVINGS_STEP: Cents = 5000;
 
 /**
  * Work out one-pay changes that bring a short pay back to $0 or better, in best-practice order:
@@ -90,22 +88,28 @@ export function balancePay(input: Budget, period: Period, today: ISODate = today
 
   const changes: BalanceChange[] = [];
   const notSpare: BalanceResult['notSpare'] = [];
+  // An account's rounding (e.g. $50 for the wedding fund), so its amounts are easy to track.
+  const step = (id: string) => b.accounts.find((a) => a.id === id)?.round || 0;
   // 0. Top up short accounts first — their costs are real (e.g. a Wednesday transfer before payday).
+  let topUps = 0;
   for (const s of shortAccounts) {
     const from = funded(s.accountId);
+    const st = step(s.accountId);
+    const to = st ? Math.ceil((from + s.short) / st) * st : from + s.short;
     const onlyAside = !b.items.some((i) => i.accountId === s.accountId && !isSetAside(i));
-    changes.push({ accountId: s.accountId, name: s.name, from, to: from + s.short, topUp: true,
+    changes.push({ accountId: s.accountId, name: s.name, from, to, topUp: true,
       reason: onlyAside ? `Needs ${fmt(s.short)} more to put aside what's planned for ${asideNames(b, s.accountId)}.` : `Needs ${fmt(s.short)} more to cover its costs before next payday.` });
+    topUps += to - from;
   }
-  const topUps = shortAccounts.reduce((t, s) => t + s.short, 0);
   let short = topUps - plan.leftover;
   const protectedIds = new Set(shortAccounts.map((s) => s.accountId));
-  // step: round what's left to send down to a multiple of this (savings), so a little more may be trimmed than needed.
-  const cut = (accountId: string, name: string, amount: Cents, reason: string, step?: Cents) => {
+  const cut = (accountId: string, name: string, amount: Cents, reason: string) => {
     if (short <= 0 || amount <= 0 || protectedIds.has(accountId) || keep.has(accountId)) return;
     const from = funded(accountId);
     let take = Math.min(amount, dollarsUp(short), from);
-    if (step) take = Math.min(amount, from, from - Math.floor((from - short) / step) * step);
+    // Rounded account: what's still sent rounds down, so a little more may be trimmed than needed.
+    const st = step(accountId);
+    if (st) take = Math.min(amount, from, from - Math.floor((from - short) / st) * st);
     if (take <= 0) return;
     changes.push({ accountId, name, from, to: from - take, reason });
     short -= take;
@@ -152,7 +156,7 @@ export function balancePay(input: Budget, period: Period, today: ISODate = today
     const savers = plan.accounts
       .filter((a) => !debtIds.has(a.account.id) && savingGroups.has(a.account.groupId) && a.funded > 0)
       .sort((x, y) => y.funded - x.funded);
-    for (const a of savers) cut(a.account.id, a.account.name, a.funded, 'Saved a bit less this pay only (rounded to $50). It can catch up next pay.', SAVINGS_STEP);
+    for (const a of savers) cut(a.account.id, a.account.name, a.funded, 'Saved a bit less this pay only. It can catch up next pay.');
     // 4. Money put aside for later costs (a WOF, tyres): there's no date to meet, so it can wait a pay.
     //    Only what's put aside is paused; bills paid from the same account still get their money.
     for (const a of plan.accounts) {
