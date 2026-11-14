@@ -35,6 +35,38 @@ export function PageHead({ title, sub, children }: { title: ReactNode; sub?: Rea
   );
 }
 
+/**
+ * Something that opens and closes smoothly: it grows from nothing to its full height and fades in (and
+ * back again). What's inside is only made the first time it opens, then kept so it can close smoothly.
+ * `stacked`: it sits in a stack with a gap (e.g. a card), and takes no room at all while closed.
+ */
+export function Collapse({ open, children, stacked, id }: { open: boolean; children: ReactNode; stacked?: boolean; id?: string }) {
+  const [mounted, setMounted] = useState(open);
+  // Follows `open`, a render later when opening: the closed state is drawn first, so the opening animates.
+  const [shown, setShown] = useState(open);
+  // Fully open: nothing is clipped (focus rings, tooltips).
+  const [settled, setSettled] = useState(open);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) { setShown(false); setSettled(false); return; }
+    if (!mounted) { setMounted(true); return; }
+    if (shown) return;
+    void ref.current?.getBoundingClientRect(); // make sure the closed size is laid out before opening
+    setShown(true);
+  }, [open, mounted, shown]);
+  // Settled once the opening has run (--dur-open), whether or not it animated (reduced motion).
+  useEffect(() => {
+    if (!shown) return;
+    const t = setTimeout(() => setSettled(true), 320);
+    return () => clearTimeout(t);
+  }, [shown]);
+  return (
+    <div ref={ref} id={id} className={`collapse${stacked ? ' stacked' : ''}${settled ? ' settled' : ''}`} data-open={shown} inert={!shown}>
+      <div><div className="collapse-pad">{mounted && children}</div></div>
+    </div>
+  );
+}
+
 /** Reads and remembers whether something is open, per device (when given a key). */
 function useOpen(storageKey: string | undefined, initial: boolean): [boolean, (v: boolean) => void] {
   const [open, setOpen] = useState(() => {
@@ -69,7 +101,7 @@ export function Disclosure({ title, meta, children, defaultOpen = false, forceOp
         <span>{title}{meta !== undefined && meta !== null && meta !== false && <span className="disc-meta"> · {meta}</span>}</span>
         <Chevron size={16} />
       </button>
-      {open && <div id={id} className="disc-body">{children}</div>}
+      <Collapse open={open} id={id}><div className="disc-body">{children}</div></Collapse>
     </div>
   );
 }

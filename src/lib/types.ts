@@ -72,6 +72,20 @@ export interface BalanceEntry {
   asOf: ISODate;
 }
 
+/** Something that happened to an account's money, kept as its history. */
+export interface AccountEvent {
+  id: string;
+  date: ISODate;
+  /**
+   * cost: money spent from the account outside the plan (a tyre puncture), taken off its balance when recorded.
+   * balance: the balance you entered from your banking app.
+   */
+  kind: 'cost' | 'balance';
+  amount: Cents;
+  /** What a cost was. */
+  note?: string;
+}
+
 /**
  * interest-free: clear by a deadline, any payment (Gem 6 months, Mastercard 3 months)
  * equal: even payments each pay over N months (Gem 12/24/36)
@@ -237,6 +251,8 @@ export interface Budget {
   savings?: SavingsGoal[];
   /** Account balances you've entered, by account id. */
   balances?: Record<string, BalanceEntry>;
+  /** Each account's history (balances entered, one-off costs), by account id, in the order they were recorded. */
+  accountHistory?: Record<string, AccountEvent[]>;
   /** One-pay adjustments: pay period start → account id → amount sent that pay instead of the usual. */
   overrides?: Record<ISODate, Record<string, Cents>>;
   /**
