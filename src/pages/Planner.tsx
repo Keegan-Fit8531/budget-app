@@ -245,7 +245,7 @@ export function Planner() {
         <ViewModes />
       </header>
 
-      <section className="grid-2">
+      <section className="grid-2 planner-hero">
         <div className="card stack gap-16">
           <div>
             <div className="between nowrap top">
@@ -375,7 +375,8 @@ export function Planner() {
             <h2 className="h2">{split ? `Where this pay goes, per ${mode}` : mode === 'month' ? 'Where pay goes, per month' : mode === 'year' ? 'Where pay goes over a year' : 'Where this pay goes'}</h2>
             <a href="#/insights" className="btn small ghost">By account</a>
           </div>
-          {/* The chart sits in the middle of whatever height the card has, so both cards end level. */}
+          {/* The chart sits in the middle of whatever height the card has, so both cards end level
+              (unless "What's different" is open: then this card keeps its own height, see .planner-hero). */}
           <div className="chart-row">
             <Donut slices={slices} size={150}>
               <span className="xs muted">Budgeted</span>
