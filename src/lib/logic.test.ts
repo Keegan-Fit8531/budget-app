@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { billTracker } from './balances';
+import { balanceToday, billTracker, estimateBalance } from './balances';
 import { addDays } from './dates';
 import { applyPayment, debtSchedules, planSchedule, recordHistory, settleDue } from './debts';
 import { classifyText, matchDebt, parseDate, parseStatementText, recordStatement } from './documents';
@@ -112,6 +112,49 @@ describe('bill tracker', () => {
     expect(payday.spare).toBe(6000);
     expect(payday.rows[0].covered).toBe(true);
     expect(billTracker(b, 'bills', '2026-11-20').balance).toBe(31000);
+  });
+
+  it('on a day a payment is due, the card headline and "In the account" are the same amount', () => {
+    // Rent of $415 every Monday; $705 was in the account on Sat 14 Nov, and Mon 16 Nov is rent day.
+    const b = budget();
+    b.accounts.push({ id: 'rent', name: 'Rent', kind: 'bank', color: '#000', groupId: 'needs' });
+    b.split.push({ accountId: 'rent', amount: 180000, mode: 'fixed' });
+    b.items.push({ id: 'r', name: 'Rent', amount: 41500, frequency: 'weekly', start: '2026-01-05', accountId: 'rent' });
+    b.balances = { rent: { amount: 70500, asOf: '2026-11-14' } };
+
+    // Today's rent is still to come in both figures: $705 in the account, $415 to come, $290 left.
+    const t = billTracker(b, 'rent', '2026-11-16');
+    expect(balanceToday(b, 'rent', '2026-11-16')).toBe(70500);
+    expect(t.balance).toBe(70500);
+    expect(t.rows.find((r) => r.date === '2026-11-16')).toMatchObject({ status: 'today', covered: true });
+    expect(t.toCome).toBe(41500);
+    expect(t.spare).toBe(29000);
+    // Projections still count it as gone by the end of the day.
+    expect(estimateBalance(b, 'rent', '2026-11-16', '2026-11-16')).toBe(29000);
+
+    // The day after, it has come out of both.
+    const next = billTracker(b, 'rent', '2026-11-17');
+    expect(balanceToday(b, 'rent', '2026-11-17')).toBe(29000);
+    expect(next.balance).toBe(29000);
+    expect(next.toCome).toBe(0);
+
+    // They agree every day, payday (Thu 19 Nov, $1,800 in) and later rent days included,
+    // and what's in the account less what's still to come is what's left.
+    for (let d = '2026-11-14'; d <= '2026-12-31'; d = addDays(d, 1)) {
+      const on = billTracker(b, 'rent', d);
+      expect(on.balanceSource, d).toBe('entered');
+      expect(on.balance, d).toBe(balanceToday(b, 'rent', d));
+      expect(on.balance - on.toCome, d).toBe(on.spare);
+    }
+    expect(balanceToday(b, 'rent', '2026-11-19')).toBe(29000 + 180000);
+    // Rent day Mon 23 Nov: last week's rent is gone, today's isn't yet.
+    expect(balanceToday(b, 'rent', '2026-11-23')).toBe(209000);
+    expect(billTracker(b, 'rent', '2026-11-24').balance).toBe(209000 - 41500);
+
+    // No balance entered: no headline, and the tracker falls back to its own estimate.
+    b.balances = {};
+    expect(balanceToday(b, 'rent', '2026-11-16')).toBeUndefined();
+    expect(billTracker(b, 'rent', '2026-11-16').balanceSource).toBe('estimated');
   });
 });
 
