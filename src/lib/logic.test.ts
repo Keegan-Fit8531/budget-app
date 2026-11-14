@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { balanceToday, billTracker, depositFor, estimateBalance, outflows } from './balances';
+import { applyAllocation, undoAllocation } from './allocate';
 import { addDays } from './dates';
 import { applyPayment, debtSchedules, planSchedule, recordHistory, settleDue } from './debts';
 import { classifyText, matchDebt, parseDate, parseStatementText, recordStatement } from './documents';
@@ -476,5 +477,43 @@ describe('reading a statement', () => {
     // A date in the future (misread) counts as today.
     recordStatement(b, 'a', { balance: 100000, date: '2027-01-01' }, '2026-11-12');
     expect(b.debts[0].balance).toEqual({ amount: 100000, asOf: '2026-11-12' });
+  });
+});
+
+describe('optimising the leftover, then changing it', () => {
+  function twoGoals() {
+    const b = budget();
+    for (const id of ['a', 'b']) {
+      b.accounts.push({ id, name: id, kind: 'bank', color: '#000', groupId: 'savings' });
+      b.split.push({ accountId: id, amount: 10000, mode: 'fixed' });
+    }
+    b.savings = ['a', 'b'].map((id) => ({ id, name: id, accountId: id, balance: 0, asOf: '2026-11-12' }));
+    return b;
+  }
+  const funded = (b: Budget, p: ReturnType<typeof periodContaining>, id: string) => planFor(b, p).accounts.find((a) => a.account.id === id)!.funded;
+
+  it('this pay only: editing swaps the old amounts for the new ones', () => {
+    const b = twoGoals();
+    const p = periodContaining('2026-11-20', b.settings);
+    const start = planFor(b, p).leftover;
+    const first = applyAllocation(b, p, [{ targetId: 'goal-a', amount: 30000 }], 'once');
+    expect(planFor(b, p).leftover).toBe(start - 30000);
+    // Edit: put back what Optimise did, then hand it out again.
+    undoAllocation(b, first);
+    expect(planFor(b, p).leftover).toBe(start);
+    applyAllocation(b, p, [{ targetId: 'goal-a', amount: 5000 }, { targetId: 'goal-b', amount: 20000 }], 'once');
+    expect(funded(b, p, 'a')).toBe(15000);
+    expect(funded(b, p, 'b')).toBe(30000);
+    expect(planFor(b, p).leftover).toBe(start - 25000);
+  });
+
+  it('every pay: editing changes the normal amount rather than adding to it', () => {
+    const b = twoGoals();
+    const p = periodContaining('2026-11-20', b.settings);
+    const first = applyAllocation(b, p, [{ targetId: 'goal-a', amount: 30000 }], 'every');
+    expect(b.split.find((l) => l.accountId === 'a')!.amount).toBe(40000);
+    undoAllocation(b, first);
+    applyAllocation(b, p, [{ targetId: 'goal-a', amount: 10000 }], 'every');
+    expect(b.split.find((l) => l.accountId === 'a')!.amount).toBe(20000);
   });
 });
