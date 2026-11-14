@@ -178,7 +178,8 @@ export function Planner() {
   const needsBalance = plan.leftover < 0 || shortAccounts.length > 0 || pending.changes.length > 0 || pending.toSteady.length > 0;
   // Optimise hands out what's left once the pay is balanced (short accounts and the 5-week buffer come first).
   const undoHere = optUndo?.periodStart === period.start ? optUndo : null;
-  const canOptimise = !avg && !needsBalance && plan.leftover > 5000;
+  // From $1: rounded accounts (e.g. the wedding fund to $50) often leave a few dollars to put somewhere.
+  const canOptimise = !avg && !needsBalance && plan.leftover >= 100;
   // Automatic balancing looks after the next 12 pays; a pay already split (or further out) is done by hand.
   const autoHere = autoPays(budget, today).some((p) => p.start === period.start);
   const hasModeChanges = (() => { try { return !!JSON.parse(localStorage.getItem(MODES_KEY) ?? '{}')[period.start]; } catch { return false; } })();
