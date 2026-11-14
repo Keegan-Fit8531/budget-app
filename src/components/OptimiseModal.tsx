@@ -1,15 +1,19 @@
 import { useMemo, useState } from 'react';
 import { Dot } from './ui';
-import { allocationTargets, allowancePerWeek, applyAllocation, type AllocationUndo, type AllocMode } from '../lib/allocate';
+import { allocationTargets, allowancePerWeek, applyAllocation, undoAllocation, type AllocationUndo, type AllocMode } from '../lib/allocate';
 import { fmtShort, monthName, todayISO } from '../lib/dates';
-import type { Period } from '../lib/engine';
+import { planFor, type Period } from '../lib/engine';
 import { cash, centsToInput, parseMoney } from '../lib/money';
 import { useBudget } from '../lib/store';
 import { Icon } from './Icon';
 
 const UNDO_KEY = 'paydays.optimise.undo';
 
-export interface OptimiseUndo extends AllocationUndo { at: string; label: string }
+export interface OptimiseUndo extends AllocationUndo {
+  at: string; label: string;
+  /** What you chose, so Edit can open with it (saves from before Edit existed don't have it). */
+  mode?: AllocMode; allocs?: { targetId: string; amount: number }[];
+}
 
 export function readOptimiseUndo(): OptimiseUndo | null {
   try {
@@ -22,15 +26,36 @@ export function clearOptimiseUndo() {
   try { localStorage.removeItem(UNDO_KEY); } catch { /* ignore */ }
 }
 
-/** Put the money left over this pay where you choose: goals, weekly allowance, debts, or keep it to spend. */
-export function OptimiseModal({ period, leftover, onClose, onApplied }: {
-  period: Period; leftover: number; onClose: () => void; onApplied: (u: OptimiseUndo) => void;
+/**
+ * Put the money left over this pay where you choose: goals, weekly allowance, debts, or keep it to spend.
+ * With `previous` (Edit), it opens with what you chose last time and the leftover from before it, and
+ * saving swaps that allocation for the new one.
+ */
+export function OptimiseModal({ period, leftover: leftNow, previous, onClose, onApplied }: {
+  period: Period; leftover: number; previous?: OptimiseUndo | null; onClose: () => void; onApplied: (u: OptimiseUndo | null) => void;
 }) {
   const { budget, update } = useBudget();
-  const targets = useMemo(() => allocationTargets(budget), [budget]);
-  const [mode, setMode] = useState<AllocMode>('once');
-  const [ticked, setTicked] = useState<string[]>(() => targets.filter((t) => t.kind === 'goal').slice(0, 1).map((t) => t.id));
+  // Editing: the budget as it was before the last Optimise, so the whole leftover is there to hand out again.
+  const before = useMemo(() => {
+    if (!previous) return null;
+    const b = structuredClone(budget);
+    undoAllocation(b, previous);
+    return b;
+  }, [budget, previous]);
+  const leftover = before ? planFor(before, period).leftover : leftNow;
+  const targets = useMemo(() => allocationTargets(before ?? budget), [before, budget]);
+  // What you chose last time: as saved, or (older saves) worked out from what each account gained.
+  const chosen = useMemo(() => {
+    if (!previous || !before) return null;
+    if (previous.allocs) return previous.allocs;
+    const now = planFor(budget, period), was = planFor(before, period);
+    const funded = (p: typeof now, id?: string) => p.accounts.find((a) => a.account.id === id)?.funded ?? 0;
+    return targets.filter((t) => t.kind !== 'spend').map((t) => ({ targetId: t.id, amount: funded(now, t.accountId) - funded(was, t.accountId) })).filter((a) => a.amount > 0);
+  }, [previous, before, budget, period, targets]);
+  const [mode, setMode] = useState<AllocMode>(() => previous?.mode ?? (previous?.label === 'every pay' ? 'every' : 'once'));
+  const [ticked, setTicked] = useState<string[]>(() => chosen ? chosen.map((a) => a.targetId) : targets.filter((t) => t.kind === 'goal').slice(0, 1).map((t) => t.id));
   const [amounts, setAmounts] = useState<Record<string, string>>(() => {
+    if (chosen) return Object.fromEntries(chosen.map((a) => [a.targetId, centsToInput(a.amount)]));
     const first = targets.find((t) => t.kind === 'goal');
     return first ? { [first.id]: centsToInput(leftover) } : {};
   });
@@ -55,17 +80,21 @@ export function OptimiseModal({ period, leftover, onClose, onApplied }: {
   }
   function apply() {
     const allocs = targets.map((t) => ({ targetId: t.id, amount: cents(t.id) })).filter((a) => a.amount > 0);
-    if (!allocs.length) return onClose();
+    if (!allocs.length && !previous) return onClose();
     let undo: OptimiseUndo | null = null;
     update((b) => {
-      const u = applyAllocation(b, period, allocs, mode);
-      undo = { at: todayISO(), label: mode === 'once' ? `${monthName(period.start)} pay` : 'every pay', ...u };
+      // Editing: put back what last time changed first, then hand out the leftover again.
+      if (previous) undoAllocation(b, previous);
+      if (allocs.length) {
+        const u = applyAllocation(b, period, allocs, mode);
+        undo = { at: todayISO(), label: mode === 'once' ? `${monthName(period.start)} pay` : 'every pay', mode, allocs, ...u };
+      }
       return b;
     });
-    if (undo) {
-      try { localStorage.setItem(UNDO_KEY, JSON.stringify(undo)); } catch { /* ignore */ }
-      onApplied(undo);
-    }
+    try {
+      if (undo) localStorage.setItem(UNDO_KEY, JSON.stringify(undo)); else clearOptimiseUndo();
+    } catch { /* ignore */ }
+    onApplied(undo);
     onClose();
   }
 
@@ -73,7 +102,7 @@ export function OptimiseModal({ period, leftover, onClose, onApplied }: {
     <div className="modal-back" onClick={onClose}>
       <div className="modal" role="dialog" aria-modal="true" aria-labelledby="opt-title" onClick={(e) => e.stopPropagation()}>
         <div className="between">
-          <h2 id="opt-title" className="h2">Put {cash(leftover)} to work</h2>
+          <h2 id="opt-title" className="h2">{previous ? `Change where ${cash(leftover)} goes` : `Put ${cash(leftover)} to work`}</h2>
           <button className="icon-btn plain" aria-label="Close" onClick={onClose}><Icon name="x" /></button>
         </div>
         <p className="small muted">Left over from the {fmtShort(period.start)} pay after everything's budgeted. Choose where it goes.</p>
@@ -124,7 +153,7 @@ export function OptimiseModal({ period, leftover, onClose, onApplied }: {
 
         <div className="row end">
           <button className="btn" onClick={onClose}>Cancel</button>
-          <button className="btn primary" onClick={apply} disabled={left < 0} title={left < 0 ? 'Allocate no more than is left over' : undefined}>Apply</button>
+          <button className="btn primary" onClick={apply} disabled={left < 0} title={left < 0 ? 'Allocate no more than is left over' : undefined}>{previous ? 'Save changes' : 'Apply'}</button>
         </div>
       </div>
     </div>

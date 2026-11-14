@@ -259,11 +259,13 @@ export function Planner() {
                   {known ? parts.main : splitParts.main}<small>{known ? parts.cents : splitParts.cents}</small>
                 </p>
               </div>
-              {/* Put what's left over to work (once the pay is balanced). */}
-              {!avg && known && canOptimise && (
-                <button className="icon-btn brand has-tip tip-left" data-tip="Optimise: choose where the leftover goes" aria-label="Optimise: choose where the leftover goes"
+              {/* Put what's left over to work (once the pay is balanced), or change where it went. */}
+              {!avg && known && (canOptimise || undoHere) && (
+                <button className="icon-btn brand has-tip tip-left"
+                  data-tip={undoHere ? 'Optimise: change where the leftover went' : 'Optimise: choose where the leftover goes'}
+                  aria-label={undoHere ? 'Optimise: change where the leftover went' : 'Optimise: choose where the leftover goes'}
                   onClick={() => setOptimiseOpen(true)}>
-                  <Icon name="bulb" />
+                  <Icon name="wand" />
                 </button>
               )}
             </div>
@@ -274,7 +276,8 @@ export function Planner() {
             )}
             {!avg && undoHere && (
               <p className="small" style={{ marginTop: 6 }}>
-                Leftover put to work ({undoHere.label}). <button className="btn link" onClick={undoOptimise}>Undo</button>
+                Leftover put to work ({undoHere.label}). <button className="btn link" onClick={() => setOptimiseOpen(true)}>Edit</button>
+                {' · '}<button className="btn link" onClick={undoOptimise}>Undo</button>
               </p>
             )}
           </div>
@@ -610,7 +613,7 @@ export function Planner() {
           </section>
         </div>
       )}
-      {optimiseOpen && <OptimiseModal period={period} leftover={plan.leftover} onClose={() => setOptimiseOpen(false)} onApplied={(u) => setOptUndo(u)} />}
+      {optimiseOpen && <OptimiseModal period={period} leftover={plan.leftover} previous={undoHere} onClose={() => setOptimiseOpen(false)} onApplied={(u) => setOptUndo(u)} />}
     </>
   );
 }
