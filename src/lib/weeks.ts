@@ -1,5 +1,5 @@
 import { addDays, diffDays, type ISODate } from './dates';
-import { convert, itemDates, skippedDates, type Period } from './engine';
+import { convert, isSetAside, itemDates, skippedDates, type Period } from './engine';
 import type { Account, Budget, Cents, Item } from './types';
 
 /** A weekly cost shown in the planner's weeks view. */
@@ -24,7 +24,7 @@ export interface WeeklyCoverage {
 /** Weekly costs switched on for the weeks view ("Show in Weeks this pay"). */
 export function weeklyCoverage(b: Budget, period: Period): WeeklyCoverage[] {
   return b.items
-    .filter((i) => i.frequency === 'weekly' && i.showInWeeks)
+    .filter((i) => i.frequency === 'weekly' && i.showInWeeks && !isSetAside(i))
     .map((item) => {
       const dates = itemDates(item, period.start, period.end, b.settings);
       const skipped = skippedDates(item, period.start, period.end, b.settings);

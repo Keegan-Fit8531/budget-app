@@ -3,7 +3,7 @@ import { addDays, fmtDay, fmtShort, monthName, toDate, todayISO, WEEKDAY_NAMES, 
 import { debtPaymentsIn } from '../lib/debts';
 import type { Period, PeriodPlan } from '../lib/engine';
 import { accountMode, balanceOn } from '../lib/balances';
-import { averageNeed, itemDates, shiftPeriod } from '../lib/engine';
+import { averageNeed, isSetAside, itemDates, shiftPeriod } from '../lib/engine';
 import { cash } from '../lib/money';
 import type { Budget } from '../lib/types';
 import { calendarWeeks, weeklyCoverage } from '../lib/weeks';
@@ -36,7 +36,8 @@ export function WeeksView({ budget, period, plan }: { budget: Budget; period: Pe
   const FREQ: Record<string, string> = { weekly: 'Weekly', fortnightly: 'Fortnightly', monthly: 'Monthly', yearly: 'Yearly', once: 'One-off' };
   for (const a of budget.accounts) {
     if (a.archived || a.id === budget.settings.payAccountId) continue;
-    for (const item of budget.items.filter((i) => i.accountId === a.id && !(i.frequency === 'weekly' && i.showInWeeks))) {
+    // Money put aside (a WOF, tyres) isn't paid out on a date, so it isn't on the calendar.
+    for (const item of budget.items.filter((i) => i.accountId === a.id && !isSetAside(i) && !(i.frequency === 'weekly' && i.showInWeeks))) {
       for (const d of itemDates(item, period.start, period.end, budget.settings)) {
         add(d, { key: `${item.id}-${d}`, color: a.color, amount: item.amount, name: item.name, account: a.name, what: FREQ[item.frequency] ?? item.frequency, note: item.note, main: false });
       }
@@ -73,7 +74,7 @@ export function WeeksView({ budget, period, plan }: { budget: Budget; period: Pe
     const shortBefore = known && before! < 0 ? -before! : 0;
     const prevPay = `the ${monthName(shiftPeriod(period, -1, budget.settings).start)} pay`;
     // Every weekly cost from this account (e.g. food + gas), not just the ones shown on the calendar.
-    const all = budget.items.filter((i) => i.accountId === acc.id && i.frequency === 'weekly');
+    const all = budget.items.filter((i) => i.accountId === acc.id && i.frequency === 'weekly' && !isSetAside(i));
     const what = (all.length ? all : items).map((i) => `${i.name} ${cash(i.amount, { whole: true })}`).join(' + ');
     const message = mode === 'exact'
       ? { text: `Sends all ${count}: ${cash(ap.need)}`, tone: 'muted' }

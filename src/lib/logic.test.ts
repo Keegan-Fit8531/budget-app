@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { balanceToday, billTracker, depositFor, estimateBalance } from './balances';
+import { balanceToday, billTracker, depositFor, estimateBalance, outflows } from './balances';
 import { addDays } from './dates';
 import { applyPayment, debtSchedules, planSchedule, recordHistory, settleDue } from './debts';
 import { classifyText, matchDebt, parseDate, parseStatementText, recordStatement } from './documents';
-import { clearPaydayMove, periodContaining, recordPayday, shiftPeriod } from './engine';
+import { averageNeed, clearPaydayMove, periodContaining, planFor, recordPayday, setAsidePerPay, shiftPeriod } from './engine';
 import { projectedAt, removeSpend, spendFromGoal } from './goalcosts';
-import { autoBalance, balancedMode } from './rebalance';
+import { autoBalance, balancedMode, balancePay } from './rebalance';
 import { forecast } from './savings';
 import { seedBudget } from './seed';
 import type { Budget, Debt, SavingsGoal } from './types';
@@ -243,39 +243,123 @@ describe('automatic balancing', () => {
   });
 
   it('when the payday changes, what it set for pays that no longer exist is undone', () => {
-    // $200 is set aside on the 19th of each month, from an account that gets $200 a pay and has nothing in it.
+    // $5,100 a pay goes to savings out of a $5,000 pay, so balancing saves $100 less each pay.
     const b = budget();
-    b.accounts.push({ id: 'car', name: 'Car', kind: 'bank', color: '#000', groupId: 'needs' });
-    b.split.push({ accountId: 'car', amount: 20000, mode: 'fixed' });
-    b.items.push({ id: 'c', name: 'Service set-aside', amount: 20000, frequency: 'monthly', start: '2026-01-19', accountId: 'car' });
-    b.balances = { car: { amount: 0, asOf: '2026-11-11' } };
+    b.accounts.push({ id: 'sv', name: 'Savings', kind: 'bank', color: '#000', groupId: 'savings' });
+    b.split.push({ accountId: 'sv', amount: 510000, mode: 'fixed' });
     const today = '2026-11-14';
-
-    // Paid on the 19th, each set-aside comes out on payday: nothing to adjust.
     autoBalance(b, today);
-    expect(b.overrides?.['2026-11-19']?.car).toBeUndefined();
+    expect(b.overrides?.['2026-11-19']?.sv).toBe(500000);
 
-    // Paid on the 20th, 19 Nov's comes out the day before payday with nothing there, so the pay
-    // starting Fri 20 Nov is topped up to cover it as well as 19 Dec's.
+    // Paid on the 20th: the trim moves to the pay starting Fri 20 Nov, and 19 Nov's (no longer a pay) goes.
     b.settings.paydayDay = 20;
     autoBalance(b, today);
-    expect(b.overrides?.['2026-11-20']?.car).toBe(40000);
-    expect(b.autoBalanced?.['2026-11-20']?.car).toMatchObject({ prev: null, to: 40000 });
+    expect(b.overrides?.['2026-11-19']).toBeUndefined();
+    expect(b.autoBalanced?.['2026-11-20']?.sv).toMatchObject({ prev: null, to: 500000 });
     // An amount set by hand for that pay, and a past pay's record, to check they're left alone.
     b.overrides!['2026-11-20'].food = 12300;
-    b.autoBalanced!['2026-10-20'] = { car: { prev: null, to: 25000, reason: 'An earlier pay' } };
-    b.overrides!['2026-10-20'] = { car: 25000 };
+    b.autoBalanced!['2026-10-20'] = { sv: { prev: null, to: 25000, reason: 'An earlier pay' } };
+    b.overrides!['2026-10-20'] = { sv: 25000 };
 
-    // Back to the 19th: no pay starts on 20 Nov any more, so its top-up goes rather than lingering…
+    // Back to the 19th: no pay starts on 20 Nov any more, so its trim goes rather than lingering…
     b.settings.paydayDay = 19;
     autoBalance(b, today);
     expect(b.autoBalanced?.['2026-11-20']).toBeUndefined();
     expect(b.overrides?.['2026-11-20']).toEqual({ food: 12300 }); // …but what you set yourself stays
-    expect(b.overrides?.['2026-11-19']?.car).toBeUndefined();
-    expect(depositFor(b, 'car', periodContaining('2026-11-19', b.settings), today)).toBe(20000);
+    expect(b.overrides?.['2026-11-19']?.sv).toBe(500000);
     // A pay that had already started keeps its record (it's history, and comes back if the payday does).
     expect(b.autoBalanced?.['2026-10-20']).toBeDefined();
-    expect(b.overrides?.['2026-10-20']).toEqual({ car: 25000 });
+    expect(b.overrides?.['2026-10-20']).toEqual({ sv: 25000 });
+  });
+});
+
+describe('money put aside (a car fund)', () => {
+  const today = '2026-11-14';
+  /** A car account: $130 a month for maintenance and tyres, and $70 a month for the WOF, both put aside. */
+  function car(): Budget {
+    const b = budget();
+    b.accounts.push({ id: 'car', name: 'Car', kind: 'bank', color: '#000', groupId: 'needs' });
+    b.split.push({ accountId: 'car', amount: 0, mode: 'exact' });
+    b.items.push(
+      { id: 'm', name: 'Motor maintenance', amount: 13000, frequency: 'monthly', start: '2026-11-01', accountId: 'car', setAside: true },
+      { id: 'w', name: 'WOF', amount: 7000, frequency: 'monthly', start: '2026-11-01', accountId: 'car', setAside: true },
+    );
+    return b;
+  }
+  const pay = (b: Budget, n = 0) => shiftPeriod(periodContaining('2026-11-19', b.settings), n, b.settings);
+
+  it('every payday puts it in, however much has built up, and none of it comes out', () => {
+    const b = car();
+    // $1,200 already saved up in the account. Before, Exact counted it towards the next "bills" and sent nothing.
+    b.balances = { car: { amount: 120000, asOf: today } };
+    // $130 + $70 every pay.
+    expect(depositFor(b, 'car', pay(b), today)).toBe(20000);
+    expect(depositFor(b, 'car', pay(b, 6), today)).toBe(20000);
+    expect(outflows(b, 'car', today, '2027-12-31')).toEqual([]);
+    // Paydays 19 Nov, Fri 18 Dec and 19 Jan: it keeps building up.
+    expect(estimateBalance(b, 'car', '2027-01-31', today)).toBe(120000 + 3 * 20000);
+    expect(averageNeed(b, 'car')).toBe(20000);
+    // Something put aside yearly is spread over the year: a $90 WOF is $7.50 a pay.
+    expect(setAsidePerPay({ amount: 9000, frequency: 'yearly' })).toBe(750);
+  });
+
+  it("counts in what the account needs, but isn't one of the pay's payments", () => {
+    const b = car();
+    const plan = planFor(b, pay(b), today);
+    const acc = plan.accounts.find((a) => a.account.id === 'car')!;
+    expect(acc.need).toBe(20000);
+    expect(acc.funded).toBe(20000);
+    expect(acc.dues.map((d) => [d.item.name, d.item.amount, d.date])).toEqual([['Motor maintenance', 13000, '2026-11-19'], ['WOF', 7000, '2026-11-19']]);
+    expect(plan.dues).toEqual([]);
+    // Not put aside before its start: a set-aside starting 1 Dec is first funded on Fri 18 Dec.
+    b.items.push({ id: 't', name: 'Tyres', amount: 2000, frequency: 'monthly', start: '2026-12-01', accountId: 'car', setAside: true });
+    expect([depositFor(b, 'car', pay(b), today), depositFor(b, 'car', pay(b, 1), today)]).toEqual([20000, 22000]);
+  });
+
+  it('with bills in the same account: the bills are paid as usual, and what has built up is never spent on them', () => {
+    const b = car();
+    b.items.push({ id: 'ins', name: 'Car insurance', amount: 6000, frequency: 'monthly', start: '2026-11-25', accountId: 'car' });
+    b.balances = { car: { amount: 80000, asOf: today } };
+    expect(depositFor(b, 'car', pay(b), today)).toBe(26000);
+    expect(depositFor(b, 'car', pay(b, 3), today)).toBe(26000);
+    // Only the insurance comes out: the $800 grows by $200 a pay.
+    expect(outflows(b, 'car', today, '2026-12-17').map((o) => o.name)).toEqual(['Car insurance']);
+    expect(estimateBalance(b, 'car', '2026-12-17', today)).toBe(80000 + 26000 - 6000);
+  });
+
+  it('payday always follows it (never a fixed amount that could send too little), and balancing never calls it spare', () => {
+    const b = car();
+    expect(balancedMode(b, 'car')).toBe('not-fixed');
+    // Left on a fixed $0 with $1,200 built up, nothing would look wrong, but nothing would go in.
+    b.split.find((l) => l.accountId === 'car')!.mode = 'fixed';
+    b.balances = { car: { amount: 120000, asOf: today } };
+    autoBalance(b, today);
+    expect(b.split.find((l) => l.accountId === 'car')!.mode).toBe('exact');
+    expect(depositFor(b, 'car', pay(b), today)).toBe(20000);
+    // A weekly bill alongside it makes it Steady.
+    b.items.push({ id: 'fuel', name: 'Petrol', amount: 6000, frequency: 'weekly', start: '2026-11-20', accountId: 'car' });
+    expect(balancedMode(b, 'car')).toBe('smooth');
+
+    // A pay that's short looks for spare money: $5,000 in the car fund isn't.
+    const c = car();
+    c.items.push({ id: 'ins', name: 'Car insurance', amount: 6000, frequency: 'monthly', start: '2026-11-25', accountId: 'car' });
+    c.balances = { car: { amount: 500000, asOf: today } };
+    c.settings.expectedPay = 5000;
+    const r = balancePay(c, pay(c), today);
+    expect(r.notSpare.find((x) => x.accountId === 'car')?.reason).toMatch(/put aside for Motor maintenance and WOF/);
+    // What's put aside is paused for the pay, but never the insurance.
+    expect(r.changes).toEqual([expect.objectContaining({ accountId: 'car', from: 26000, to: 6000 })]);
+    expect(r.changes[0].reason).toMatch(/this pay only/);
+  });
+
+  it('a pay that puts less aside is just less put aside: the next pay is the usual amount', () => {
+    const b = car();
+    b.items.push({ id: 'ins', name: 'Car insurance', amount: 6000, frequency: 'monthly', start: '2026-11-25', accountId: 'car' });
+    b.overrides = { [pay(b).start]: { car: 6000 } };
+    expect(depositFor(b, 'car', pay(b, 1), today)).toBe(26000);
+    // Sending less than even the bills need is still made up next pay.
+    b.overrides = { [pay(b).start]: { car: 4000 } };
+    expect(depositFor(b, 'car', pay(b, 1), today)).toBe(28000);
   });
 });
 

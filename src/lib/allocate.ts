@@ -1,5 +1,5 @@
 import { owed } from './debts';
-import { convert, itemDates, planFor, type Period } from './engine';
+import { convert, isSetAside, itemDates, planFor, type Period } from './engine';
 import type { Budget, Cents, SplitLine } from './types';
 
 /** Somewhere the money left over can go. */
@@ -28,7 +28,7 @@ export function allocationTargets(b: Budget): AllocTarget[] {
   // Weekly allowance: the account that funds a weekly transfer in the 'wants' bucket.
   const wants = new Set(b.groups.filter((g) => g.bucket === 'wants').map((g) => g.id));
   for (const a of b.accounts.filter((x) => !x.archived && x.kind === 'bank' && wants.has(x.groupId) && x.id !== b.settings.payAccountId)) {
-    const weekly = b.items.find((i) => i.accountId === a.id && i.frequency === 'weekly');
+    const weekly = b.items.find((i) => i.accountId === a.id && i.frequency === 'weekly' && !isSetAside(i));
     if (weekly) out.push({ id: `allow-${a.id}`, kind: 'allowance', name: 'Weekly allowance', accountId: a.id, weeklyItemId: weekly.id, color: a.color, detail: `${a.name} → ${weekly.name.toLowerCase()}` });
   }
   for (const d of b.debts ?? []) {

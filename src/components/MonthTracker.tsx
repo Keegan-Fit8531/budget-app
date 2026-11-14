@@ -1,6 +1,7 @@
 import { accountMode, balanceOn, billTracker, nextBufferUse, payProjection } from '../lib/balances';
 import { fmtDay, fmtShort, monthName, todayISO } from '../lib/dates';
-import type { Period } from '../lib/engine';
+import { hasSetAsides, isSetAside, type Period } from '../lib/engine';
+import { asideNames } from '../lib/rebalance';
 import { tone } from '../lib/colors';
 import { cash } from '../lib/money';
 import type { Account, Budget } from '../lib/types';
@@ -19,10 +20,14 @@ export function MonthTracker({ budget, account, today = todayISO(), open }: { bu
   const paid = t.rows.filter((r) => r.status === 'paid');
   const total = t.paid + t.toCome;
   // A steady account (e.g. rent) builds a buffer for pays with an extra week; what's left isn't spare.
-  const steady = accountMode(budget, account.id) === 'smooth';
+  // Money put aside here (a car fund: WOF, tyres) builds up until it's needed; it isn't spare either.
+  const aside = hasSetAsides(budget, account.id);
+  const paysBills = budget.items.some((i) => i.accountId === account.id && !isSetAside(i));
+  const steady = !aside && accountMode(budget, account.id) === 'smooth';
   const bufferFor = steady ? nextBufferUse(budget, account.id, t.period, 13, today) : undefined;
-  const leftLabel = t.spare < 0 ? 'Short' : steady ? 'Buffer' : 'Spare';
-  const leftNote = t.spare < 0 ? 'after bills' : steady
+  const leftWord = aside ? 'put aside' : steady ? 'buffer' : 'spare';
+  const leftLabel = t.spare < 0 ? 'Short' : aside ? 'Put aside' : steady ? 'Buffer' : 'Spare';
+  const leftNote = t.spare < 0 ? 'after bills' : aside ? `for ${asideNames(budget, account.id)}` : steady
     ? (bufferFor ? `for ${fmtShort(bufferFor.period.start)}` : 'for extra weeks')
     : 'after bills';
   const color = tone(account.color);
@@ -41,18 +46,22 @@ export function MonthTracker({ budget, account, today = todayISO(), open }: { bu
 
       {t.balanceKnown && toCome.length === 0 && (
         <p className="small muted">
-          Everything this pay has come out{total > 0 ? ` (${cash(t.paid)})` : ''}.
-          {t.balance > 0 ? (steady ? ` The ${cash(t.balance)} left stays as the buffer for pays with an extra week.` : ` The ${cash(t.balance)} left is spare until next pay.`) : ''}
+          {aside && !paysBills ? 'Nothing comes out of this account on a date.' : aside && total === 0 ? 'Nothing comes out of it this pay.' : <>Everything this pay has come out{total > 0 ? ` (${cash(t.paid)})` : ''}.</>}
+          {aside
+            ? t.balanceSource === 'entered'
+              ? ` The ${cash(Math.max(0, t.balance))} in here is put aside for ${asideNames(budget, account.id)}, and next payday (${fmtShort(t.next.period.start)}) adds ${cash(t.next.deposit)}.`
+              : ` Each payday puts money aside here for ${asideNames(budget, account.id)} (${cash(t.next.deposit)} on ${fmtShort(t.next.period.start)}). Enter the balance to see what's built up.`
+            : t.balance > 0 ? (steady ? ` The ${cash(t.balance)} left stays as the buffer for pays with an extra week.` : ` The ${cash(t.balance)} left is spare until next pay.`) : ''}
         </p>
       )}
 
       {t.balanceKnown && toCome.length > 0 && (
         <div className="stack gap-8">
           {total > 0 && (
-            <div className="parts" role="img" aria-label={`${cash(t.paid)} paid, ${cash(t.toCome)} still to come, ${cash(Math.max(0, t.spare))} ${steady ? 'buffer' : 'spare'}`}>
+            <div className="parts" role="img" aria-label={`${cash(t.paid)} paid, ${cash(t.toCome)} still to come, ${cash(Math.max(0, t.spare))} ${leftWord}`}>
               <div title={`Paid ${cash(t.paid)}`} style={{ flex: t.paid, background: 'var(--line)' }} />
               {t.toCome > 0 && <div title={`Still to come ${cash(t.toCome)}`} style={{ flex: t.toCome, background: color }} />}
-              {t.spare > 0 && <div title={`${steady ? 'Buffer' : 'Spare'} ${cash(t.spare)}`} style={{ flex: t.spare, background: 'var(--good)' }} />}
+              {t.spare > 0 && <div title={`${leftLabel} ${cash(t.spare)}`} style={{ flex: t.spare, background: 'var(--good)' }} />}
             </div>
           )}
           <div className="trio">

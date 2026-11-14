@@ -12,7 +12,7 @@ import { undoAllocation } from '../lib/allocate';
 import { recordPayslip } from '../lib/documents';
 import { addDays, fmtDay, fmtShort, monthName, todayISO } from '../lib/dates';
 import {
-  averageSplit, convert, firstBudgetPay, isAuto, planFor, plannedAverage, shiftPeriod, upcomingPayPeriod, type View,
+  averageSplit, convert, firstBudgetPay, isAuto, isSetAside, planFor, plannedAverage, shiftPeriod, upcomingPayPeriod, type View,
 } from '../lib/engine';
 import { cash, moneyParts, centsToInput, parseMoney } from '../lib/money';
 import { useBudget } from '../lib/store';
@@ -416,15 +416,21 @@ export function Planner() {
             // With a balance entered, the pill shows what the account ends the period with.
             const ends = !avg ? a.endBalance : undefined;
             const diff = ends !== undefined ? null : a.diff === null || auto ? null : funded - need;
+            // Money put aside on payday (a WOF, tyres) isn't a payment: it's counted on its own.
+            const paying = a.dues.filter((d) => !isSetAside(d.item));
+            const asideTotal = a.need - paying.reduce((t, d) => t + d.item.amount, 0);
+            const asidePart = asideTotal > 0 ? `${cash(asideTotal)} put aside` : '';
+            const billBreakdown = a.breakdown.filter((x) => !isSetAside(x.item));
             // "5 × $275" when every cost repeats the same number of times (e.g. weekly food + gas), else a count.
-            const sameCount = a.breakdown.length > 0 && a.breakdown.every((x) => x.count === a.breakdown[0].count);
-            const times = sameCount && a.breakdown[0].count > 1
-              ? `${a.breakdown[0].count} × ${cash(a.breakdown.reduce((s, x) => s + x.item.amount, 0))}`
-              : `${a.dues.length} payment${a.dues.length === 1 ? '' : 's'} due`;
+            const sameCount = billBreakdown.length > 0 && billBreakdown.every((x) => x.count === billBreakdown[0].count);
+            const times = [sameCount && billBreakdown[0].count > 1
+              ? `${billBreakdown[0].count} × ${cash(billBreakdown.reduce((s, x) => s + x.item.amount, 0))}`
+              : paying.length || !asidePart ? `${paying.length} payment${paying.length === 1 ? '' : 's'} due` : '', asidePart].filter(Boolean).join(' + ');
             const detail = auto
               ? (longRun ? (steadyMode ? 'Steady' : 'Exact · average')
                 : !steadyMode && topsUp(budget, a.account.id)
-                  ? (a.funded < a.need ? `Exact · ${cash(a.need, { whole: true })} of bills − ${cash(a.need - a.funded, { whole: true })} already there` : `Exact · ${a.dues.length} bills, nothing left over`)
+                  ? (a.funded < a.need ? `Exact · ${cash(a.need, { whole: true })} of bills − ${cash(a.need - a.funded, { whole: true })} already there`
+                    : asidePart ? `Exact · ${times}` : `Exact · ${a.dues.length} bills, nothing left over`)
                   : `${steadyMode ? 'Steady' : 'Exact'} · ${times}`)
               : isPay
               ? (known ? 'Pay lands here · what’s left' : 'Pay lands here · shows once pay is in')
@@ -432,9 +438,9 @@ export function Planner() {
                 ? (a.account.kind === 'external' ? 'Sent on payday' : 'No costs set')
                 : longRun
                   ? `${cash(need)} needed on average`
-                  : sameCount && a.breakdown[0].item.frequency !== 'monthly'
+                  : sameCount && billBreakdown[0].item.frequency !== 'monthly'
                     ? times
-                    : `${a.dues.length} costs due · ${cash(a.need)}`;
+                    : asidePart && !paying.length ? `${asidePart} · nothing paid out` : `${paying.length} costs due · ${cash(a.need)}${asidePart ? `, incl. ${asidePart}` : ''}`;
             // Everything about the account beyond its amount lives in a pop-up, opened by tapping the card.
             const adjusted = a.usual !== undefined && a.usual !== a.funded;
             // Only a problem (short) or something to act on (spare) is coloured; the rest stays quiet.
@@ -455,11 +461,11 @@ export function Planner() {
             const amountClass = funded < 0 && (known || !isPay) ? 'neg' : '';
             const icon = <AccIcon color={a.account.color} name={a.account.kind === 'external' ? 'send' : isPay ? 'wallet' : 'bank'} />;
             // Each cost this pay (e.g. food, car gas, scooter gas, or every bill in Misc bills).
-            const byName = new Map<string, { name: string; amount: Cents; dates: string[] }>();
+            const byName = new Map<string, { name: string; amount: Cents; dates: string[]; aside: boolean }>();
             if (!longRun) for (const d of a.dues) {
-              const r = byName.get(d.item.name) ?? { name: d.item.name, amount: 0, dates: [] };
+              const r = byName.get(`${isSetAside(d.item)}|${d.item.name}`) ?? { name: d.item.name, amount: 0, dates: [], aside: isSetAside(d.item) };
               r.amount += d.item.amount; r.dates.push(d.date);
-              byName.set(d.item.name, r);
+              byName.set(`${r.aside}|${d.item.name}`, r);
             }
             const rows = [...byName.values()];
             // The budget's first pay starts from what the pay before it left in the account (or left short).
@@ -528,11 +534,11 @@ export function Planner() {
                             const each = r.amount / r.dates.length;
                             const same = r.dates.length > 1 && Number.isInteger(each);
                             return (
-                              <span key={r.name} className="cost-row">
+                              <span key={`${r.aside}|${r.name}`} className="cost-row">
                                 <span className="min0">
                                   <span className="cost-name">{r.name}</span>
                                   <span className="cost-meta muted">
-                                    {same ? `${r.dates.length} × ${cash(each, { whole: each % 100 === 0 })}` : r.dates.length === 1 ? fmtShort(r.dates[0]) : `${r.dates.length} payments`}
+                                    {r.aside ? 'Put aside on payday, stays in the account' : same ? `${r.dates.length} × ${cash(each, { whole: each % 100 === 0 })}` : r.dates.length === 1 ? fmtShort(r.dates[0]) : `${r.dates.length} payments`}
                                     {/* Week / Fortnight: say what the whole pay is, since the amount on the right is per week */}
                                     {split ? `${same ? ' =' : ' ·'} ${cash(r.amount)} this pay` : ''}
                                   </span>

@@ -24,7 +24,7 @@ export function AddMenu({ render }: { render: (open: () => void) => React.ReactN
   const close = () => setAdding(null);
   const choices: { id: string; icon: string; title: string; hint: string; go: () => void }[] = [
     { id: 'doc', icon: 'upload', title: 'Upload a payslip or statement', hint: 'PDF or photo. It’s read on this device and filled in for you to check.', go: () => fileRef.current?.click() },
-    { id: 'cost', icon: 'transfer', title: 'Cost', hint: 'A bill, rent or regular transfer that comes out of an account.', go: () => setAdding('cost') },
+    { id: 'cost', icon: 'transfer', title: 'Cost', hint: 'A bill, rent or regular transfer, or money put aside each pay for a WOF or tyres.', go: () => setAdding('cost') },
     { id: 'goal', icon: 'piggy', title: 'Savings goal', hint: 'Something to save towards, with a target and a date.', go: () => setAdding('goal') },
     { id: 'debt', icon: 'card', title: 'Debt', hint: 'A card, Afterpay, a loan or someone you owe.', go: () => setAdding('debt') },
   ];

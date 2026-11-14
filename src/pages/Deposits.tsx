@@ -4,12 +4,12 @@ import { AccIcon, Chevron, ColorPicker, PageHead } from '../components/ui';
 import { ItemModal } from '../components/ItemModal';
 import { fmtShort, todayISO } from '../lib/dates';
 import { depositFor, exactNeed, modeOf, smoothAmount, topsUp } from '../lib/balances';
-import { averageNeed, convert, itemDates, periodContaining, planFor, shiftPeriod } from '../lib/engine';
+import { averageNeed, convert, isSetAside, itemDates, periodContaining, planFor, setAsidePerPay, shiftPeriod } from '../lib/engine';
 import { PayNav, useViewPeriod } from '../lib/period';
 import { cash, centsToInput, parseMoney } from '../lib/money';
 import { nextColor } from '../lib/colors';
 import { newId, useBudget } from '../lib/store';
-import { balancedMode } from '../lib/rebalance';
+import { asideNames, balancedMode } from '../lib/rebalance';
 import type { Account, Budget, Item, PaydayMode } from '../lib/types';
 
 const items0 = (b: Budget, id: string) => b.items.some((i) => i.accountId === id);
@@ -89,6 +89,10 @@ function AccountSection({ account: a, open, onToggle, periodNeed, periodSends, p
   const items = budget.items.filter((i) => i.accountId === a.id).sort((x, y) => x.name.localeCompare(y.name));
   const avgNeed = averageNeed(budget, a.id);
   const today = todayISO();
+  // Money put aside here (a WOF, tyres) stays in the account; the bills are what really comes out.
+  const bills = items.filter((i) => !isSetAside(i));
+  const asides = items.filter(isSetAside);
+  const asidePerPay = asides.filter((i) => !i.end || i.end >= today).reduce((t, i) => t + setAsidePerPay(i), 0);
 
   function set<K extends keyof Account>(k: K, val: Account[K]) {
     update((b) => { const acc = b.accounts.find((x) => x.id === a.id); if (acc) acc[k] = val; return b; });
@@ -161,14 +165,16 @@ function AccountSection({ account: a, open, onToggle, periodNeed, periodSends, p
               <span className="small muted">Each payday, send</span>
               <div className="seg" role="group" aria-label="Payday amount" style={{ alignSelf: 'flex-start' }}>
                 {!balanced && <button aria-pressed={mode === 'fixed'} onClick={() => setMode('fixed')}>Fixed amount</button>}
-                {items.length > 0 && <button aria-pressed={mode === 'smooth'} onClick={() => setMode('smooth')}>Steady</button>}
+                {bills.length > 0 && <button aria-pressed={mode === 'smooth'} onClick={() => setMode('smooth')}>Steady</button>}
                 {items.length > 0 && balanced !== 'smooth' && <button aria-pressed={mode === 'exact'} onClick={() => setMode('exact')}>Exact each pay</button>}
               </div>
               {balanced && (
                 <p className="small muted">
                   {balanced === 'smooth'
                     ? 'Every cost here is weekly, so it gets a steady amount: the same most pays, with 4-week pays covering the 5th week.'
-                    : 'This account has bills on set dates, so each pay is worked out from them rather than a fixed amount.'}
+                    : bills.length === 0
+                      ? 'Each payday sends what\u2019s put aside here, so it follows the amounts below rather than a fixed amount.'
+                      : 'This account has bills on set dates, so each pay is worked out from them rather than a fixed amount.'}
                   {periodSends !== (mode === 'smooth' ? steady : periodNeed) && mode !== 'fixed' ? ` The pay being viewed sends ${cash(periodSends)}.` : ''}
                 </p>
               )}
@@ -219,7 +225,13 @@ function AccountSection({ account: a, open, onToggle, periodNeed, periodSends, p
                 <div className="tip">
                   <Icon name="bulb" />
                   <span>
-                    {topsUp(budget, a.id) ? (() => {
+                    {asides.length > 0 ? (() => {
+                      const next = shiftPeriod(periodContaining(today, budget.settings), 1, budget.settings);
+                      const each = asides.map((i) => `${i.name} ${cash(setAsidePerPay(i))}`).join(' + ');
+                      return bills.length === 0
+                        ? <>Puts <b>{cash(asidePerPay)}</b> aside each payday ({each}). It stays in the account until you need it, so the balance builds up, and what's built up never lowers what payday sends.</>
+                        : <>Sends what each pay's bills need, plus <b>{cash(asidePerPay)}</b> put aside for {asideNames(budget, a.id)}. Next pay ({fmtShort(next.start)}) that's <b>{cash(depositFor(budget, a.id, next, today))}</b>. What's put aside stays in the account and is never counted towards the bills.</>;
+                    })() : topsUp(budget, a.id) ? (() => {
                       const next = shiftPeriod(periodContaining(today, budget.settings), 1, budget.settings);
                       const sends = depositFor(budget, a.id, next, today);
                       const bills = exactNeed(budget, a.id, next);
@@ -234,19 +246,24 @@ function AccountSection({ account: a, open, onToggle, periodNeed, periodSends, p
           {(a.kind === 'bank' || items.length > 0) && (
             <div>
               <div className="card-head" style={{ marginBottom: 4 }}>
-                <h3 className="h3">Costs paid from here</h3>
+                <h3 className="h3">{asides.length === 0 ? 'Costs paid from here' : bills.length ? 'Costs and money put aside' : 'Money put aside here'}</h3>
                 <button className="btn small" onClick={onAddItem}><Icon name="plus" size={16} /> Add cost</button>
               </div>
               {items.length === 0 && <p className="small muted">No costs yet.</p>}
               {items.map((i) => {
-                const next = itemDates(i, today, '2100-01-01', budget.settings)[0];
+                const kept = isSetAside(i);
+                const next = kept ? undefined : itemDates(i, today, '2100-01-01', budget.settings)[0];
                 return (
                   <button key={i.id} className="list-row" onClick={() => onEditItem(i)}>
                     <span className="grow">
                       {i.name}
                       <span className="small muted block">
-                        {FREQ_LABEL[i.frequency]}{next ? ` · next ${fmtShort(next)}` : ' · finished'}
-                        {i.frequency !== 'once' && i.frequency !== 'monthly' ? ` · ${cash(convert(i.amount, i.frequency, 'month'))}/mo avg` : ''}
+                        {kept
+                          ? `${FREQ_LABEL[i.frequency]} · put aside, ${cash(setAsidePerPay(i))} a pay${i.end && i.end < today ? ' · stopped' : i.start > today ? ` · from ${fmtShort(i.start)}` : ''}`
+                          : <>
+                            {FREQ_LABEL[i.frequency]}{next ? ` · next ${fmtShort(next)}` : ' · finished'}
+                            {i.frequency !== 'once' && i.frequency !== 'monthly' ? ` · ${cash(convert(i.amount, i.frequency, 'month'))}/mo avg` : ''}
+                          </>}
                         {i.note ? ` · ${i.note}` : ''}
                       </span>
                     </span>

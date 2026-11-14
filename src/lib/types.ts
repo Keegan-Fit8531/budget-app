@@ -41,6 +41,12 @@ export interface Item {
   showInWeeks?: boolean;
   /** Skip it when it lands this many days (or fewer) before payday — you go without until pay. */
   skipIfWithin?: number;
+  /**
+   * Put aside, not paid out (a WOF, tyres, a service): each payday sends its share (a yearly $90 WOF is
+   * $7.50 a pay) and the money stays in the account until it's needed, so nothing comes out on a date.
+   * It starts on the first payday on or after `start`.
+   */
+  setAside?: boolean;
 }
 
 /** How much of each pay is sent to each account on payday. */
