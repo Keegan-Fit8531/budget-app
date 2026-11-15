@@ -363,6 +363,10 @@ button.list-row:hover { background: color-mix(in srgb, var(--soft) 60%, transpar
   min-height: var(--tap); padding: 0 var(--s-3); border-radius: var(--r-md); border: 1px solid var(--line); background-color: var(--card); color: var(--ink); font-size: var(--fs-lg); min-width: 0; width: 100%;
 }
 .field textarea { padding: 10px var(--s-3); min-height: 72px; }
+/* Date fields: iOS draws its own control, which ignores the width and height above (it spills out of a
+   narrow column, sits shorter than the fields beside it, shrinks when empty) and centres the date. */
+input[type="date"] { -webkit-appearance: none; appearance: none; display: block; height: var(--tap); line-height: normal; text-align: left; max-width: 100%; }
+input[type="date"]::-webkit-date-and-time-value { text-align: left; margin: 0; min-height: 1.2em; }
 .field input:focus, .field select:focus, .field textarea:focus, .input:focus { outline: 2px solid var(--brand-2); outline-offset: 1px; }
 .field input[type="checkbox"], .check { width: 20px; height: 20px; min-height: 0; accent-color: var(--brand); flex: 0 0 auto; }
 input[type="range"] { accent-color: var(--brand); }
@@ -386,6 +390,8 @@ select::-ms-expand { display: none; }
 /* A prompt that belongs to one field: full width, straight under its field when the grid is one column
    (a phone, where the keyboard would hide anything further down), and under all the fields when wider. */
 .form-grid > .under { grid-column: 1 / -1; }
+/* A field that takes the whole row (a dropdown whose choices are too long for half a phone). */
+.form-grid > .wide { grid-column: 1 / -1; }
 @media (min-width: 420px) { .form-grid > .under { order: 1; } }
 /* A tick box with its label: the whole row is the target */
 .check-row { display: flex; align-items: center; gap: var(--s-3); min-height: var(--tap); cursor: pointer; font-size: var(--fs-md); }

@@ -340,7 +340,7 @@ function PlanModal({ debt, plan, prefill, onClose }: { debt: Debt; plan?: DebtPl
           </label>
         </div>
         <div className="form-grid">
-          <label className="field">Plan
+          <label className="field wide">Plan
             <select value={type} onChange={(e) => { setType(e.target.value as PlanType); setTypeTouched(true); }}>
               {(['interest-free', 'equal', 'afterpay', 'balance'] as PlanType[]).map((t) => <option key={t} value={t}>{PLAN_LABEL[t]}</option>)}
             </select>
