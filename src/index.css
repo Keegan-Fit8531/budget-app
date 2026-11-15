@@ -520,8 +520,11 @@ button.acc-card:hover .acc-more { opacity: 1; }
 .wk-day.payday { background: var(--brand); color: var(--on-brand); }
 .wk-day.next { outline: 2px dashed var(--brand-2); outline-offset: -2px; }
 .wk-day.today { outline: 2px solid var(--ink); outline-offset: -2px; }
-.wk-date { font-size: var(--fs-sm); font-weight: 600; }
-.wk-tag { font-size: var(--fs-micro); font-weight: 600; }
+/* Nothing in a day spills out of its box: text stays on one line and is cut at the edge. */
+.wk-date { font-size: var(--fs-sm); font-weight: 600; white-space: nowrap; overflow: hidden; }
+.wk-mon { font-weight: 500; }
+.wk-tag { font-size: var(--fs-micro); font-weight: 600; white-space: nowrap; overflow: hidden; }
+.wk-chip .clip { min-width: 0; }
 .wk-day.payday .wk-tag { color: var(--accent); }
 .wk-day.next .wk-tag { color: var(--brand-2); }
 .wk-chips { display: flex; flex-direction: column; gap: 2px; margin-top: 2px; }
@@ -533,7 +536,11 @@ button.acc-card:hover .acc-more { opacity: 1; }
 .wk-chip.lead .wk-dot { width: 7px; height: 7px; border-radius: 2px; opacity: 1; }
 .wk-pop { position: absolute; z-index: 20; top: 100%; margin-top: var(--s-1); min-width: 170px; max-width: 240px; white-space: normal; font-weight: 400; }
 @media (max-width: 600px) {
-  .wk-day { padding: 3px 2px; }
+  .wk-day { padding: 3px; }
+  /* Narrow days: the month goes under the day number, and the tags are shortened to fit. */
+  .wk-mon { display: block; font-size: var(--fs-micro); line-height: 1.1; }
+  .wk-tag { font-size: 10px; letter-spacing: -0.02em; }
+  .wk-wide { display: none; }
   .wk-chip { gap: 2px; }
   .wk-dot, .wk-chip.lead .wk-dot { width: 3px; height: 10px; border-radius: 2px; }
 }

@@ -6,12 +6,12 @@ import { owed } from '../lib/debts';
 import { matchDebt, readDocument, recordPayslip, recordStatement, type ReadDocument } from '../lib/documents';
 import { cash, centsToInput, parseMoney } from '../lib/money';
 import { newId, useBudget } from '../lib/store';
-import { DebtModal } from '../pages/Debts';
+import { DebtModal, PaymentModal } from '../pages/Debts';
 import { GoalModal } from '../pages/Savings';
 import { Icon } from './Icon';
 import { ItemModal } from './ItemModal';
 
-type Adding = 'menu' | 'cost' | 'goal' | 'debt';
+type Adding = 'menu' | 'cost' | 'goal' | 'debt' | 'pay';
 
 /**
  * The one "add" button: a cost, a savings goal, a debt, or a document (a payslip, or a card or loan
@@ -22,11 +22,14 @@ export function AddMenu({ render }: { render: (open: () => void) => React.ReactN
   const [file, setFile] = useState<File | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const close = () => setAdding(null);
+  const { budget } = useBudget();
+  const owing = (budget.debts ?? []).some((d) => !d.payroll && owed(d) > 0);
   const choices: { id: string; icon: string; title: string; hint: string; go: () => void }[] = [
     { id: 'doc', icon: 'upload', title: 'Upload a payslip or statement', hint: 'PDF or photo. It’s read on this device and filled in for you to check.', go: () => fileRef.current?.click() },
     { id: 'cost', icon: 'transfer', title: 'Cost', hint: 'A bill, rent or regular transfer, or money put aside each pay for a WOF or tyres.', go: () => setAdding('cost') },
     { id: 'goal', icon: 'piggy', title: 'Savings goal', hint: 'Something to save towards, with a target and a date.', go: () => setAdding('goal') },
     { id: 'debt', icon: 'card', title: 'Debt', hint: 'A card, Afterpay, a loan or someone you owe.', go: () => setAdding('debt') },
+    ...(owing ? [{ id: 'pay', icon: 'check', title: 'Payment you made', hint: 'Money you paid into a card or other debt, outside the payday split.', go: () => setAdding('pay') }] : []),
   ];
   return (
     <>
@@ -59,9 +62,28 @@ export function AddMenu({ render }: { render: (open: () => void) => React.ReactN
       {adding === 'cost' && <ItemModal onClose={close} />}
       {adding === 'goal' && <GoalModal onClose={close} />}
       {adding === 'debt' && <DebtModal onClose={close} onDelete={close} />}
+      {adding === 'pay' && <PayAnyDebt onClose={close} />}
       {file && <DocumentModal file={file} onClose={() => setFile(null)} />}
       </>, document.body)}
     </>
+  );
+}
+
+/** Record a payment from the Add button: choose which debt it went to, then the usual payment form. */
+function PayAnyDebt({ onClose }: { onClose: () => void }) {
+  const { budget } = useBudget();
+  const debts = (budget.debts ?? []).filter((d) => !d.payroll && owed(d) > 0);
+  const [id, setId] = useState(debts[0]?.id ?? '');
+  const debt = debts.find((d) => d.id === id) ?? debts[0];
+  if (!debt) return null;
+  return (
+    <PaymentModal key={debt.id} debt={debt} onClose={onClose} pick={debts.length > 1 && (
+      <label className="field">Paid into
+        <select value={debt.id} onChange={(e) => setId(e.target.value)}>
+          {debts.map((d) => <option key={d.id} value={d.id}>{d.name} · {cash(owed(d))} owed</option>)}
+        </select>
+      </label>
+    )} />
   );
 }
 

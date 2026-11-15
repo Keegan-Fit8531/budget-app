@@ -592,7 +592,7 @@ function BalanceEditor({ debt: d, used, onAddPlan }: { debt: Debt; used: number;
 }
 
 /** Record money paid to a debt; it pays off whatever is due soonest first. */
-function PaymentModal({ debt, onClose }: { debt: Debt; onClose: () => void }) {
+export function PaymentModal({ debt, onClose, pick }: { debt: Debt; onClose: () => void; /** A "which debt" chooser, when opened from the Add button. */ pick?: React.ReactNode }) {
   const { budget, update } = useBudget();
   const today = todayISO();
   const s = budget.settings;
@@ -638,6 +638,7 @@ function PaymentModal({ debt, onClose }: { debt: Debt; onClose: () => void }) {
           <h2 id="pay-title" className="h2">{debt.name}: record a payment</h2>
           <button className="icon-btn plain" aria-label="Close" onClick={onClose}><Icon name="x" /></button>
         </div>
+        {pick}
         <p className="small muted">Pays off what's due soonest first, then the next due date, and so on. {cash(total)} owed.</p>
         <div className="row wrap gap-8">
           {quick.map((q) => (

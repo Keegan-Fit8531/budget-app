@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { addDays, fmtDay, fmtShort, monthName, toDate, todayISO, WEEKDAY_NAMES, type ISODate } from '../lib/dates';
+import { addDays, fmtDay, monthName, toDate, todayISO, WEEKDAY_NAMES, type ISODate } from '../lib/dates';
 import { debtPaymentsIn } from '../lib/debts';
 import type { Period, PeriodPlan } from '../lib/engine';
 import { accountMode, balanceOn } from '../lib/balances';
@@ -125,9 +125,9 @@ export function WeeksView({ budget, period, plan }: { budget: Budget; period: Pe
                 return (
                   <td key={d} className={`wk-day ${cls}${d === today && !isPay ? ' today' : ''}`}
                     aria-label={`${fmtDay(d)}${isPay ? ', payday' : ''}${isNext ? ', next payday' : ''}${chips.map((c) => `, ${c.name} ${cash(c.amount)}${c.skipped ? ' skipped' : ''}`).join('')}`}>
-                    <div className="wk-date">{day === 1 || d === w[0] ? fmtShort(d) : day}</div>
+                    <div className="wk-date">{day}{(day === 1 || d === w[0]) && <span className="wk-mon"> {monthName(d).slice(0, 3)}</span>}</div>
                     {isPay && <div className="wk-tag">Payday</div>}
-                    {isNext && <div className="wk-tag">Next pay</div>}
+                    {isNext && <div className="wk-tag">Next<span className="wk-wide"> pay</span></div>}
                     <div className="wk-chips">
                       {chips.map((c) => (
                         <span key={c.key} style={{ position: 'relative' }}>
