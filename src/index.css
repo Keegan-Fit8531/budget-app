@@ -365,8 +365,10 @@ button.list-row:hover { background: color-mix(in srgb, var(--soft) 60%, transpar
 .field textarea { padding: 10px var(--s-3); min-height: 72px; }
 /* Date fields: iOS draws its own control, which ignores the width and height above (it spills out of a
    narrow column, sits shorter than the fields beside it, shrinks when empty) and centres the date. */
-input[type="date"] { -webkit-appearance: none; appearance: none; display: block; height: var(--tap); line-height: normal; text-align: left; max-width: 100%; }
-input[type="date"]::-webkit-date-and-time-value { text-align: left; margin: 0; min-height: 1.2em; }
+/* Its height comes from padding around one line of text (iOS puts the date at the top of a box that's
+   given a fixed height), and the empty value keeps that line so an empty field is the same size. */
+input[type="date"] { -webkit-appearance: none; appearance: none; display: block; height: auto; min-height: var(--tap); padding-top: 8px; padding-bottom: 8px; line-height: 24px; text-align: left; max-width: 100%; }
+input[type="date"]::-webkit-date-and-time-value { text-align: left; margin: 0; min-height: 24px; line-height: 24px; }
 .field input:focus, .field select:focus, .field textarea:focus, .input:focus { outline: 2px solid var(--brand-2); outline-offset: 1px; }
 .field input[type="checkbox"], .check { width: 20px; height: 20px; min-height: 0; accent-color: var(--brand); flex: 0 0 auto; }
 input[type="range"] { accent-color: var(--brand); }
