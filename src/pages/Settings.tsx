@@ -10,6 +10,7 @@ import { nextColor } from '../lib/colors';
 import { CostCategoriesEditor } from '../components/CostCategories';
 import { newId, readVersions, useBudget } from '../lib/store';
 import { pairingLink, readSyncConfig, SyncError, type SyncConfig } from '../lib/sync';
+import { looksLikeBudget } from '../lib/valid';
 import { readTheme, saveTheme, type Theme } from '../lib/theme';
 import type { Budget, RuleBucket } from '../lib/types';
 
@@ -57,17 +58,21 @@ export function Settings() {
 
   function exportData() {
     const blob = new Blob([JSON.stringify(budget, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
+    a.href = url;
     a.download = `budget-backup-${todayISO()}.json`;
+    document.body.appendChild(a);
     a.click();
-    URL.revokeObjectURL(a.href);
+    a.remove();
+    // Not straight away: Safari (iPhone) hasn't started the download yet, and it would fail.
+    setTimeout(() => URL.revokeObjectURL(url), 60_000);
   }
 
   async function importData(file: File) {
     try {
-      const data = JSON.parse(await file.text()) as Budget;
-      if (data.version !== 1 || !Array.isArray(data.accounts)) throw new Error('bad');
+      const data: unknown = JSON.parse(await file.text());
+      if (!looksLikeBudget(data)) throw new Error('bad');
       replace(data);
       setMsg('Backup restored.');
     } catch {

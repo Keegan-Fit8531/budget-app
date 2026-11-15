@@ -25,7 +25,7 @@ export function moneyParts(c: Cents): { main: string; cents: string } {
 /** Parse "1,234.56" or "$80" into cents; null if invalid. */
 export function parseMoney(s: string): Cents | null {
   const clean = s.replace(/[$,\s]/g, '');
-  if (!/^-?\d*(\.\d{0,2})?$/.test(clean) || clean === '' || clean === '-') return null;
+  if (!/^-?\d*(\.\d{0,2})?$/.test(clean) || !/\d/.test(clean)) return null;
   return Math.round(parseFloat(clean) * 100);
 }
 

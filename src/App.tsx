@@ -10,6 +10,7 @@ import { Debts } from './pages/Debts';
 import { Deposits } from './pages/Deposits';
 import { Savings } from './pages/Savings';
 import { LogoMark } from './components/LogoMark';
+import { ErrorBoundary } from './components/ErrorBoundary';
 
 function useHash(): string[] {
   const read = () => window.location.hash.replace(/^#\/?/, '').split('/').filter(Boolean);
@@ -75,7 +76,8 @@ export default function App() {
             <a key={n.id} href={`#/${n.id}`} className={`icon-btn ${page === n.id ? 'active' : ''}`} aria-label={n.label} aria-current={page === n.id ? 'page' : undefined}><Icon name={n.icon} /></a>
           ))}
         </div>
-        {content}
+        {/* Keyed by page: going to another page clears a page that couldn't be shown. */}
+        <ErrorBoundary key={page}>{content}</ErrorBoundary>
       </main>
       </PeriodProvider>
 

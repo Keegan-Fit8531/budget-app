@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerE
 import { Disclosure } from './ui';
 import { tone } from '../lib/colors';
 import { monthName, todayISO } from '../lib/dates';
-import { debtPerPay, debtSchedules, historyOwed, owed, projectedOwed } from '../lib/debts';
+import { debtPerPay, debtSchedules, historyOwed, owed, paidIn, projectedOwed } from '../lib/debts';
 import { periodContaining, shiftPeriod, type Period } from '../lib/engine';
 import { cash } from '../lib/money';
 import type { Budget, Debt } from '../lib/types';
@@ -51,7 +51,7 @@ export function DebtChart({ budget }: { budget: Budget }) {
   const today = todayISO();
   const [ahead, setAhead] = useState(12);
   const [sel, setSel] = useState('all');
-  const [hover, setHover] = useState<number | null>(null);
+  const [hovered, setHover] = useState<number | null>(null);
   const [wrapRef, width] = useWidth<HTMLDivElement>();
 
   const chosen: Debt[] = sel === 'all' ? debts : debts.filter((d) => d.id === sel);
@@ -64,6 +64,8 @@ export function DebtChart({ budget }: { budget: Budget }) {
     let back = 0;
     if (earliest) { let p = cur; while (back < PAST && p.start > earliest) { p = shiftPeriod(p, -1, s); back++; } }
     const pays = chosen.flatMap((d) => debtSchedules(d, s, debtPerPay(budget, d)).flatMap((x) => x.payments));
+    // Payments this pay that have already gone out still count towards what it pays.
+    const paidThisPay = chosen.reduce((t, d) => t + paidIn(d, cur.start, cur.end).reduce((u, x) => u + x.amount, 0), 0);
     const out: Point[] = [];
     let p = shiftPeriod(cur, -back, s);
     for (let i = 0; i <= back + ahead; i++) {
@@ -76,12 +78,12 @@ export function DebtChart({ budget }: { budget: Budget }) {
       out.push({
         period: p, isNow, actual, forecast,
         label: `${monthName(p.start).slice(0, 3)}${p.start.slice(5, 7) === '01' || i === 0 ? ` ${p.start.slice(2, 4)}` : ''}`,
-        payment: isPast ? 0 : pays.filter((x) => x.date >= p.start && x.date <= p.end).reduce((t, x) => t + x.amount, 0),
+        payment: isPast ? 0 : (isNow ? paidThisPay : 0) + pays.filter((x) => x.date >= p.start && x.date <= p.end).reduce((t, x) => t + x.amount, 0),
       });
       p = shiftPeriod(p, 1, s);
     }
     return out;
-  }, [chosen, ahead, s, today]);
+  }, [budget, chosen, ahead, s, today]);
 
   // Layout
   const padL = 52, padR = 12, topH = 190, barH = 90, gap = 34, axisH = 22;
@@ -121,6 +123,8 @@ export function DebtChart({ budget }: { budget: Budget }) {
     if (e.key === 'ArrowLeft') { setHover((h) => Math.max(0, (h ?? nowI) - 1)); e.preventDefault(); }
   }
 
+  // The point under the pointer, if it still exists (a shorter range can leave the last one past the end).
+  const hover = hovered !== null && hovered < points.length ? hovered : null;
   const h = hover !== null ? points[hover] : null;
   const paidOff = points.find((p, i) => i > nowI && p.forecast === 0 && (points[i - 1]?.forecast ?? 1) > 0);
   const summary = `${chosen.length === 1 ? chosen[0].name : 'All debts'}: ${cash(points[nowI]?.forecast ?? 0)} owed now` +

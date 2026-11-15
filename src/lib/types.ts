@@ -148,6 +148,21 @@ export interface Debt {
   payroll?: { perPay: Cents; applied?: ISODate[] };
   /** Colour for a debt with no payday account (e.g. a payroll-deducted loan). */
   color?: string;
+  /**
+   * Planned payments already counted as paid (they're automatic), oldest first. Kept so the pay a payment
+   * came out of still shows it once it has gone: without this a pay's total would shrink, and its leftover
+   * grow, as each of its payments went out.
+   */
+  paid?: PaidPayment[];
+}
+
+export interface PaidPayment {
+  date: ISODate;
+  amount: Cents;
+  /** The plan it went to. */
+  name: string;
+  /** It came off the balance outside any plan (worked out from the balance, so redone if an older statement is added). */
+  synthetic?: boolean;
 }
 
 export interface SavingsGoal {

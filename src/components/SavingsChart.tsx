@@ -4,6 +4,7 @@ import { tone } from '../lib/colors';
 import { monthName, todayISO } from '../lib/dates';
 import { budgetPeriod, planFor, shiftPeriod, type Period } from '../lib/engine';
 import { cash } from '../lib/money';
+import { firstPayToCome } from '../lib/savings';
 import type { Budget, SavingsGoal } from '../lib/types';
 
 interface Point { period: Period; label: string; balance: number; added: number }
@@ -40,7 +41,7 @@ export function SavingsChart({ budget }: { budget: Budget }) {
   const today = todayISO();
   const [sel, setSel] = useState('all');
   const [pays, setPays] = useState(24);
-  const [hover, setHover] = useState<number | null>(null);
+  const [hovered, setHover] = useState<number | null>(null);
   const [wrapRef, width] = useWidth<HTMLDivElement>();
 
   const chosen: SavingsGoal[] = sel === 'all' ? goals : goals.filter((g) => g.id === sel);
@@ -53,12 +54,20 @@ export function SavingsChart({ budget }: { budget: Budget }) {
     const out: Point[] = [];
     let bal = chosen.reduce((t, g) => t + g.balance, 0);
     let p = budgetPeriod(budget, today);
+    // What a pay adds to a goal: what payday sends, plus anything others add each pay.
+    const sent = (g: SavingsGoal, plan: ReturnType<typeof planFor>) => (plan.accounts.find((a) => a.account.id === g.accountId)?.funded ?? 0) + (g.otherPerPay ?? 0);
+    // A goal's balance already holds the pay it was last updated in, so that pay adds nothing more here
+    // (it would be counted twice). Pays since then that came before the chart starts are added up front.
+    const firstPay = new Map(chosen.map((g) => [g.id, firstPayToCome(budget, g, today)]));
+    for (const g of chosen) {
+      for (let q = firstPay.get(g.id)!, n = 0; q.start < p.start && n < 120; q = shiftPeriod(q, 1, budget.settings), n++) bal += sent(g, planFor(budget, q));
+    }
     // A single goal with a date (e.g. the wedding) only matters up to that date.
     const until = one?.targetDate;
     for (let i = 0; i < pays && (!until || p.start < until); i++) {
       const plan = planFor(budget, p);
       const gifts = chosen.reduce((t, g) => t + (g.gifts ?? []).filter((x) => !x.received && x.date >= p.start && x.date <= p.end).reduce((s, x) => s + x.amount, 0), 0);
-      const added = gifts + chosen.reduce((t, g) => t + (plan.accounts.find((a) => a.account.id === g.accountId)?.funded ?? 0) + (g.otherPerPay ?? 0), 0);
+      const added = gifts + chosen.reduce((t, g) => t + (p.start >= firstPay.get(g.id)!.start ? sent(g, plan) : 0), 0);
       bal += added;
       out.push({ period: p, added, balance: bal, label: `${monthName(p.start).slice(0, 3)}${p.start.slice(5, 7) === '01' || i === 0 ? ` ${p.start.slice(2, 4)}` : ''}` });
       p = shiftPeriod(p, 1, budget.settings);
@@ -89,13 +98,18 @@ export function SavingsChart({ budget }: { budget: Budget }) {
     (target !== undefined ? (reachedI >= 0 ? `, reaching ${cash(target, { whole: true })} by ${monthName(points[reachedI].period.start)} ${points[reachedI].period.start.slice(0, 4)}` : `, short of the ${cash(target, { whole: true })} target`) : '') + '.';
 
   function onMove(e: PointerEvent<SVGSVGElement>) {
+    if (!points.length) return;
     const r = e.currentTarget.getBoundingClientRect();
     setHover(Math.max(0, Math.min(points.length - 1, Math.round((e.clientX - r.left - padL) / step))));
   }
   function onKey(e: KeyboardEvent<SVGSVGElement>) {
+    if (!points.length) return;
     if (e.key === 'ArrowRight') { setHover((h) => Math.min(points.length - 1, (h ?? -1) + 1)); e.preventDefault(); }
     if (e.key === 'ArrowLeft') { setHover((h) => Math.max(0, (h ?? 1) - 1)); e.preventDefault(); }
   }
+  // The point under the pointer, if it still exists: choosing a shorter range or another goal (or a goal
+  // whose date has passed, with nothing to plot) can leave the last one pointing past the end.
+  const hover = hovered !== null && hovered < points.length ? hovered : null;
   const h = hover !== null ? points[hover] : null;
 
   if (!goals.length) return null;

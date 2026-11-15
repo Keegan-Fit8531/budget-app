@@ -5,6 +5,7 @@ import { fmtShort, monthName, todayISO } from '../lib/dates';
 import { planFor, type Period } from '../lib/engine';
 import { cash, centsToInput, parseMoney } from '../lib/money';
 import { useBudget } from '../lib/store';
+import type { Budget } from '../lib/types';
 import { Icon } from './Icon';
 
 const UNDO_KEY = 'paydays.optimise.undo';
@@ -96,16 +97,16 @@ export function OptimiseModal({ period, leftover: leftNow, previous: record, onC
   function apply() {
     const allocs = targets.map((t) => ({ targetId: t.id, amount: cents(t.id) })).filter((a) => a.amount > 0);
     if (!allocs.length && !previous) return onClose();
-    let undo: OptimiseUndo | null = null;
-    update((b) => {
-      // Editing: put back what last time changed first, then hand out the leftover again.
+    // Editing: put back what last time changed first, then hand out the leftover again.
+    const change = (b: Budget) => {
       if (previous) undoAllocation(b, previous);
-      if (allocs.length) {
-        const u = applyAllocation(b, period, allocs, mode);
-        undo = { at: todayISO(), label: mode === 'once' ? `${monthName(period.start)} pay` : 'every pay', mode, allocs, ...u };
-      }
-      return b;
-    });
+      return allocs.length ? applyAllocation(b, period, allocs, mode) : null;
+    };
+    // Worked out on a copy first: the record for Undo is needed now, and the change itself is made
+    // whenever React gets to it (which isn't always straight away).
+    const u = change(structuredClone(budget));
+    const undo: OptimiseUndo | null = u ? { at: todayISO(), label: mode === 'once' ? `${monthName(period.start)} pay` : 'every pay', mode, allocs, ...u } : null;
+    update((b) => { change(b); return b; });
     try {
       if (undo) localStorage.setItem(UNDO_KEY, JSON.stringify(undo)); else clearOptimiseUndo();
     } catch { /* ignore */ }

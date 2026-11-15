@@ -1,6 +1,6 @@
-import { addDays, addMonths, dateInMonth, fmtDay, ordinal, type ISODate } from './dates';
+import { addDays, addMonths, dateInMonth, fmtDay, ordinal, todayISO, type ISODate } from './dates';
 import { periodContaining, shiftPeriod, type Period } from './engine';
-import type { Budget, Cents, Debt, DebtPlan, PlanType, Settings } from './types';
+import type { Budget, Cents, Debt, DebtPlan, PaidPayment, PlanType, Settings } from './types';
 
 const fmt = (c: Cents) => `$${(c / 100).toLocaleString('en-NZ', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
@@ -165,7 +165,7 @@ export function mastercardPurchases(debt: Debt, other: Cents): { date: ISODate; 
     if (h.amount > prev) inc.push({ date: h.asOf, amount: h.amount - prev });
     prev = h.amount;
   }
-  if (!inc.length) inc.push({ date: debt.balance?.asOf ?? new Date().toISOString().slice(0, 10), amount: other });
+  if (!inc.length) inc.push({ date: debt.balance?.asOf ?? todayISO(), amount: other });
   // Payments since have cleared the oldest amounts first: keep only what's still owed, newest last.
   let excess = inc.reduce((t, x) => t + x.amount, 0) - other;
   for (const x of inc) { const take = Math.min(excess, x.amount); x.amount -= take; excess -= take; }
@@ -222,7 +222,7 @@ function mastercardBalanceSchedules(debt: Debt, s: Settings, other: Cents, perPa
  * payday by what's left of the payday amount after plan payments, or in full when paying "what's due".
  */
 function otherBalanceSchedule(debt: Debt, s: Settings, other: Cents, perPay: Cents | undefined, plans: PlanSchedule[]): PlanSchedule {
-  const start = debt.balance?.asOf ?? new Date().toISOString().slice(0, 10);
+  const start = debt.balance?.asOf ?? todayISO();
   const plan: DebtPlan = { id: `${debt.id}-other`, name: 'Balance', type: 'balance', original: other, remaining: other, asOf: start, purchaseDate: start };
   const monthlyRate = (debt.rate ?? 0) / 100 / 12;
   const planPayments = plans.flatMap((x) => x.payments);
@@ -270,11 +270,28 @@ export function unplanned(debt: Debt): Cents {
   return Math.max(0, owed(debt) - plannedOwed(debt));
 }
 
-/** Debt payments due to an account (via its debts) within a date range. */
+/** How many payments already counted as paid are kept for each debt (well over a year's worth). */
+const PAID_KEPT = 300;
+
+/** Planned payments already counted as paid, between two dates (inclusive). */
+export function paidIn(debt: Debt, from: ISODate, to: ISODate): PaidPayment[] {
+  return (debt.paid ?? []).filter((x) => x.date >= from && x.date <= to);
+}
+
+/**
+ * Debt payments from an account (via its debts) within a date range: the ones still to come, and the
+ * ones already counted as paid, so a pay keeps its payments (and its total) after they've gone out.
+ */
 export function debtPaymentsIn(b: Budget, accountId: string, from: ISODate, to: ISODate): { debt: Debt; plan: DebtPlan; date: ISODate; amount: Cents }[] {
   const out: { debt: Debt; plan: DebtPlan; date: ISODate; amount: Cents }[] = [];
   for (const debt of b.debts ?? []) {
     if (debt.accountId !== accountId) continue;
+    (debt.paid ?? []).forEach((x, i) => {
+      if (x.date < from || x.date > to) return;
+      // Stands in for the plan it went to (which may be paid off and gone by now).
+      const plan: DebtPlan = { id: `${debt.id}-paid-${i}`, name: x.name, type: 'balance', original: x.amount, remaining: 0, asOf: x.date, purchaseDate: x.date };
+      out.push({ debt, plan, date: x.date, amount: x.amount });
+    });
     for (const sch of debtSchedules(debt, b.settings, debtPerPay(b, debt))) {
       for (const p of sch.payments) if (p.date >= from && p.date <= to) out.push({ debt, plan: sch.plan, date: p.date, amount: p.amount });
     }
@@ -330,7 +347,7 @@ export interface Applied { planId: string; planName: string; date: ISODate; amou
  * (paying more than is scheduled) reduces an entered balance only.
  */
 export function applyPayment(debt: Debt, amount: Cents, s: Settings, date: ISODate): { applied: Applied[]; leftover: Cents } {
-  if (debt.rules === 'gem') return gemApply(debt, amount, date);
+  if (debt.rules === 'gem') return gemApply(debt, amount, s, date);
   // Paid on a payday: that's the payday's own payment, so the next one planned is the payday after
   // (dated the day after, the same way a payslip's loan deduction is, so it isn't counted twice).
   const asOf = periodContaining(date, s).start === date ? addDays(date, 1) : date;
@@ -351,14 +368,31 @@ export function applyPayment(debt: Debt, amount: Cents, s: Settings, date: ISODa
       p.remaining = p.instalments.reduce((t, i) => t + i.amount, 0);
     } else {
       p.remaining = Math.max(0, p.remaining - take);
-      p.asOf = asOf;
+      p.asOf = later(p.asOf, asOf);
     }
     applied.push({ planId: p.id, planName: p.name, date: d.date, amount: take, cleared: take === d.amount });
   }
-  if (debt.balance) debt.balance = { amount: Math.max(0, debt.balance.amount - amount), asOf };
+  if (debt.balance) debt.balance = { amount: Math.max(0, debt.balance.amount - amount), asOf: later(debt.balance.asOf, asOf) };
   debt.plans = debt.plans.filter((p) => p.remaining > 0);
-  recordHistory(debt, date);
+  recordPaymentHistory(debt, date, amount);
   return { applied, leftover: left };
+}
+
+const later = (a: ISODate, b: ISODate): ISODate => (a > b ? a : b);
+
+/**
+ * Note a payment made on `date` in the debt's history. Usually that's just today's amount owed. A payment
+ * dated before the latest entry (recorded a few days late) brings down what was owed on its day (when
+ * there's a record that far back) and on every day since, rather than leaving the later entries as they were.
+ */
+function recordPaymentHistory(debt: Debt, date: ISODate, amount: Cents): void {
+  const hist = [...(debt.history ?? [])].sort((a, b) => a.asOf.localeCompare(b.asOf));
+  if (!hist.some((h) => h.asOf > date)) { recordHistory(debt, date); return; }
+  const onDay = historyOwed({ ...debt, history: hist }, date);
+  debt.history = [
+    ...hist.filter((h) => h.asOf !== date).map((h) => (h.asOf > date ? { ...h, amount: h.amount - amount } : h)),
+    ...(onDay !== undefined ? [{ amount: onDay - amount, asOf: date }] : []),
+  ].sort((a, b) => a.asOf.localeCompare(b.asOf)).slice(-500);
 }
 
 /**
@@ -367,12 +401,14 @@ export function applyPayment(debt: Debt, amount: Cents, s: Settings, date: ISODa
  */
 export function settleDue(debt: Debt, s: Settings, today: ISODate, perPay?: Cents): boolean {
   let paid = 0;
+  const log: PaidPayment[] = [];
   for (const sch of debtSchedules(debt, s, perPay)) {
     const past = sch.payments.filter((p) => p.date < today);
     if (!past.length) continue;
     const p = sch.plan;
     const total = past.reduce((t, x) => t + x.amount, 0);
     paid += total;
+    for (const x of past) if (x.amount > 0) log.push({ date: x.date, amount: x.amount, name: p.name, ...(sch.synthetic ? { synthetic: true } : {}) });
     if (sch.synthetic) continue; // other purchases: comes off the entered balance below
     if (p.instalments?.length) {
       p.instalments = p.instalments.filter((i) => i.date >= today);
@@ -385,6 +421,8 @@ export function settleDue(debt: Debt, s: Settings, today: ISODate, perPay?: Cent
   if (!paid) return false;
   if (debt.balance && debt.balance.asOf < today) debt.balance = { amount: Math.max(0, debt.balance.amount - paid), asOf: today };
   debt.plans = debt.plans.filter((p) => p.remaining > 0);
+  // Keep them against the pay they came out of (see `debtPaymentsIn`).
+  debt.paid = [...(debt.paid ?? []), ...log].sort((a, b) => a.date.localeCompare(b.date)).slice(-PAID_KEPT);
   recordHistory(debt, today);
   return true;
 }
@@ -467,7 +505,7 @@ export interface GemPlanResult {
 
 export function gemPlan(debt: Debt, s: Settings, perPay?: Cents): GemPlanResult {
   const dates = [debt.balance?.asOf, ...debt.plans.map((p) => p.asOf)].filter(Boolean) as ISODate[];
-  const start = dates.sort()[dates.length - 1] ?? new Date().toISOString().slice(0, 10);
+  const start = dates.sort()[dates.length - 1] ?? todayISO();
   const buckets = gemBuckets(debt, start);
   const inst = buckets.filter((b) => b.kind === 'instalment');
   const instalmentsDue = inst.reduce((t, b) => t + Math.min(b.left, b.monthly), 0);
@@ -543,7 +581,10 @@ export function beforeStatement(debt: Debt, date: ISODate): boolean {
 }
 
 /** A payment you've made to Gem, split the way Gem splits it. */
-function gemApply(debt: Debt, amount: Cents, date: ISODate): { applied: Applied[]; leftover: Cents } {
+function gemApply(debt: Debt, amount: Cents, s: Settings, date: ISODate): { applied: Applied[]; leftover: Cents } {
+  // With no statement day, payments are planned for paydays: one made on a payday is that payday's own,
+  // so (as for other debts) it's dated the day after and that payday isn't planned again.
+  const asOf = !debt.statementDay && periodContaining(date, s).start === date ? addDays(date, 1) : date;
   const buckets = gemBuckets(debt, date);
   const got = debt.statementDay && Number(date.slice(8, 10)) < debt.statementDay
     ? oldestFirst(buckets, amount)
@@ -553,11 +594,11 @@ function gemApply(debt: Debt, amount: Cents, date: ISODate): { applied: Applied[
   for (const [b, x] of got) {
     used += x;
     applied.push({ planId: b.plan.id, planName: b.plan.name, date, amount: x, cleared: b.left === 0 });
-    if (!b.synthetic) { b.plan.remaining = b.left; b.plan.asOf = date; }
+    if (!b.synthetic) { b.plan.remaining = b.left; b.plan.asOf = later(b.plan.asOf, asOf); }
   }
-  if (debt.balance) debt.balance = { amount: Math.max(0, debt.balance.amount - amount), asOf: date };
+  if (debt.balance) debt.balance = { amount: Math.max(0, debt.balance.amount - amount), asOf: later(debt.balance.asOf, asOf) };
   debt.plans = debt.plans.filter((p) => p.remaining > 0);
-  recordHistory(debt, date);
+  recordPaymentHistory(debt, date, amount);
   return { applied, leftover: amount - used };
 }
 

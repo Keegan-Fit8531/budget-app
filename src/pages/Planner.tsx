@@ -52,7 +52,8 @@ export function Planner() {
 
   // The first pay the budget covers: today's, or the budget start if that's later .
   const plan = useMemo(() => planFor(budget, period), [budget, period]);
-  const isCurrent = offset === 0;
+  // The pay you're in now (the Planner opens on the next one to come).
+  const isCurrent = period.start <= today && today <= period.end;
   const avg = mode !== 'period';
   // Week / Fortnight: this pay, split into weeks (or fortnights) by its number of days.
   // Month avg / Year: what's planned over the next 12 pays, averaged (or added up for the year).
@@ -192,6 +193,10 @@ export function Planner() {
     if (optUndo?.periodStart === period.start) { clearOptimiseUndo(); setOptUndo(null); }
   }
   const adjustments = plan.accounts.filter((a) => a.usual !== undefined && a.usual !== a.funded);
+  // The ones you made yourself. What automatic balancing set was in place before payday, so payday sent
+  // those amounts: once the pay has been split there's nothing left to do about them.
+  const autoSet = budget.autoBalanced?.[period.start] ?? {};
+  const byHand = adjustments.filter((a) => autoSet[a.account.id]?.to !== a.funded);
   // What balancing would still do now: if anything, the pay needs (re-)balancing.
   const pending = useMemo(() => balancePay(budget, period), [budget, period]);
   const shortAccounts = pending.shortAccounts;
@@ -207,8 +212,8 @@ export function Planner() {
   const hasModeChanges = (() => { try { return !!JSON.parse(localStorage.getItem(MODES_KEY) ?? '{}')[period.start]; } catch { return false; } })();
   const canReset = adjustments.length > 0 || hasModeChanges;
   // A pay that's already been split can't be re-sent, so changes to it are made as transfers.
-  const passedNote = paydayPassed && adjustments.length > 0
-    ? `This pay was already split on ${fmtShort(period.start)}, so make these as transfers now, before ${fmtShort(plan.dues.find((d) => d.date >= today)?.date ?? period.end)}: move the money from the accounts being trimmed (or from what's left in ${payAccountName}) to the ones being topped up.`
+  const passedNote = paydayPassed && byHand.length > 0
+    ? `This pay was already split on ${fmtShort(period.start)}. A change made since then isn't sent by payday, so make it as a transfer now, before ${fmtShort(plan.dues.find((d) => d.date >= today)?.date ?? period.end)}: move the money from the accounts being trimmed (or from what's left in ${payAccountName}) to the ones being topped up.`
     : undefined;
 
   function savePay() {
@@ -350,7 +355,7 @@ export function Planner() {
           {slipMsg && <p className={`small ${slipMsg.ok ? '' : 'error'}`} role="status">{slipMsg.text}</p>}
 
           {/* Balancing is automatic, so it only speaks up when there's something left to do. */}
-          {!avg && known && (autoHere ? plan.leftover < 0 : needsBalance || adjustments.length > 0) && (
+          {!avg && known && (autoHere ? plan.leftover < 0 : needsBalance || byHand.length > 0) && (
             <div className={`${autoHere || plan.leftover < 0 ? 'alert' : 'tip'} small stack gap-8`} role="status">
               <span>
                 {autoHere

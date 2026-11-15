@@ -58,6 +58,7 @@ export function WeeksView({ budget, period, plan }: { budget: Budget; period: Pe
   for (const list of byDate.values()) list.sort((x, y) => Number(y.main) - Number(x.main) || y.amount - x.amount);
   const [tip, setTip] = useState<string | null>(null);
   const skips = [...new Set(cover.flatMap((c) => c.skipped))].sort();
+  const skipWithin = Math.max(0, ...cover.filter((c) => c.skipped.length).map((c) => c.item.skipIfWithin ?? 0));
 
   const steadyShown = accountsShown.some(({ acc }) => accountMode(budget, acc.id) === 'smooth');
   // The result for each weekly account (what you scan for), and how it's worked out (kept behind a click).
@@ -162,7 +163,7 @@ export function WeeksView({ budget, period, plan }: { budget: Budget; period: Pe
       {skips.length > 0 && (
         <div className="tip small">
           <span>
-            <b>Skip {skips.map((d) => fmtDay(d)).join(', ')}</b>: it's the day before payday, so you go without until pay.
+            <b>Skip {skips.map((d) => fmtDay(d)).join(', ')}</b>: {skipWithin > 1 ? `it's within ${skipWithin} days of payday` : "it's the day before payday"}, so you go without until pay.
             {cover.some((c) => c.skipped.length && /auto/i.test(`${c.item.name} ${c.item.note ?? ''}`)) && ' Pause that week’s automatic allowance transfer in your banking app.'}
           </span>
         </div>

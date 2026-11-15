@@ -154,12 +154,13 @@ export function balancePay(input: Budget, period: Period, today: ISODate = today
     // 3. Savings contributions, largest first (not debts).
     const savingGroups = new Set(b.groups.filter((g) => g.bucket === 'savings').map((g) => g.id));
     const savers = plan.accounts
-      .filter((a) => !debtIds.has(a.account.id) && savingGroups.has(a.account.groupId) && a.funded > 0)
+      .filter((a) => a.account.id !== b.settings.payAccountId && !debtIds.has(a.account.id) && savingGroups.has(a.account.groupId) && a.funded > 0)
       .sort((x, y) => y.funded - x.funded);
     for (const a of savers) cut(a.account.id, a.account.name, a.funded, 'Saved a bit less this pay only. It can catch up next pay.');
     // 4. Money put aside for later costs (a WOF, tyres): there's no date to meet, so it can wait a pay.
     //    Only what's put aside is paused; bills paid from the same account still get their money.
     for (const a of plan.accounts) {
+      if (a.account.id === b.settings.payAccountId) continue; // pay lands there: nothing is sent to it to trim
       const aside = Math.min(a.funded, setAsideOn(b, a.account.id, period.start));
       cut(a.account.id, a.account.name, aside, `Puts aside less for ${asideNames(b, a.account.id)} this pay only (there's no date to meet). Back to the usual amount next pay.`);
     }

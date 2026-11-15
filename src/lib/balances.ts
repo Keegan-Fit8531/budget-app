@@ -252,7 +252,10 @@ export function depositFor(b: Budget, accountId: string, p: Period, today: ISODa
   // A debt never gets more than it still owes (e.g. once a card is paid off, stop sending money).
   const debt = (b.debts ?? []).find((d) => d.accountId === accountId);
   if (debt && (debt.balance || debt.plans.length)) {
-    return Math.min(amount, Math.max(0, projectedOwed(debt, b.settings, addDays(p.start, -1), debtPerPay(b, debt))));
+    // What it owed going into this pay: for a pay already under way, that's what it owes now plus the
+    // payments that have gone out since (so its last payment doesn't turn into $0 once it's made).
+    const since = (debt.paid ?? []).reduce((t, x) => t + (x.date >= p.start ? x.amount : 0), 0);
+    return Math.min(amount, Math.max(0, projectedOwed(debt, b.settings, addDays(p.start, -1), debtPerPay(b, debt)) + since));
   }
   return amount;
 }

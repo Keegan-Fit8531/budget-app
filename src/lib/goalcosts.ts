@@ -1,5 +1,6 @@
-import type { ISODate } from './dates';
-import { planFor, shiftPeriod, upcomingPayPeriod } from './engine';
+import { todayISO, type ISODate } from './dates';
+import { planFor, shiftPeriod } from './engine';
+import { firstPayToCome } from './savings';
 import type { Budget, Cents, GoalCost, SavingsGoal } from './types';
 
 export const DEFAULT_COST_CATEGORIES = ['Venue and hire', 'Suppliers', 'Food and drink', 'Attire'];
@@ -59,14 +60,15 @@ export interface GoalCostSummary {
 }
 
 /**
- * Projected fund at the end of `date`: today's balance plus each pay still to come up to then. (The pay
- * today falls in has already happened, so what it sent is in the balance: same as savings.ts.)
+ * Projected fund at the end of `date`: the saved balance plus each pay since it was last updated, up to
+ * then. (The pay the balance was updated in has already happened, so what it sent is in the balance:
+ * same as savings.ts. A payday that has passed since then isn't in it yet, so it's still added.)
  */
 export function projectedAt(b: Budget, goal: SavingsGoal, date: ISODate, today: ISODate): { amount: Cents; pays: number } {
   // Expected gifts (not yet in the balance) count from their date.
   let amount = goal.balance + expectedGifts(goal, date);
   let pays = 0;
-  let p = upcomingPayPeriod(b, today);
+  let p = firstPayToCome(b, goal, today);
   for (let i = 0; i < 400 && p.start <= date; i++) {
     const funded = planFor(b, p, today).accounts.find((a) => a.account.id === goal.accountId)?.funded ?? 0;
     amount += funded + (goal.otherPerPay ?? 0);
@@ -122,7 +124,7 @@ export function summariseCosts(b: Budget, goal: SavingsGoal, today: ISODate): Go
 
 /** Spend money from a goal on a cost (existing, or a new one). Takes it off the saved balance. */
 export function spendFromGoal(goal: SavingsGoal, spend: { id: string; amount: Cents; date: ISODate; note?: string },
-  target: { costId: string } | { newCost: { id: string; name: string; category: string } }): void {
+  target: { costId: string } | { newCost: { id: string; name: string; category: string } }, today: ISODate = todayISO()): void {
   goal.costs = goal.costs ?? [];
   let cost = 'costId' in target ? goal.costs.find((c) => c.id === target.costId) : undefined;
   if (!cost && 'newCost' in target) {
@@ -133,7 +135,10 @@ export function spendFromGoal(goal: SavingsGoal, spend: { id: string; amount: Ce
   if (!cost) return;
   cost.spends = [...(cost.spends ?? []), spend];
   goal.balance = Math.max(0, goal.balance - spend.amount);
-  goal.asOf = spend.date > goal.asOf ? spend.date : goal.asOf;
+  // The balance is now as at the day of the spend, but never a day that hasn't come yet (a spend dated
+  // ahead would otherwise leave out the paydays before it).
+  const on = spend.date > today ? today : spend.date;
+  goal.asOf = on > goal.asOf ? on : goal.asOf;
 }
 
 /** Undo a spend. `putBack` (the default) returns the money to the saved balance; false leaves the balance as it is. */

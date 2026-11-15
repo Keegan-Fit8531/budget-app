@@ -1,4 +1,5 @@
 import type { Budget } from './types';
+import { looksLikeBudget } from './valid';
 
 /**
  * Sync with a file in a private GitHub repo, so every browser sees the same budget. Each browser keeps
@@ -72,8 +73,9 @@ export async function pullBudget(c: SyncConfig): Promise<Remote | null> {
   }
   if (!res.ok) throw new SyncError(explain(res.status), res.status);
   const json = await res.json() as { content: string; sha: string };
-  const budget = JSON.parse(fromBase64(json.content)) as Budget;
-  if (budget.version !== 1 || !Array.isArray(budget.accounts)) throw new SyncError('The file in the repo isn’t a budget.', 422);
+  let budget: unknown;
+  try { budget = JSON.parse(fromBase64(json.content)); } catch { budget = null; }
+  if (!looksLikeBudget(budget)) throw new SyncError('The file in the repo isn’t a budget.', 422);
   return { budget, sha: json.sha };
 }
 

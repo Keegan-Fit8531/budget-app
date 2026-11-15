@@ -405,7 +405,8 @@ function SpendModal({ goal, onClose }: { goal: SavingsGoal; onClose: () => void 
   const [note, setNote] = useState('');
   const [costId, setCostId] = useState(costs.find((c) => leftOn(c) > 0)?.id ?? 'new');
   const [newName, setNewName] = useState('');
-  const [newCat, setNewCat] = useState('Other');
+  // The first category in the list, as the dropdown shows ('Other' when you have one).
+  const [newCat, setNewCat] = useState(() => (COST_CATEGORIES.includes('Other') ? 'Other' : COST_CATEGORIES[0] ?? '__new'));
   const [newCatName, setNewCatName] = useState('');
   const [err, setErr] = useState('');
   const c = parseMoney(amount);

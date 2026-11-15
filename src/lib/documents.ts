@@ -119,9 +119,9 @@ async function readImageText(file: File, onProgress?: (fraction: number) => void
 
 /** Read a PDF or image you've chosen and work out what it is. Throws if the file can't be read at all. */
 export async function readDocument(file: File, onProgress?: (fraction: number) => void): Promise<ReadDocument> {
-  let text = isPdf(file) ? await readPdfText(file) : '';
-  // A scanned PDF has no text in it, and a photo never does: those are recognised from the picture.
-  if (!isPdf(file)) text = await readImageText(file, onProgress);
+  // A PDF's own text is read; a photo or screenshot is recognised from the picture. (A scanned PDF has no
+  // text in it, so nothing is found and the details are typed in, or a photo of it is used instead.)
+  const text = isPdf(file) ? await readPdfText(file) : await readImageText(file, onProgress);
   return classifyText(text);
 }
 
@@ -149,6 +149,10 @@ export function recordStatement(b: Budget, debtId: string, s: { balance: Cents; 
   hist.push({ amount: owed(debt), asOf });
   debt.history = hist.sort((x, y) => x.asOf.localeCompare(y.asOf)).slice(-500);
   // An older statement: payments planned since its date count as paid, so today's figure is current.
-  if (asOf < today) settleDue(debt, b.settings, today, debtPerPay(b, debt));
+  // (Ones worked out from the earlier balance are dropped first, or they'd be counted twice.)
+  if (asOf < today) {
+    if (debt.paid) debt.paid = debt.paid.filter((x) => !(x.synthetic && x.date >= asOf));
+    settleDue(debt, b.settings, today, debtPerPay(b, debt));
+  }
   return debt;
 }

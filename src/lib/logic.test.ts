@@ -2,15 +2,17 @@ import { describe, expect, it } from 'vitest';
 import { balanceToday, billTracker, depositFor, estimateBalance, outflows } from './balances';
 import { applyAllocation, existingExtras, undoAllocation } from './allocate';
 import { addDays } from './dates';
-import { applyPayment, debtSchedules, planSchedule, recordHistory, settleDue } from './debts';
+import { applyPayment, debtPaymentsIn, debtSchedules, paidIn, planSchedule, recordHistory, settleDue } from './debts';
 import { classifyText, matchDebt, parseDate, parseStatementText, recordStatement } from './documents';
 import { averageNeed, clearPaydayMove, periodContaining, planFor, recordPayday, setAsidePerPay, shiftPeriod } from './engine';
 import { projectedAt, removeSpend, spendFromGoal } from './goalcosts';
 import { autoBalance, balancedMode, balancePay } from './rebalance';
 import { accountHistory, recordCost, removeCost, setBalance } from './history';
+import { parseMoney } from './money';
 import { forecast } from './savings';
 import { seedBudget } from './seed';
 import type { Budget, Debt, SavingsGoal } from './types';
+import { looksLikeBudget } from './valid';
 
 /** A blank budget paid on the 19th, with automatic balancing off so amounts are exactly as set. */
 function budget(): Budget {
@@ -74,6 +76,20 @@ describe('savings goals', () => {
     expect(projectedAt(b, b.savings![0], '2026-11-18', '2026-11-12')).toEqual({ amount: 50000, pays: 0 });
     expect(projectedAt(b, b.savings![0], '2026-11-19', '2026-11-12')).toEqual({ amount: 60000, pays: 1 });
   });
+
+  it('a payday that has passed since the balance was updated still counts', () => {
+    // $0 saved on 12 Nov, $100 a pay: 19 Nov, 18 Dec and 19 Jan make $300 by 20 Jan.
+    const b = withGoal(30000);
+    const g = b.savings![0];
+    expect(projectedAt(b, g, '2027-01-20', '2026-11-12').amount).toBe(30000);
+    // After the 19 Nov payday, with the balance not updated yet: the same, not a pay short.
+    expect(projectedAt(b, g, '2027-01-20', '2026-11-25')).toEqual({ amount: 30000, pays: 3 });
+    expect(forecast(b, g, '2026-11-25')).toMatchObject({ onTrack: true, reachedBy: '2027-01-19', projected: 30000, periodsLeft: 2 });
+    // Once it's updated (that payday's $100 is in it), the pay isn't added a second time.
+    g.balance = 10000; g.asOf = '2026-11-25';
+    expect(projectedAt(b, g, '2027-01-20', '2026-11-25')).toEqual({ amount: 30000, pays: 2 });
+    expect(forecast(b, g, '2026-11-25')).toMatchObject({ onTrack: true, reachedBy: '2027-01-19', projected: 30000 });
+  });
 });
 
 describe('debts', () => {
@@ -99,6 +115,68 @@ describe('debts', () => {
     }, s);
     expect(sch.deadline).toBe('2027-02-10');
     expect(sch.payments.map((p) => p.date)).toEqual(['2026-11-19', '2026-12-18', '2027-01-19']);
+  });
+});
+
+describe('debt payments that have gone out', () => {
+  function withAfterpay() {
+    const b = budget();
+    b.accounts.push({ id: 'ap', name: 'Afterpay', kind: 'external', color: '#000', groupId: 'debt' });
+    b.split.push({ accountId: 'ap', amount: 0, mode: 'exact' });
+    b.debts = [{
+      id: 'ap', name: 'Afterpay', kind: 'bnpl', rules: 'afterpay', accountId: 'ap',
+      plans: [{
+        id: 'p', name: 'Shoes', type: 'afterpay', original: 40000, remaining: 30000, asOf: '2026-11-11', purchaseDate: '2026-10-22',
+        instalments: [{ date: '2026-11-19', amount: 10000 }, { date: '2026-12-03', amount: 10000 }, { date: '2026-12-17', amount: 10000 }],
+      }],
+    }];
+    return b;
+  }
+  const sent = (b: Budget, pay: ReturnType<typeof periodContaining>, today: string) => planFor(b, pay, today).accounts.find((a) => a.account.id === 'ap')?.funded;
+
+  it("stay in the pay they came out of, so its total and what's left over don't change as they go", () => {
+    const b = withAfterpay();
+    const pay = periodContaining('2026-11-19', b.settings);
+    const next = shiftPeriod(pay, 1, b.settings);
+    const before = planFor(b, pay, '2026-11-18');
+    expect(sent(b, pay, '2026-11-18')).toBe(30000);
+    // Each day of the pay, as the app does on opening: what fell due before today counts as paid.
+    for (let day = pay.start; day <= pay.end; day = addDays(day, 1)) {
+      for (const d of b.debts!) settleDue(d, b.settings, day);
+      const now = planFor(b, pay, day);
+      expect(sent(b, pay, day), day).toBe(30000);
+      expect(now.leftover, day).toBe(before.leftover);
+      expect(now.dues.map((d) => [d.date, d.item.amount]), day).toEqual([['2026-11-19', 10000], ['2026-12-03', 10000], ['2026-12-17', 10000]]);
+      expect(sent(b, next, day), day).toBe(0);
+    }
+    expect(b.debts![0].plans[0].remaining).toBe(10000); // the 17 Dec one is still to come on the last day
+  });
+
+  it("a fixed payment's last pay still shows it after it's paid, and the pay after sends nothing", () => {
+    const b = budget();
+    b.accounts.push({ id: 'k', name: 'Kim', kind: 'external', color: '#000', groupId: 'debt' });
+    b.split.push({ accountId: 'k', amount: 20000, mode: 'fixed' });
+    b.debts = [{ id: 'k', name: 'Kim', kind: 'person', accountId: 'k', plans: [], balance: { amount: 20000, asOf: '2026-11-12' } }];
+    const pay = periodContaining('2026-11-19', b.settings);
+    expect(depositFor(b, 'k', pay, '2026-11-18')).toBe(20000);
+    settleDue(b.debts[0], b.settings, '2026-11-20', 20000);
+    expect(b.debts[0].balance?.amount).toBe(0);
+    expect(depositFor(b, 'k', pay, '2026-11-20')).toBe(20000);
+    expect(depositFor(b, 'k', shiftPeriod(pay, 1, b.settings), '2026-11-20')).toBe(0);
+  });
+
+  it("an older statement added after a payday doesn't put that payday's payment in its pay twice", () => {
+    const b = budget();
+    b.accounts.push({ id: 'm', name: 'Card', kind: 'external', color: '#000', groupId: 'debt' });
+    b.split.push({ accountId: 'm', amount: 0, mode: 'exact' });
+    b.debts = [{ id: 'm', name: 'Card', kind: 'card', rules: 'mastercard', accountId: 'm', plans: [], balance: { amount: 90000, asOf: '2026-11-01' } }];
+    recordHistory(b.debts[0], '2026-11-01');
+    const pay = periodContaining('2026-11-19', b.settings);
+    settleDue(b.debts[0], b.settings, '2026-11-20');
+    expect(debtPaymentsIn(b, 'm', pay.start, pay.end).map((x) => [x.date, x.amount])).toEqual([['2026-11-19', 30000]]);
+    // A statement as at 10 Nov arrives on the 25th: the 19 Nov payment is worked out again from it.
+    recordStatement(b, 'm', { balance: 60000, date: '2026-11-10' }, '2026-11-25');
+    expect(paidIn(b.debts[0], pay.start, pay.end).map((x) => x.date)).toEqual(['2026-11-19']);
   });
 });
 
@@ -210,6 +288,39 @@ describe('recording a debt payment', () => {
     applyPayment(debt, 5000, s, '2026-11-10');
     expect(planSchedule(debt, debt.plans[0], s).payments[0]).toMatchObject({ date: '2026-11-19', amount: 20000 });
   });
+
+  it("a payment recorded late, dated before a payday that has since gone out, doesn't bring that payday back", () => {
+    const s = budget().settings;
+    const debt: Debt = {
+      id: 'd', name: 'Loan', kind: 'loan', accountId: 'd',
+      plans: [{ id: 'p', name: 'Car', type: 'balance', original: 100000, remaining: 100000, asOf: '2026-11-01', purchaseDate: '2026-11-01', payment: 20000 }],
+    };
+    recordHistory(debt, '2026-11-01');
+    // The 19 Nov payday's $200 counts as paid the day after…
+    settleDue(debt, s, '2026-11-20');
+    expect(debt.plans[0]).toMatchObject({ remaining: 80000, asOf: '2026-11-20' });
+    // …and on the 22nd, an extra $50 paid back on the 15th is recorded.
+    applyPayment(debt, 5000, s, '2026-11-15');
+    expect(debt.plans[0]).toMatchObject({ remaining: 75000, asOf: '2026-11-20' });
+    // The 19 Nov payday isn't planned (and counted as paid) a second time.
+    expect(settleDue(debt, s, '2026-11-22')).toBe(false);
+    expect(debt.plans[0].remaining).toBe(75000);
+    expect(planSchedule(debt, debt.plans[0], s).payments[0].date).toBe('2026-12-18');
+    // What was owed comes down from the day it was paid, not just from today.
+    expect(debt.history).toEqual([{ amount: 100000, asOf: '2026-11-01' }, { amount: 95000, asOf: '2026-11-15' }, { amount: 75000, asOf: '2026-11-20' }]);
+  });
+
+  it("Gem with no statement day: a payment made on payday is that payday's payment, not an extra one", () => {
+    const s = budget().settings;
+    const debt: Debt = {
+      id: 'g', name: 'Gem', kind: 'card', rules: 'gem', accountId: 'g',
+      plans: [{ id: 'p', name: 'Couch', type: 'interest-free', months: 6, original: 60000, remaining: 60000, asOf: '2026-11-01', purchaseDate: '2026-11-01' }],
+    };
+    expect(debtSchedules(debt, s).flatMap((x) => x.payments)[0].date).toBe('2026-11-19');
+    applyPayment(debt, 10000, s, '2026-11-19');
+    expect(debt.plans[0].remaining).toBe(50000);
+    expect(debtSchedules(debt, s).flatMap((x) => x.payments)[0].date).toBe('2026-12-18');
+  });
 });
 
 describe('undoing a spend from a goal', () => {
@@ -229,6 +340,29 @@ describe('undoing a spend from a goal', () => {
     removeSpend(g, 'c', 's', false);
     expect(g.balance).toBe(0);
     expect(g.costs?.[0].spends).toEqual([]);
+  });
+
+  it("a spend dated ahead doesn't date the balance ahead (the paydays before it would stop counting)", () => {
+    const g = goal();
+    spendFromGoal(g, { id: 's', amount: 1000, date: '2026-12-25' }, { costId: 'c' }, '2026-11-12');
+    expect(g).toMatchObject({ balance: 9000, asOf: '2026-11-12' });
+  });
+});
+
+describe('checking what comes in', () => {
+  it('a lone "." or "-" is not an amount', () => {
+    for (const bad of ['', '.', '-', '-.', 'abc', '1.234', '1..2']) expect(parseMoney(bad), bad).toBeNull();
+    expect(parseMoney('.5')).toBe(50);
+    expect(parseMoney('$1,234.56')).toBe(123456);
+    expect(parseMoney('-20')).toBe(-2000);
+  });
+
+  it('a backup or the synced file has to have the shape of a budget', () => {
+    expect(looksLikeBudget(budget())).toBe(true);
+    expect(looksLikeBudget(JSON.parse(JSON.stringify(budget())))).toBe(true);
+    const cut = budget() as Partial<Budget>;
+    delete cut.split;
+    for (const bad of [null, 'budget', [], { version: 1, accounts: [] }, { ...budget(), version: 2 }, cut, { ...budget(), items: [null] }]) expect(looksLikeBudget(bad)).toBe(false);
   });
 });
 
@@ -289,6 +423,20 @@ describe('automatic balancing', () => {
     // Rounding off: trimmed by exactly what's short.
     b.accounts.find((a) => a.id === 'wed')!.round = 0;
     expect(balancePay(b, p, '2026-11-14').changes.find((c) => c.accountId === 'wed')!.to).toBe(396940);
+  });
+
+  it("never 'trims' the account pay lands in: nothing is sent to it", () => {
+    const b = budget();
+    b.settings.expectedPay = 30000;
+    b.accounts[0].groupId = 'savings'; // the pay account, counted as savings
+    b.accounts.push({ id: 'x', name: 'Bills', kind: 'bank', color: '#000', groupId: 'needs' });
+    b.split.push({ accountId: 'x', amount: 0, mode: 'exact' });
+    b.items.push({ id: 'i', name: 'Power', amount: 60000, frequency: 'monthly', start: '2026-11-25', accountId: 'x' });
+    const p = periodContaining('2026-11-19', b.settings);
+    b.overrides = { [p.start]: { x: 10000 } }; // sent $100 by hand, so it's $500 short
+    const r = balancePay(b, p, '2026-11-12');
+    expect(r.shortAccounts.map((a) => a.accountId)).toEqual(['x']);
+    expect(r.changes.map((c) => c.accountId)).toEqual(['x']);
   });
 
   it('a short account set to round tops up to the next round amount', () => {

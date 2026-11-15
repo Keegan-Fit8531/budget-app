@@ -409,17 +409,20 @@ export function DebtModal({ debt, onClose, onDelete }: { debt?: Debt; onClose: (
 
   function save() {
     if (!name.trim()) return setErr('Enter a name.');
-    const lim = limit.trim() === '' ? undefined : parseMoney(limit);
+    // Only the fields shown for this type are checked and saved. A limit or rate that isn't shown is
+    // left as it was; card rules and a statement day don't apply to other types, so they're cleared.
+    const lim = kind === 'person' ? debt?.limit : limit.trim() === '' ? undefined : parseMoney(limit);
     if (lim === null) return setErr('Check the credit limit.');
-    const r = rate.trim() === '' ? undefined : Number(rate);
-    const sd = stmt.trim() === '' ? undefined : Number(stmt);
+    const r = kind === 'bnpl' ? debt?.rate : rate.trim() === '' ? undefined : Number(rate);
+    const sd = kind !== 'card' || stmt.trim() === '' ? undefined : Number(stmt);
+    const rl = (kind === 'card' || kind === 'bnpl' ? rules || undefined : undefined) as Debt['rules'];
     if (sd !== undefined && (!Number.isInteger(sd) || sd < 1 || sd > 28)) return setErr('Statement day should be a day of the month from 1 to 28.');
     if (r !== undefined && (Number.isNaN(r) || r < 0 || r > 100)) return setErr('Interest rate should be between 0 and 100%.');
     update((b) => {
       b.debts = b.debts ?? [];
       if (debt) {
         const d = b.debts.find((x) => x.id === debt.id)!;
-        Object.assign(d, { name: name.trim(), kind, rules: (rules || undefined) as Debt['rules'], limit: lim, rate: r, statementDay: sd });
+        Object.assign(d, { name: name.trim(), kind, rules: rl, limit: lim, rate: r, statementDay: sd });
         const a = b.accounts.find((x) => x.id === d.accountId);
         if (a) a.name = name.trim();
       } else {
@@ -427,7 +430,7 @@ export function DebtModal({ debt, onClose, onDelete }: { debt?: Debt; onClose: (
         const groupId = b.groups.find((g) => g.id === 'debt')?.id ?? b.groups.find((g) => g.bucket === 'savings')?.id ?? b.groups[0]?.id ?? '';
         b.accounts.push({ id, name: name.trim(), kind: 'external', color: nextColor(b.accounts.map((x) => x.color)), groupId });
         b.split.push({ accountId: id, amount: 0, mode: 'exact' });
-        b.debts.push({ id, name: name.trim(), kind, rules: (rules || undefined) as Debt['rules'], accountId: id, limit: lim, rate: r, statementDay: sd, plans: [] });
+        b.debts.push({ id, name: name.trim(), kind, rules: rl, accountId: id, limit: lim, rate: r, statementDay: sd, plans: [] });
       }
       return b;
     });
