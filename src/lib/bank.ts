@@ -6,6 +6,7 @@ import { applyProposal } from './reader/apply';
 import { newTransactions } from './reader/check';
 import type { BankConfig } from './bankConfig';
 import { nextColor } from './colors';
+import { recordCardPayments, type SeenPayment } from './cardPayments';
 import type { Budget, Txn } from './types';
 
 // ---------------------------------------------------------------------------------------------
@@ -63,7 +64,7 @@ export function suggestLink(b: Budget, acc: BankAccount): string {
   return hits.length === 1 ? hits[0] : '';
 }
 
-export interface BankResult { name: string; added: number; balance?: number }
+export interface BankResult { name: string; added: number; balance?: number; cardPayments?: SeenPayment[] }
 
 /** A new savings goal (with its own account, sent nothing from pay) for a bank account, e.g. KiwiSaver. Returns its link. */
 export function addGoalFor(b: Budget, acc: BankAccount, id: string, accountId: string, today: ISODate = todayISO()): string {
@@ -88,9 +89,12 @@ function setGoalBalance(goal: NonNullable<Budget['savings']>[number], cents: num
 }
 
 /** Add the new transactions to each linked account or card, and savings goals' balances. Returns how many were added to each. */
-export function applyBank(b: Budget, data: BankData, links: Record<string, string>, today: ISODate = todayISO()): BankResult[] {
+export function applyBank(b: Budget, data: BankData, links: Record<string, string>, today: ISODate = todayISO(), now: string = new Date().toISOString()): BankResult[] {
   const out: BankResult[] = [];
   for (const acc of data.accounts) {
+    // Noted for each account that came through, so its card shows when it last synced.
+    const link = links[acc.id];
+    if (link && link !== 'ignore' && link.includes(':')) b.bankSeen = { ...(b.bankSeen ?? {}), [link]: now };
     const [type, id] = (links[acc.id] ?? '').split(':') as ['account' | 'debt' | 'saving' | '', string?];
     // A savings goal (KiwiSaver, an investment): its balance follows the account's.
     if (type === 'saving' && id) {
@@ -120,11 +124,19 @@ export function applyBank(b: Budget, data: BankData, links: Record<string, strin
       applyProposal(b, { kind: 'transactions', target: { type, id }, ...(ending ? { ending } : {}), add, ...(balance ? { balance } : {}), history: [], eventId: `bank-${acc.id}-${today}` }, today);
     }
     if (live && type === 'account' && b.balances?.[id]?.amount !== cents) setBalance(b, id, cents, today, `bank-${acc.id}-${today}`);
+    // Payments from this account to cards that can't be linked themselves (Gem Visa, Q Mastercard).
+    const cardPayments = type === 'account' ? recordCardPayments(b, id, add, today) : [];
     // The account behind a savings goal: the goal's balance is the bank's.
     if (live && type === 'account') for (const g of b.savings ?? []) if (g.accountId === id && g.balance !== cents) setGoalBalance(g, cents, today);
-    out.push({ name: target.name, added: add.length });
+    out.push({ name: target.name, added: add.length, ...(cardPayments.length ? { cardPayments } : {}) });
   }
   return out;
+}
+
+/** Linked to the bank connection (and updating by itself): when it last came through, if it has. */
+export function bankSync(b: Budget, link: string): { linked: boolean; at?: string } {
+  const linked = b.bankAuto !== false && Object.values(b.bankLinks ?? {}).includes(link);
+  return { linked, at: linked ? b.bankSeen?.[link] : undefined };
 }
 
 /** The day to fetch from: a week before the last sync (so late-settling ones are caught), or everything the first time. */

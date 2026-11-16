@@ -7,7 +7,6 @@ import { Planner } from './pages/Planner';
 import { Settings } from './pages/Settings';
 import { PeriodProvider } from './lib/period';
 import { Debts } from './pages/Debts';
-import { Deposits } from './pages/Deposits';
 import { Savings } from './pages/Savings';
 import { LogoMark } from './components/LogoMark';
 import { ErrorBoundary } from './components/ErrorBoundary';
@@ -18,7 +17,14 @@ function useHash(): string[] {
   const read = () => window.location.hash.replace(/^#\/?/, '').split('/').filter(Boolean);
   const [parts, setParts] = useState(read);
   useEffect(() => {
-    const on = () => { setParts(read()); window.scrollTo(0, 0); };
+    // A new page starts at the top; a pop-up opening on the same page (Deposits) leaves it where it is.
+    let page = read()[0];
+    const on = () => {
+      const next = read();
+      if (next[0] !== page && !(next[0] === 'deposits' && page === 'accounts')) window.scrollTo(0, 0);
+      page = next[0] === 'deposits' ? 'accounts' : next[0];
+      setParts(next);
+    };
     window.addEventListener('hashchange', on);
     return () => window.removeEventListener('hashchange', on);
   }, []);
@@ -34,17 +40,18 @@ const MAIN = [
   { id: 'savings', label: 'Savings', icon: 'piggy' },
 ];
 const SETUP = [
-  { id: 'deposits', label: 'Deposits', icon: 'transfer' },
   { id: 'insights', label: 'Insights', icon: 'pie' },
   { id: 'settings', label: 'Settings', icon: 'settings' },
 ];
 
 export default function App() {
-  const [page = 'planner', sub] = useHash();
+  const [rawPage = 'planner', ...rest] = useHash();
+  // Deposits is a pop-up on Accounts now: #/accounts/deposits/<account>, and older #/deposits links too.
+  const page = rawPage === 'deposits' ? 'accounts' : rawPage;
+  const deposits = rawPage === 'deposits' ? (rest[0] ?? '') : rest[0] === 'deposits' ? (rest[1] ?? '') : undefined;
 
   const content =
-    page === 'accounts' ? <Accounts /> :
-    page === 'deposits' ? <Deposits openId={sub} /> :
+    page === 'accounts' ? <Accounts deposits={deposits} /> :
     page === 'insights' ? <Insights /> :
     page === 'settings' ? <Settings /> :
     page === 'debts' ? <Debts /> :

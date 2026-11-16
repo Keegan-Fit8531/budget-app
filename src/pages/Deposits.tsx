@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Icon } from '../components/Icon';
-import { AccIcon, Chevron, ColorPicker, PageHead } from '../components/ui';
+import { AccIcon, Chevron, Collapse, ColorPicker, Modal } from '../components/ui';
 import { ItemModal } from '../components/ItemModal';
 import { fmtShort, todayISO } from '../lib/dates';
 import { depositFor, exactNeed, modeOf, smoothAmount, topsUp } from '../lib/balances';
@@ -17,12 +18,22 @@ const items0 = (b: Budget, id: string) => b.items.some((i) => i.accountId === id
 
 const FREQ_LABEL = { once: 'one-off', weekly: 'weekly', fortnightly: 'fortnightly', monthly: 'monthly', yearly: 'yearly' };
 
-export function Deposits({ openId }: { openId?: string }) {
+/**
+ * Deposits: what each payday sends to each account, and the costs paid from each, in a pop-up over
+ * Accounts. Opens on one account when given its id.
+ */
+export function DepositsModal({ openId, onClose }: { openId?: string; onClose: () => void }) {
   const { budget, update } = useBudget();
   const [open, setOpen] = useState<string | null>(openId ?? null);
   const [modal, setModal] = useState<{ item?: Item; accountId?: string } | null>(null);
   const [showArchived, setShowArchived] = useState(false);
   useEffect(() => { if (openId) setOpen(openId); }, [openId]);
+  // The account it opened on is scrolled into view once its details have opened.
+  useEffect(() => {
+    if (!openId) return;
+    const t = setTimeout(() => document.getElementById(`dep-${openId}`)?.scrollIntoView({ block: 'start', behavior: 'smooth' }), 120);
+    return () => clearTimeout(t);
+  }, [openId]);
 
   const { period } = useViewPeriod();
   const plan = planFor(budget, period);
@@ -40,15 +51,14 @@ export function Deposits({ openId }: { openId?: string }) {
   // Debts and savings goals are managed in their own tabs.
   const managed = new Set([...(budget.debts ?? []).map((d) => d.accountId), ...(budget.savings ?? []).map((g) => g.accountId)]);
   const shown = budget.accounts.filter((a) => !managed.has(a.id) && (showArchived || !a.archived));
+  const total = shown.filter((a) => !a.archived && a.id !== budget.settings.payAccountId)
+    .reduce((t, a) => t + (plan.accounts.find((p) => p.account.id === a.id)?.funded ?? 0), 0);
 
   return (
-    <>
-      <PageHead title="Deposits and transfers" sub="What each payday sends to your accounts, and the costs paid from each.">
-        <PayNav compact />
-        <button className="btn primary" onClick={addAccount}><Icon name="plus" /> Add account</button>
-      </PageHead>
-
-      <div className="stack gap-12">
+    <Modal title="Deposits" sub={`${cash(total)} on ${fmtShort(period.start)}`} onClose={onClose} className="wide"
+      actions={<button className="btn small" onClick={addAccount}><Icon name="plus" size={16} /> Account</button>}>
+      <PayNav compact />
+      <div className="stack gap-8">
         {shown.map((a) => (
           <AccountSection key={a.id} account={a} open={open === a.id}
             onToggle={() => setOpen(open === a.id ? null : a.id)}
@@ -59,14 +69,14 @@ export function Deposits({ openId }: { openId?: string }) {
             onAddItem={() => setModal({ accountId: a.id })} />
         ))}
       </div>
-      <p className="note">Balances are in <a href="#/accounts">Accounts</a>. Cards, Afterpay and people you owe are in <a href="#/debts">Debts</a>. Wedding and other goals are in <a href="#/savings">Savings</a>.</p>
+      <p className="note">Cards and Afterpay are set in <a href="#/debts">Debts</a>, goals in <a href="#/savings">Savings</a>.</p>
       {budget.accounts.some((a) => a.archived && !managed.has(a.id)) && (
-        <button className="btn ghost small" onClick={() => setShowArchived(!showArchived)}>
+        <button className="btn ghost small" style={{ alignSelf: 'flex-start' }} onClick={() => setShowArchived(!showArchived)}>
           {showArchived ? 'Hide archived' : 'Show archived accounts'}
         </button>
       )}
-      {modal && <ItemModal item={modal.item} accountId={modal.accountId} onClose={() => setModal(null)} />}
-    </>
+      {modal && createPortal(<ItemModal item={modal.item} accountId={modal.accountId} onClose={() => setModal(null)} />, document.body)}
+    </Modal>
   );
 }
 
@@ -122,7 +132,7 @@ function AccountSection({ account: a, open, onToggle, periodNeed, periodSends, p
   }
 
   return (
-    <section className="acc-section" style={{ opacity: a.archived ? 0.6 : 1 }}>
+    <section id={`dep-${a.id}`} className="acc-section" style={{ opacity: a.archived ? 0.6 : 1, scrollMarginTop: 8 }}>
       <button className="acc-head" aria-expanded={open} onClick={onToggle}>
         <AccIcon color={a.color} name={a.kind === 'external' ? 'send' : 'bank'} />
         <span className="grow">
@@ -141,7 +151,7 @@ function AccountSection({ account: a, open, onToggle, periodNeed, periodSends, p
         <Chevron />
       </button>
 
-      {open && (
+      <Collapse open={open}>
         <div className="acc-body">
           <div className="form-grid">
             <label className="field">Name
@@ -284,7 +294,7 @@ function AccountSection({ account: a, open, onToggle, periodNeed, periodSends, p
             </div>
           )}
         </div>
-      )}
+      </Collapse>
     </section>
   );
 }

@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import { DebtChart } from '../components/DebtChart';
 import { Icon } from '../components/Icon';
-import { AccIcon, Chevron, PageHead } from '../components/ui';
+import { AccIcon, Chevron, Collapse, Disclosure, MoveButtons, PageHead, ReorderToggle, SyncPill, useFlip } from '../components/ui';
+import { moveAmong } from '../lib/order';
+import { bankSync } from '../lib/bank';
 import { PaydayControl } from '../components/PaydayControl';
 import { TransactionList } from '../components/Transactions';
 import { nextColor } from '../lib/colors';
@@ -32,6 +34,10 @@ export function Debts() {
   const [planModal, setPlanModal] = useState<{ debt: Debt; plan?: DebtPlan; prefill?: number } | null>(null);
   const [debtModal, setDebtModal] = useState<{ debt?: Debt } | null>(null);
   const [payModal, setPayModal] = useState<Debt | null>(null);
+  const [reorder, setReorder] = useState(false);
+  const order = debts.map((d) => d.id);
+  const flip = useFlip(order.join());
+  const move = (id: string, dir: -1 | 1) => { flip.capture(); update((b) => { moveAmong(b.debts ?? [], order, id, dir); return b; }); };
   const [open, setOpen] = useState<string[]>(() => { try { return JSON.parse(localStorage.getItem('paydays.debts.open') ?? '[]'); } catch { return []; } });
   const toggle = (id: string) => setOpen((o) => {
     const next = o.includes(id) ? o.filter((x) => x !== id) : [...o, id];
@@ -69,11 +75,24 @@ export function Debts() {
   const debtFree = debts.some((d) => d.plans.some((p) => p.remaining > 0)) && ends.length ? ends.sort()[ends.length - 1] : undefined;
 
   const offRecommended = advice.filter((a) => a.recommended !== a.sending);
+  // Where what's owed came from: the bank connection, or the last balance you checked (a payment seen
+  // leaving your bank since then keeps it current, so it shows as synced on that day).
+  const sourcePill = (d: Debt) => {
+    if (d.payroll) return null;
+    const sync = bankSync(budget, `debt:${d.id}`);
+    if (sync.linked) return <SyncPill source="bank" at={sync.at ?? d.balance?.asOf} />;
+    const seen = d.bankPayments?.[d.bankPayments.length - 1];
+    if (seen && (!d.balance || seen.date >= d.balance.asOf)) return <SyncPill source="bank" at={seen.date} />;
+    return d.balance ? <SyncPill source="entered" at={d.balance.asOf} /> : null;
+  };
 
   return (
     <>
-      <PageHead title="Debts" sub="Cards, Afterpay and people you owe. Payments here feed into each payday.">
-        <button className="btn primary" onClick={() => setDebtModal({})}><Icon name="plus" /> Add debt</button>
+      <PageHead title="Debts" sub="Cards, Afterpay and people you owe.">
+        <div className="page-actions">
+          {debts.length > 1 && <ReorderToggle on={reorder} onChange={setReorder} />}
+          <button className="btn primary" onClick={() => setDebtModal({})}><Icon name="plus" /> Add debt</button>
+        </div>
       </PageHead>
       <DayPicker dv={dv} />
 
@@ -107,8 +126,8 @@ export function Debts() {
 
       {debts.length === 0 && <p className="note">No debts yet. Add a card, Afterpay, a loan or someone you owe to plan its payments.</p>}
 
-      <div className="stack gap-12">
-      {debts.map((d) => {
+      <div ref={flip.ref} className={`stack gap-12${reorder ? ' reordering' : ''}`}>
+      {debts.map((d, i) => {
         const acc = budget.accounts.find((a) => a.id === d.accountId) ?? (d.color ? { color: d.color } : undefined);
         const schedules = debtSchedules(d, s, debtPerPay(budget, d));
         const gem = d.rules === 'gem' && d.plans.length + unplanned(d) > 0 ? gemPlan(d, s, debtPerPay(budget, d)) : null;
@@ -122,12 +141,13 @@ export function Debts() {
         const upcoming = schedules.flatMap((x) => x.payments).filter((x) => x.date > day).sort((a, b) => a.date.localeCompare(b.date));
         const nextDue = upcoming[0] ? ` · next ${cash(upcoming.filter((x) => x.date === upcoming[0].date).reduce((t, x) => t + x.amount, 0))} on ${fmtShort(upcoming[0].date)}` : '';
         return (
-          <section key={d.id} className="acc-section">
+          <section key={d.id} className="acc-section" data-flip={d.id}>
             {/* Closed: what's owed, when the next payment is, and what each pay sends. The rest is inside. */}
+            <div className="reorder-row">
             <button className="acc-head" aria-expanded={isOpen} onClick={() => toggle(d.id)}>
               <AccIcon color={acc?.color} name={d.kind === 'person' || d.payroll ? 'send' : 'card'} />
               <span className="grow">
-                <span className="h2 block">{d.name}</span>
+                <span className="row gap-8 wrap"><span className="h2">{d.name}</span>{sourcePill(d)}</span>
                 <span className="small muted block">
                   {day === today
                     ? `${cash(o)} owed`
@@ -143,7 +163,9 @@ export function Debts() {
               )}
               <Chevron />
             </button>
-            {isOpen && (
+            {reorder && <MoveButtons name={d.name} first={i === 0} last={i === debts.length - 1} onMove={(dir) => move(d.id, dir)} />}
+            </div>
+            <Collapse open={isOpen}>
             <div className="acc-body">
             <div className="between">
               <span className="small muted">{KIND_LABEL[d.kind]}{d.rate ? ` · ${d.rate}% p.a.` : ''}</span>
@@ -221,6 +243,7 @@ export function Debts() {
               {o > 0 && <button className="btn small" onClick={() => setPayModal(d)}><Icon name="check" size={16} /> Record a payment</button>}
             </div>
 
+            {(d.bankPayments?.length ?? 0) > 0 && <BankPayments debt={d} />}
             <TransactionList items={d.transactions ?? []} card />
 
             {!d.payroll && <div style={{ borderTop: '1px solid var(--line)', paddingTop: 12 }}>
@@ -232,7 +255,7 @@ export function Debts() {
               )}
             </div>}
             </div>
-            )}
+            </Collapse>
           </section>
         );
       })}
@@ -734,5 +757,27 @@ function AllocationRow({ advice: a, onApply }: { advice: DebtAdvice; onApply: ()
       )}
       {diff === 0 && <span className="small muted" style={{ paddingBottom: 12 }}>As recommended</span>}
     </div>
+  );
+}
+
+/** Payments to a card seen leaving your bank accounts (it can't be linked itself, e.g. Gem Visa). */
+function BankPayments({ debt: d }: { debt: Debt }) {
+  const { budget } = useBudget();
+  const list = (d.bankPayments ?? []).slice().reverse();
+  const name = (id: string) => budget.accounts.find((a) => a.id === id)?.name ?? 'your bank';
+  return (
+    <Disclosure title="Paid from your bank" meta={`${list.length} · latest ${fmtShort(list[0].date)}`}>
+      <div>
+        {list.slice(0, 12).map((p, i) => (
+          <div key={`${p.date}-${i}`} className="list-row small">
+            <span style={{ flex: '0 0 56px' }} className="muted">{fmtShort(p.date)}</span>
+            <span className="grow min0">From {name(p.from)}
+              <span className="xs muted block">{p.counted === p.amount ? 'Taken off what’s owed' : p.counted > 0 ? `${cash(p.amount - p.counted)} was a planned payment; ${cash(p.counted)} extra taken off` : 'A planned payment (already counted)'}</span>
+            </span>
+            <b className="num">{cash(p.amount)}</b>
+          </div>
+        ))}
+      </div>
+    </Disclosure>
   );
 }

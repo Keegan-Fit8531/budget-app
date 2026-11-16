@@ -22,6 +22,8 @@ import { buildContext, RESPONSE_SCHEMA } from './reader/prompt';
 import type { Extraction } from './reader/types';
 import { KEEP_DAYS, localDay, needsCopy, toForget } from './versions';
 import { addGoalFor, applyBank, fetchBank, suggestLink } from './bank';
+import { cardPaid } from './cardPayments';
+import { moveAmong } from './order';
 import { csvAmount, csvDate, endingOf, fromStatementRows, readTransactionsCsv } from './csv';
 import { layoutPage } from './reader/pdftext';
 import { mergeReads, splitRow } from './reader/gemini';
@@ -1412,5 +1414,75 @@ describe('bank connection: balances and categories', () => {
   it('the bank’s shop name and category are used when the description alone doesn’t say', () => {
     expect(categorizeTxn({ description: 'POS W/D 4829 PAK N SAV', merchant: 'PAK’nSAVE' })).toMatchObject({ category: 'groceries', shop: 'PAK’nSAVE' });
     expect(categorizeTxn({ description: 'XYZ*12345', category: 'Takeaway & fast food' }).category).toBe('takeaways');
+  });
+});
+
+describe('card payments seen in a bank account', () => {
+  const go = { id: 'a1', name: 'Go', number: '06-0999-0123456-00', type: 'CHECKING', institution: 'ANZ', balance: 500, transactions: true };
+  const tx = (id: string, date: string, description: string, amount: number) => ({ account: 'a1', id, date, description, amount, balance: null, merchant: null });
+  const links = { a1: 'account:everyday' };
+
+  it('knows a transfer to Gem Visa or Q Mastercard from everything else', () => {
+    const b = debtBudget();
+    const t = (description: string, amount = -5000) => cardPaid(b, { date: '2026-11-16', description, amount })?.id;
+    expect(t('Q Mastercard Fitzgerald Id1105532418')).toBe('qcard');
+    expect(t('BP Q Mastercard Fitzgerald ID1105532418')).toBe('qcard');
+    expect(t('Gem Visa Fitzgerald K 000000601073 002026242332')).toBe('gem');
+    expect(t('BP Gem Visa Fitzgerald K 000000601073')).toBe('gem');
+    expect(t('Gem Visa refund', 5000)).toBeUndefined(); // money in isn't a payment
+    expect(t('Gemma’s Cafe')).toBeUndefined();
+    expect(t('Countdown Henderson')).toBeUndefined();
+    expect(t('Student loan')).toBeUndefined(); // repaid from salary, never from the account
+  });
+
+  it('a payment over what was planned comes off what’s owed, once', () => {
+    const b = debtBudget();
+    const data = { accounts: [go], transactions: [tx('t1', '2026-11-15', 'Q Mastercard Fitzgerald Id1105532418', -120)] };
+    const r = applyBank(b, data, links, '2026-11-16', '2026-11-16T09:00:00.000Z');
+    expect(r[0].cardPayments).toEqual([{ debt: 'Q Mastercard', amount: 12000, date: '2026-11-15', from: 'everyday', counted: 12000 }]);
+    expect(owed(debt(b, 'qcard'))).toBe(38000);
+    expect(debt(b, 'qcard').bankPayments).toHaveLength(1);
+    // The same transfer on the next sync isn't counted again.
+    applyBank(b, data, links, '2026-11-17');
+    expect(owed(debt(b, 'qcard'))).toBe(38000);
+    expect(b.bankSeen?.['account:everyday']).toBeTruthy();
+  });
+
+  it('a payment the plan already counts as paid isn’t taken off twice', () => {
+    const b = debtBudget();
+    const q = debt(b, 'qcard');
+    q.paid = [{ date: '2026-11-14', amount: 12000, name: 'Other purchases', synthetic: true }];
+    applyBank(b, { accounts: [go], transactions: [tx('t1', '2026-11-15', 'BP Q Mastercard Fitzgerald', -150)] }, links, '2026-11-16');
+    expect(owed(q)).toBe(50000 - 3000); // only the $30 over the planned $120
+    expect(q.bankPayments?.[0]).toMatchObject({ amount: 15000, counted: 3000 });
+  });
+
+  it('a balance checked after the payment already has it taken off', () => {
+    const b = debtBudget();
+    debt(b, 'qcard').balance = { amount: 40000, asOf: '2026-11-16' };
+    applyBank(b, { accounts: [go], transactions: [tx('t1', '2026-11-15', 'Q Mastercard', -120)] }, links, '2026-11-16');
+    expect(owed(debt(b, 'qcard'))).toBe(40000);
+    expect(debt(b, 'qcard').bankPayments?.[0].counted).toBe(0);
+  });
+
+  it('a card linked to the bank itself is left to the bank', () => {
+    const b = debtBudget();
+    b.bankLinks = { c1: 'debt:qcard' };
+    expect(cardPaid(b, { date: '2026-11-16', description: 'Q Mastercard', amount: -100 })).toBeUndefined();
+  });
+});
+
+describe('moving things up and down', () => {
+  const list = () => ['a', 'b', 'c', 'd'].map((id) => ({ id }));
+  it('swaps with the next one shown, skipping ones that aren’t', () => {
+    const l = list();
+    expect(moveAmong(l, ['a', 'c', 'd'], 'c', -1)).toBe(true);
+    expect(l.map((x) => x.id)).toEqual(['c', 'b', 'a', 'd']);
+  });
+  it('does nothing at either end', () => {
+    const l = list();
+    expect(moveAmong(l, ['a', 'b'], 'a', -1)).toBe(false);
+    expect(moveAmong(l, ['a', 'b'], 'b', 1)).toBe(false);
+    expect(l.map((x) => x.id)).toEqual(['a', 'b', 'c', 'd']);
   });
 });
