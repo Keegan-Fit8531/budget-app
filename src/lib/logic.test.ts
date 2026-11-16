@@ -20,7 +20,7 @@ import { geminiProvider, parseReply } from './reader/gemini';
 import { prepareFile } from './reader/prepare';
 import { buildContext, RESPONSE_SCHEMA } from './reader/prompt';
 import type { Extraction } from './reader/types';
-import { buildUndo, undoKeeps, undoUpload } from './reader/undo';
+import { KEEP_DAYS, localDay, needsCopy, toForget } from './versions';
 
 /** A blank budget paid on the 19th, with automatic balancing off so amounts are exactly as set. */
 function budget(): Budget {
@@ -852,17 +852,16 @@ function debtBudget(): Budget {
 /** Ids that are the same every run, so a copy and the real change agree. */
 const seq = () => { let n = 0; return () => `new${++n}`; };
 const checkDoc = (b: Budget, ex: Extraction, today: string, edit?: (d: Draft) => void) => {
-  const d = toDraft(ex, b, 'gemini', seq());
+  const d = toDraft(ex, b, 'gemini', seq(), today);
   edit?.(d);
   return review(d, b, today);
 };
-/** Read, check and apply a document, as Confirm does. Returns what Undo would need too. */
+/** Read, check and apply a document, as Confirm does. */
 function upload(b: Budget, ex: Extraction, today: string, edit?: (d: Draft) => void) {
   const r = checkDoc(b, ex, today, edit);
   if (!r.proposal) throw new Error(`blocked: ${r.issues.map((i) => i.text).join(' / ')}`);
-  const before = structuredClone(b);
   applyProposal(b, r.proposal, today);
-  return { ...r, undo: buildUndo(before, b, r.proposal, 'doc.pdf', 'Doc') };
+  return r;
 }
 const gemStatement = (date: string, plans: { planId?: string | null; remaining: string; ends: string }[], balance = '2800.00'): Extraction => ({
   kind: 'statement',
@@ -946,7 +945,7 @@ describe('reading documents: statements', () => {
       },
     }, '2026-11-16');
     expect(debt(b, 'qcard').plans).toEqual([]);
-    expect(r.ignored.join(' ')).toMatch(/Countdown.*already included/);
+    expect(r.ignored.join(' ')).toMatch(/A purchase on the statement: already in what’s owed/);
     expect(r.ignored.join(' ')).toMatch(/Payment of \$200.*counted automatically/);
   });
 
@@ -1022,7 +1021,7 @@ describe('reading documents: Afterpay', () => {
   });
 });
 
-describe('reading documents: payslips and Undo', () => {
+describe('reading documents: payslips', () => {
   const payslip = (payDay: string, net = '4012.34'): Extraction => ({
     kind: 'payslip',
     payslip: { payDay, net: { amount: net, label: 'Total Payments' }, taxableGross: { amount: '5500.00' }, paye: { amount: '1150.00' }, studentLoan: { amount: '337.66' } },
@@ -1039,60 +1038,92 @@ describe('reading documents: payslips and Undo', () => {
     expect(checkDoc(b, payslip('2026-11-19', '3000.00'), '2026-11-16').issues.some((i) => i.level === 'note' && /Net pay/.test(i.text))).toBe(true);
   });
 
-  it('Undo puts back a payslip that moved a payday: the pay, the payday and the student loan', () => {
+  it('a payslip paid a day early moves that payday, records the pay and takes the student loan deduction off', () => {
     const b = debtBudget();
     b.payActuals['2026-11-19'] = 400000; // an amount typed in before the payslip came
-    const before = structuredClone(b);
-    const { undo } = upload(b, payslip('2026-11-18'), '2026-11-16');
+    upload(b, payslip('2026-11-18'), '2026-11-16');
     expect(b.settings.paydayMoves?.['2026-11']).toBe('2026-11-18');
     expect(b.payActuals['2026-11-18']).toBe(401234);
     expect(owed(debt(b, 'studentloan'))).toBe(2000000 - 33766);
-    const kept = undoUpload(b, undo, '2026-11-16');
-    expect(kept).toEqual([]);
-    expect(b.settings.paydayMoves?.['2026-11']).toBeUndefined();
-    expect(b.payActuals).toEqual(before.payActuals);
-    expect(b.payslips ?? {}).toEqual(before.payslips ?? {});
-    expect(debt(b, 'studentloan')).toEqual(debt(before, 'studentloan'));
   });
 
-  it('Undo puts a statement back exactly', () => {
+  it('a statement for a debt you don’t have yet adds it, with its own payday account', () => {
     const b = debtBudget();
-    const before = structuredClone(b);
-    const { undo } = upload(b, gemStatement('2026-11-10', [{ remaining: '1150.00', ends: '2027-01-20' }, { remaining: '880.00', ends: '2027-03-20' }]), '2026-11-16');
-    expect(undoUpload(b, undo, '2026-11-16')).toEqual([]);
-    expect(b.debts).toEqual(before.debts);
-  });
-
-  it('Undo keeps what you’ve changed since, and says so', () => {
-    const b = debtBudget();
-    const { undo } = upload(b, gemStatement('2026-11-10', [{ remaining: '1150.00', ends: '2027-01-20' }]), '2026-11-16');
-    debt(b, 'gem').limit = 900000; // you edited Gem afterwards
-    const mine = structuredClone(debt(b, 'gem'));
-    expect(undoKeeps(b, undo, '2026-11-16')).toEqual(['Kept your later change to Gem Visa.']);
-    expect(undoUpload(b, undo, '2026-11-16')).toEqual(['Kept your later change to Gem Visa.']);
-    expect(debt(b, 'gem')).toEqual(mine);
-  });
-
-  it('Undo still works after payments have been counted automatically overnight', () => {
-    const b = debtBudget();
-    const before = structuredClone(b);
-    const { undo } = upload(b, { kind: 'statement', statement: { debtId: 'qcard', balance: { amount: '612.40' }, statementDate: '2026-11-18' } }, '2026-11-18');
-    // Payday (the 19th) passes: the app counts the card's payment as paid.
-    expect(settleDue(debt(b, 'qcard'), b.settings, '2026-11-20')).toBe(true);
-    expect(undoUpload(b, undo, '2026-11-20')).toEqual([]);
-    const expected = structuredClone(debt(before, 'qcard'));
-    settleDue(expected, before.settings, '2026-11-20');
-    expect(debt(b, 'qcard').balance).toEqual(expected.balance);
-  });
-
-  it('Undo removes a debt the upload added, with its payday account', () => {
-    const b = debtBudget();
-    const before = structuredClone(b);
-    const { undo } = upload(b, { kind: 'statement', statement: { debtId: null, nameOnDocument: 'Kiwibank Visa', balance: { amount: '950.00' }, statementDate: '2026-11-14' } }, '2026-11-16', (d) => { d.statement.debtId = NEW_DEBT; });
+    upload(b, { kind: 'statement', statement: { debtId: null, nameOnDocument: 'Kiwibank Visa', balance: { amount: '950.00' }, statementDate: '2026-11-14' } }, '2026-11-16', (d) => { d.statement.debtId = NEW_DEBT; });
     expect(debt(b, 'new1')).toMatchObject({ name: 'Kiwibank Visa', balance: { amount: 95000 } });
-    undoUpload(b, undo, '2026-11-16');
-    expect(b.debts).toEqual(before.debts);
-    expect(b.accounts).toEqual(before.accounts);
-    expect(b.split).toEqual(before.split);
+    expect(b.split.some((l) => l.accountId === debt(b, 'new1').accountId)).toBe(true);
+  });
+});
+
+describe('reading documents: card app screenshots', () => {
+  const gemApp = (purchases: { date: string; description: string; amount: string }[], extra: object = {}): Extraction => ({
+    kind: 'statement',
+    statement: {
+      debtId: 'gem', nameOnDocument: 'Gem Visa', appScreen: true, balance: { amount: '3,612.40', label: 'Current balance' }, available: { amount: '4,387.60' }, limit: { amount: '8,000.00' },
+      purchases: purchases.map((p) => ({ ...p, amount: { amount: p.amount } })), ...extra,
+    },
+  });
+
+  it('a screenshot with no date is what’s owed today', () => {
+    const r = checkDoc(debtBudget(), gemApp([]), '2026-11-16');
+    expect(r.proposal).toMatchObject({ kind: 'statement', debtId: 'gem', balance: 361240, date: '2026-11-16', newPlans: [] });
+    // No “none of the Gem plans were updated” warning: a screenshot doesn't show them.
+    expect(r.issues.map((i) => i.text).join(' ')).not.toMatch(/None of the Gem plans/);
+  });
+
+  it('a new Gem purchase of $250 or more becomes a 6-month interest-free plan; smaller ones are already in what’s owed', () => {
+    const b = debtBudget();
+    const r = upload(b, gemApp([
+      { date: '2026-11-14', description: 'Harvey Norman Westgate', amount: '499.00' },
+      { date: '2026-11-12', description: 'Countdown Henderson', amount: '82.13' },
+    ]), '2026-11-16');
+    expect(r.proposal).toMatchObject({ newPlans: [{ name: 'Harvey Norman Westgate', type: 'interest-free', months: 6, original: 49900, remaining: 49900, purchaseDate: '2026-11-14', ends: '2027-05-14' }] });
+    expect(r.ignored).toContain('A purchase on the screenshot: already in what’s owed.');
+    expect(debt(b, 'gem').plans.map((p) => p.name)).toContain('Harvey Norman Westgate');
+    expect(owed(debt(b, 'gem'))).toBe(361240);
+  });
+
+  it('a purchase that’s already one of your plans (same amount) isn’t added again, and an unticked one isn’t added', () => {
+    const b = debtBudget();
+    const already = gemApp([{ date: '2026-09-09', description: 'Briscoes', amount: '1,000.00' }]); // plan g2's original amount
+    const r = checkDoc(b, already, '2026-11-16');
+    expect(r.proposal).toMatchObject({ newPlans: [] });
+    expect(r.ignored[0]).toMatch(/already your plan “Purchases Aug – Sep 2026”/);
+    const unticked = checkDoc(b, gemApp([{ date: '2026-11-14', description: 'Harvey Norman', amount: '499.00' }]), '2026-11-16', (d) => { d.statement.purchases[0].add = false; });
+    expect(unticked.proposal).toMatchObject({ newPlans: [] });
+    expect(unticked.ignored[0]).toMatch(/not added as a plan/);
+  });
+
+  it('Q Mastercard purchases are left to its balance (each rise already gets its own 3-month clock)', () => {
+    const r = checkDoc(debtBudget(), { kind: 'statement', statement: { debtId: 'qcard', appScreen: true, balance: { amount: '702.10' }, purchases: [{ date: '2026-11-15', description: 'Bunnings', amount: { amount: '258.40' } }] } }, '2026-11-16');
+    expect(r.proposal).toMatchObject({ debtId: 'qcard', balance: 70210, date: '2026-11-16', newPlans: [] });
+  });
+
+  it('a screen that only shows what’s available works out what’s owed from the limit', () => {
+    const r = checkDoc(debtBudget(), gemApp([], { balance: undefined }), '2026-11-16');
+    expect(r.proposal).toMatchObject({ balance: 800000 - 438760 });
+    expect(r.issues.some((i) => i.level === 'note' && /limit less that/.test(i.text))).toBe(true);
+  });
+
+  it('a statement still needs its date', () => {
+    const r = checkDoc(debtBudget(), { kind: 'statement', statement: { debtId: 'qcard', balance: { amount: '612.48' } } }, '2026-11-16');
+    expect(r.proposal).toBeNull();
+  });
+});
+
+describe('saved copies', () => {
+  it('one a day: a copy is taken only if there isn’t one for today yet', () => {
+    const now = new Date(2026, 10, 16, 21, 0);
+    expect(needsCopy([], now)).toBe(true);
+    expect(needsCopy([new Date(2026, 10, 15, 23, 59).toISOString()], now)).toBe(true);
+    expect(needsCopy([new Date(2026, 10, 16, 0, 5).toISOString()], now)).toBe(false);
+    expect(localDay(now)).toBe('2026-11-16');
+  });
+
+  it('kept for 3 months, then forgotten', () => {
+    const now = new Date(2026, 10, 16, 12, 0);
+    const daysAgo = (n: number) => new Date(now.getTime() - n * 86_400_000).toISOString();
+    expect(KEEP_DAYS).toBe(90);
+    expect(toForget([daysAgo(1), daysAgo(89), daysAgo(91), daysAgo(200)], now)).toEqual([daysAgo(91), daysAgo(200)]);
   });
 });

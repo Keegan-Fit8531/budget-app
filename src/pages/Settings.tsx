@@ -8,7 +8,8 @@ import { downloadMonth, exportablePeriods, periodLabel } from '../lib/export';
 import { cash, centsToInput, parseMoney } from '../lib/money';
 import { nextColor } from '../lib/colors';
 import { CostCategoriesEditor } from '../components/CostCategories';
-import { newId, readVersions, useBudget } from '../lib/store';
+import { newId, useBudget } from '../lib/store';
+import { KEEP_DAYS, listCopies, readCopy, type CopyInfo } from '../lib/versions';
 import { pairingLink, readSyncConfig, SyncError, type SyncConfig } from '../lib/sync';
 import { ReaderCard } from '../components/ReaderCard';
 import { readReaderConfig } from '../lib/reader/config';
@@ -236,7 +237,7 @@ export function Settings() {
 
       <ExportMonth />
 
-      <EarlierVersions />
+      <SavedCopies />
 
       <Section title="Your data" summary="Download or restore a backup, or start over">
         <p className="small muted">{sync.state === 'off' ? 'Right now your budget is saved in this browser only. Download a backup to move it to another device, or sync it above.' : 'Saved in this browser and synced to your private GitHub repo. A backup file is a copy you keep yourself.'}</p>
@@ -294,34 +295,46 @@ function ExportMonth() {
   );
 }
 
-/** Restore an earlier version of everything (kept automatically before changes). */
-function EarlierVersions() {
+/** Put back a saved copy of everything: one is kept each day, for 3 months (see versions.ts). */
+function SavedCopies() {
   const { restoreVersion } = useBudget();
-  const [versions, setVersions] = useState(readVersions);
-  const [msg, setMsg] = useState('');
-  const summary = (b: Budget) => {
-    const w = (b.savings ?? []).find((g) => g.id === 'wedding');
-    const costs = (b.savings ?? []).reduce((t, g) => t + (g.costs?.length ?? 0), 0);
-    const debts = (b.debts ?? []).reduce((t, d) => t + d.plans.length, 0);
-    return `${costs} savings costs${w ? ` · wedding ${cash(w.balance, { whole: true })} saved` : ''} · ${debts} debt plans`;
-  };
+  const [copies, setCopies] = useState<CopyInfo[] | null>(null);
+  const [all, setAll] = useState(false);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  useEffect(() => { void listCopies().then(setCopies); }, []);
+  const when = (at: string) => new Date(at).toLocaleString('en-NZ', { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
+  async function restore(c: CopyInfo) {
+    if (!confirm(`Put everything back as it was on ${when(c.at)}? What you have now is saved first, so you can switch back.`)) return;
+    const v = await readCopy(c.at);
+    if (!v) { setMsg({ ok: false, text: 'That copy couldn’t be opened.' }); return; }
+    restoreVersion(v);
+    setMsg({ ok: true, text: `Put back as it was on ${when(c.at)}.` });
+    setTimeout(() => { void listCopies().then(setCopies); }, 300);
+  }
+  const last = copies?.[0];
+  const older = (copies ?? []).slice(1);
   return (
-    <Section title="Restore an earlier version" summary={versions.length ? `${versions.length} earlier version${versions.length === 1 ? '' : 's'} kept` : 'None yet: they build up as you make changes'}>
-      <p className="small muted">A copy of everything is kept automatically before changes (the last {30}, at most one every 2 minutes). Restoring keeps a copy of what you have now first, so you can switch back.</p>
-      {versions.length === 0 && <p className="small muted">No earlier versions yet. They build up as you make changes.</p>}
-      {versions.slice(0, 12).map((v) => (
-        <div key={v.at} className="list-row">
-          <span className="grow">
-            <b>{new Date(v.at).toLocaleString('en-NZ', { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}</b>
-            <span className="small muted block">{summary(v.budget)}</span>
-          </span>
-          <button className="btn small" onClick={() => {
-            if (!confirm('Go back to this version? What you have now is kept as a version too.')) return;
-            restoreVersion(v); setMsg('Restored.'); setTimeout(() => setVersions(readVersions()), 50);
-          }}>Restore</button>
+    <Section title="Saved copies" summary={last ? `Last saved ${when(last.at)}` : copies ? 'None yet: one is saved each day you make a change' : ''}>
+      <p className="small muted">A copy of everything is saved once a day, just before that day’s first change, and kept for {Math.round(KEEP_DAYS / 30)} months. If an upload or a change goes wrong, put the last saved copy back. What you have now is saved first, so you can switch back.</p>
+      {copies && copies.length === 0 && <p className="small muted">No saved copies yet{typeof indexedDB === 'undefined' ? ': this browser can’t keep them' : ''}.</p>}
+      {last && (
+        <div className="list-row">
+          <span className="grow"><b>{when(last.at)}</b><span className="small muted block">{last.summary}</span></span>
+          <button className="btn primary small" onClick={() => void restore(last)}>Restore last saved</button>
         </div>
-      ))}
-      {msg && <p className="small" role="status">{msg}</p>}
+      )}
+      {older.length > 0 && (
+        <>
+          {(all ? older : older.slice(0, 6)).map((c) => (
+            <div key={c.at} className="list-row">
+              <span className="grow"><b>{when(c.at)}</b><span className="small muted block">{c.summary}</span></span>
+              <button className="btn small" onClick={() => void restore(c)}>Restore</button>
+            </div>
+          ))}
+          {!all && older.length > 6 && <button className="btn small" onClick={() => setAll(true)}>Show all {copies!.length} copies</button>}
+        </>
+      )}
+      {msg && <p className={`small${msg.ok ? '' : ' error'}`} role="status">{msg.text}</p>}
     </Section>
   );
 }

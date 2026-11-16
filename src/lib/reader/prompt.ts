@@ -36,7 +36,7 @@ export function buildContext(b: Budget, today: ISODate): ReadContext {
 
 export function instructions(today: ISODate): string {
   return [
-    'You read one New Zealand financial document for a personal budgeting app: a payslip, a credit card or loan statement (or a card app screen showing what is owed), or a screenshot of the Afterpay app. You fill in the JSON form and nothing else.',
+    'You read one New Zealand financial document for a personal budgeting app: a payslip, a credit card or loan statement, a screenshot of a card\'s app (what is owed now and recent purchases), or a screenshot of the Afterpay app. You fill in the JSON form and nothing else.',
     '',
     'Rules:',
     '- Fill in every field of the form. Use null for anything the document doesn\'t show (and for the sections that aren\'t this kind of document), and an empty list when there are none.',
@@ -44,7 +44,8 @@ export function instructions(today: ISODate): string {
     '- Amounts: digits and a decimal point only, like "1240.50". If the document shows an amount as in credit (CR, a minus sign, "in credit"), add " CR" after it.',
     `- Dates: YYYY-MM-DD. New Zealand documents write the day first: 03/11/2026 is 3 November 2026. If a date has no year, use the year that puts it closest to today, ${today}.`,
     '- For each figure, put the words printed next to it on the document in "label".',
-    '- kind: "payslip" for a payslip, "statement" for a card or loan statement, "afterpay" for Afterpay orders or instalments, "unknown" if you are not sure.',
+    '- kind: "payslip" for a payslip, "statement" for a card or loan statement or a card app screen, "afterpay" for Afterpay orders or instalments, "unknown" if you are not sure.',
+    '- A card app screen (Gem, Q Mastercard or a bank app) is a "statement" with appScreen true: balance is what is owed now (the current balance, not the last statement\'s), available is the available credit, statementDate is null unless the screen shows the date the balance is as at, and every purchase it lists goes in purchases (leave out payments, refunds and pending holds). For a statement, appScreen is false and purchases is empty.',
     '- Choose debtId and planId ONLY from the list of debts you are given, or null if none fits. Never make one up. Never choose a debt marked neverAStatement.',
     '- Gem Visa statements list interest-free plans, each with an expiry date. Put each one in plans with the expiry date printed for it in "ends" and its plan balance in "remaining". Give a planId only if the statement names the plan the same way as one in the list; otherwise null (the app matches plans by their expiry dates). An amount that is not on a plan, such as "Standard purchases", is not a plan.',
     '- Afterpay: one order per shop purchase, matched to a plan by shop name and purchase date. List every instalment you can see and mark the paid ones with "paid": true.',
@@ -78,14 +79,17 @@ export const RESPONSE_SCHEMA = form({
   statement: form({
     debtId: id,
     nameOnDocument: text('The card or lender name printed on the document.'),
+    appScreen: { type: 'boolean', description: 'true for a screenshot of a card app, false for a statement.' },
     balance: amt,
+    available: amt,
     inCredit: { type: 'boolean' },
     statementDate: date,
     limit: amt,
     minimum: amt,
     plans: list(form({ planId: id, description: text(), remaining: amt, ends: date })),
-    // The statement's purchases and payments aren't asked for: they're already in its balance, so the
-    // app never uses them, and copying them was most of the reply (slower, and misread on photos).
+    // Only an app screen's purchases are asked for (a Gem one of $250 or more is a new plan). A
+    // statement's are already in its balance and its plans, and copying them was most of the reply.
+    purchases: list(form({ date, description: text('The shop, as shown.'), amount: amt })),
   }, true),
   afterpay: form({
     orders: list(form({

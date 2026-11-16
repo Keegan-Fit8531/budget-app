@@ -1,5 +1,5 @@
-import { addDays, diffDays, fmtShort, toDate, toISO, type ISODate } from '../dates';
-import { owed, planEnds } from '../debts';
+import { addDays, addMonths, diffDays, fmtShort, toDate, todayISO, toISO, type ISODate } from '../dates';
+import { owed, planEnds, suggestPlan } from '../debts';
 import { periodContaining, recordPayday, shiftPeriod } from '../engine';
 import { cash } from '../money';
 import type { Payslip } from '../payslip';
@@ -32,6 +32,9 @@ export interface DraftOrder {
   instalments: { date: string; amount: string; label?: string; paid: boolean }[];
 }
 
+/** A purchase listed on a card app screen. `add` is null until you tick or untick it (then the default applies). */
+export interface DraftPurchase { date: string; description: string; amount: string; add: boolean | null; newId: string }
+
 export interface Draft {
   kind: DocKind;
   source: ReaderSource;
@@ -42,13 +45,17 @@ export interface Draft {
     newName: string;
     newDebtId: string;
     nameOnDocument: string;
+    /** A screenshot of the card's app (current balance, recent purchases) rather than a statement. */
+    appScreen: boolean;
     balance: DraftFig;
+    /** Available credit, used for what's owed (limit less available) when the balance isn't shown. */
+    available: DraftFig;
     inCredit: boolean;
     date: string;
     limit: DraftFig;
     minimum: DraftFig;
     plans: DraftPlanRow[];
-    purchases: { date: string; description: string; amount: string }[];
+    purchases: DraftPurchase[];
     payments: { date: string; amount: string }[];
   };
   afterpay: { debtId: string; orders: DraftOrder[] };
@@ -105,7 +112,7 @@ const keepsPlans = (d: Debt) => d.rules === 'gem' || d.plans.some((p) => p.type 
 
 // ---------- The reader's answer → a draft ----------
 
-export function toDraft(ex: Extraction, b: Budget, source: ReaderSource, makeId: () => string): Draft {
+export function toDraft(ex: Extraction, b: Budget, source: ReaderSource, makeId: () => string, today: ISODate = todayISO()): Draft {
   const p = ex.payslip ?? {};
   const s = ex.statement ?? {};
   const debtIds = new Set(statementDebts(b).map((d) => d.id));
@@ -124,13 +131,16 @@ export function toDraft(ex: Extraction, b: Budget, source: ReaderSource, makeId:
       newName: s.nameOnDocument ?? '',
       newDebtId: makeId(),
       nameOnDocument: s.nameOnDocument ?? '',
+      appScreen: !!s.appScreen,
       balance: fig(s.balance),
+      available: fig(s.available),
       inCredit: !!s.inCredit,
-      date: s.statementDate ?? '',
+      // An app screen shows what's owed now, so with no date on it, it's today's.
+      date: s.statementDate ?? (s.appScreen ? today : ''),
       limit: fig(s.limit),
       minimum: fig(s.minimum),
       plans: (s.plans ?? []).map((r) => ({ planId: r.planId ?? '', description: r.description ?? '', remaining: fig(r.remaining), ends: r.ends ?? '', addAsNew: false, newId: makeId() })),
-      purchases: (s.purchases ?? []).map((x) => ({ date: x.date ?? '', description: x.description ?? '', amount: x.amount?.amount ?? '' })),
+      purchases: (s.purchases ?? []).map((x) => ({ date: x.date ?? '', description: x.description ?? '', amount: x.amount?.amount ?? '', add: null, newId: makeId() })),
       payments: (s.paymentsShown ?? []).map((x) => ({ date: x.date ?? '', amount: x.amount?.amount ?? '' })),
     },
     afterpay: {
@@ -172,6 +182,44 @@ export function resolveOrder(o: Pick<DraftOrder, 'planId' | 'merchant' | 'purcha
     return (name && (sameDate || sameTotal)) || (sameDate && sameTotal);
   });
   return hits.length === 1 ? hits[0] : undefined;
+}
+
+/** How long a new purchase on this card is interest-free, if its rules make it a plan of its own (Gem: $250 or more). */
+function planMonths(debt: Debt, cents: Cents): number | undefined {
+  if (debt.rules !== 'gem') return undefined; // Mastercard: each rise in the balance already gets its own clock
+  const s = suggestPlan(debt, cents);
+  return s.type === 'interest-free' ? s.months ?? 6 : undefined;
+}
+
+export interface PurchaseRow {
+  index: number;
+  cents: Cents;
+  date: ISODate;
+  description: string;
+  /** Months interest-free if it should be a plan of its own; undefined for an ordinary purchase. */
+  months?: number;
+  /** One of your plans already for this purchase (same amount). */
+  existing?: DebtPlan;
+  /** Add it as a new plan: ticked unless you untick it, or it's already a plan. */
+  add: boolean;
+}
+
+/**
+ * The purchases on a card app screen, as they apply to `debt`. They're already in what's owed, so
+ * they only matter when the card's rules make one a plan of its own (a Gem purchase of $250 or more is
+ * 6 months interest-free); those are offered as new plans unless one of your plans has that amount.
+ */
+export function purchaseRows(d: Draft, debt: Debt | undefined): PurchaseRow[] {
+  const s = d.statement;
+  if (!debt || debt.payroll || ordersOnly(debt) || s.plans.length) return [];
+  return s.purchases.flatMap((x, index) => {
+    const c = toCents(x.amount);
+    const date = validDate(x.date);
+    if (!c || c.credit || !c.cents || !date) return [];
+    const months = planMonths(debt, c.cents);
+    const existing = months ? debt.plans.find((p) => p.original === c.cents || (p.purchaseDate === date && p.remaining === c.cents)) : undefined;
+    return [{ index, cents: c.cents, date, description: x.description.trim(), months, existing, add: !!months && !existing && x.add !== false }];
+  });
 }
 
 export function review(d: Draft, b: Budget, today: ISODate): Review {
@@ -245,7 +293,16 @@ function reviewStatement(d: Draft, b: Budget, today: ISODate): Review {
   else if (debt.payroll) block(`${debt.name} comes out of your pay, so it isn’t updated from a statement. Choose the card or loan this is for.`);
   else if (ordersOnly(debt)) block(`${debt.name} is worked out from its orders, not a balance. Upload a screenshot of your Afterpay orders instead.`);
 
-  const bal = toCents(s.balance.value);
+  let bal = toCents(s.balance.value);
+  if (bal === undefined) {
+    // Some app screens show only what's available: what's owed is the limit less that.
+    const av = toCents(s.available.value);
+    const lim = toCents(s.limit.value)?.cents ?? debt?.limit;
+    if (av && !av.credit && lim && av.cents <= lim) {
+      bal = { cents: lim - av.cents, credit: false };
+      note(`Only what’s available (${cash(av.cents)}) is shown, so what’s owed is the ${cash(lim)} limit less that: ${cash(lim - av.cents)}.`);
+    }
+  }
   if (bal === undefined) block('Enter what’s owed.');
   else if (bal === null) block('Check what’s owed: it should look like 1,240.50.');
   const credit = !!bal && (bal.credit || s.inCredit);
@@ -253,7 +310,7 @@ function reviewStatement(d: Draft, b: Budget, today: ISODate): Review {
   if (credit) note('The statement is in credit, so nothing is owed.');
 
   const date = validDate(s.date);
-  if (!date) block(s.date.trim() ? `Check the statement date (${s.date}).` : 'Enter the date the statement is as at.');
+  if (!date) block(s.date.trim() ? `Check the date (${s.date}).` : 'Enter the date what’s owed is as at.');
   else if (date > today) note(`The statement is dated ${fmtShort(date)}, after today, so it’s treated as today.`);
   else if (date < addDays(today, -400)) block(`The statement date, ${fmtShort(date)}, is over a year ago. Check it.`);
 
@@ -296,7 +353,7 @@ function reviewStatement(d: Draft, b: Budget, today: ISODate): Review {
     }
     if (unmatched) note(`${unmatched === 1 ? 'A plan' : `${unmatched} plans`} on the statement didn’t match one of yours. See “Not changed”.`);
     if (s.plans.length) for (const p of debt.plans) if (!used.has(p.id)) ignored.push(`${p.name}: not on this statement, left as it is.`);
-    if (debt.rules === 'gem' && debt.plans.length && !plans.length) {
+    if (debt.rules === 'gem' && debt.plans.length && !plans.length && !s.appScreen) {
       note('None of the Gem plans were updated, so the difference between the balance and the plans counts as “other purchases”, which are paid first. That changes the recommended payment.');
     }
     const planTotal = [...plans, ...newPlans].reduce((t, x) => t + x.remaining, 0);
@@ -304,7 +361,23 @@ function reviewStatement(d: Draft, b: Budget, today: ISODate): Review {
   } else if (s.plans.length) {
     ignored.push(`${s.plans.length === 1 ? 'A plan' : `${s.plans.length} plans`} listed on the statement: the balance already covers ${s.plans.length === 1 ? 'it' : 'them'}.`);
   }
-  for (const x of s.purchases) ignored.push(`${x.description || 'Purchase'}${x.amount ? ` ${cash(toCents(x.amount)?.cents ?? 0)}` : ''}${validDate(x.date) ? ` on ${fmtShort(x.date)}` : ''}: already included in what’s owed.`);
+  const rows = purchaseRows(d, debt);
+  const asOf = date && date <= today ? date : today;
+  for (const row of rows) {
+    const what = `${row.description || 'Purchase'} ${cash(row.cents)} on ${fmtShort(row.date)}`;
+    if (!row.months) continue;
+    if (row.existing) { ignored.push(`${what}: already your plan “${row.existing.name}”.`); continue; }
+    if (!row.add) { ignored.push(`${what}: not added as a plan (tick it to add it).`); continue; }
+    const ends = addMonths(row.date, row.months);
+    newPlans.push({ id: s.purchases[row.index].newId, name: row.description || `Purchase on ${fmtShort(row.date)}`, type: 'interest-free', months: row.months, original: row.cents, remaining: row.cents, asOf, purchaseDate: row.date, ends });
+  }
+  const added = newPlans.filter((x) => s.purchases.some((y) => y.newId === x.id));
+  if (debt && added.length && balance !== undefined) {
+    const planned = debt.plans.reduce((t, x) => t + (plans.find((u) => u.planId === x.id)?.remaining ?? x.remaining), 0) + added.reduce((t, x) => t + x.remaining, 0);
+    if (planned > balance + 100) note(`With ${added.length === 1 ? 'that new plan' : 'those new plans'}, your plans add up to ${cash(planned)}, more than the ${cash(balance)} owed. Some may be paid off or already plans: check them.`);
+  }
+  const others = s.purchases.length - rows.filter((r) => r.months).length;
+  if (others > 0) ignored.push(`${others === 1 ? 'A purchase' : `${others} purchases`} on the ${s.appScreen ? 'screenshot' : 'statement'}: already in what’s owed.`);
   for (const x of s.payments) ignored.push(`Payment${x.amount ? ` of ${cash(toCents(x.amount)?.cents ?? 0)}` : ''}${validDate(x.date) ? ` on ${fmtShort(x.date)}` : ''}: payments are counted automatically on their due dates.`);
   if (d.source === 'device' && debt) note(`Read on this device, which guesses the debt from words in the statement: check it’s ${debt.name}.`);
 
