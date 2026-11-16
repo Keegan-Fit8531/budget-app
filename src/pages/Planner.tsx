@@ -1,5 +1,5 @@
-import { Fragment, useMemo, useRef, useState } from 'react';
-import { readPayslipPdf } from '../lib/payslip';
+import { Fragment, lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
+import { startRead, type ReadJob } from '../lib/reader/job';
 import { applyBalance, autoPays, balancePay, restoreOverrides, type BalanceResult } from '../lib/rebalance';
 import { accountMode, leftoverBeforeBudget, topsUp } from '../lib/balances';
 import { Donut, Legend } from '../components/Donut';
@@ -9,7 +9,6 @@ import { WeeksView } from '../components/WeeksView';
 import { PayNav, useViewPeriod, ViewModes } from '../lib/period';
 import { clearOptimiseUndo, OptimiseModal, readOptimiseUndo, type OptimiseUndo } from '../components/OptimiseModal';
 import { existingExtras, undoAllocation } from '../lib/allocate';
-import { recordPayslip } from '../lib/documents';
 import { addDays, fmtDay, fmtShort, monthName, todayISO } from '../lib/dates';
 import {
   averageSplit, convert, firstBudgetPay, isAuto, isSetAside, planFor, plannedAverage, shiftPeriod, upcomingPayPeriod, type View,
@@ -17,6 +16,9 @@ import {
 import { cash, moneyParts, centsToInput, parseMoney } from '../lib/money';
 import { useBudget } from '../lib/store';
 import type { Cents, PaydayMode } from '../lib/types';
+
+// Loaded only when a document is chosen.
+const UploadFlow = lazy(() => import('../components/UploadFlow').then((m) => ({ default: m.UploadFlow })));
 
 const MODES_KEY = 'paydays.balance.modes';
 
@@ -35,7 +37,9 @@ export function Planner() {
   // The account card whose details pop-up is open.
   const [openCard, setOpenCard] = useState<string | null>(null);
   const [payEdit, setPayEdit] = useState<string | null>(null);
-  const [slipMsg, setSlipMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  // A payslip or other document being read (the same flow as the Add button), and the pay to show once it's saved.
+  const [job, setJob] = useState<ReadJob | null>(null);
+  const [jumpTo, setJumpTo] = useState<string | null>(null);
   // Last "Balance this pay": what changed and why, plus what to restore on Undo.
   const [optimiseOpen, setOptimiseOpen] = useState(false);
   // An account's amount for this pay only, being changed from "What's different this pay".
@@ -227,35 +231,13 @@ export function Planner() {
     setPayEdit(null);
   }
 
-  async function uploadPayslip(file: File) {
-    setSlipMsg({ ok: true, text: 'Reading payslip…' });
-    try {
-      const slip = await readPayslipPdf(file);
-      if (!slip) { setSlipMsg({ ok: false, text: 'Couldn’t find a pay day and net pay in that PDF. Is it a payslip?' }); return; }
-      // Paid a day or so off the usual payday (e.g. early, before a holiday)? That payday moves to the
-      // day pay really arrived, so this pay and the one before it are both worked out on their real dates.
-      const record = (b: typeof budget) => recordPayslip(b, slip);
-      // Worked out on a copy first, for the message and to show that pay.
-      const after = structuredClone(budget);
-      const { start, loan } = record(after);
-      const moved = JSON.stringify(after.settings.paydayMoves ?? {}) !== JSON.stringify(budget.settings.paydayMoves ?? {});
-      const p = { start };
-      update((b) => { record(b); return b; });
-      const diff = slip.net - budget.settings.expectedPay;
-      setSlipMsg({
-        ok: true,
-        text: `${monthName(p.start)} pay recorded: ${cash(slip.net)}` +
-          (diff === 0 ? ', exactly as expected.' : `, ${cash(Math.abs(diff))} ${diff > 0 ? 'more' : 'less'} than expected.`) +
-          (moved ? ` Paid on ${fmtShort(start)}, not the usual day, so that pay now starts then and the one before it ends the day before.` : '') +
-          (loan && slip.studentLoan ? ` Student loan: ${cash(slip.studentLoan)} taken off what you owe.` : ''),
-      });
-      setOffset(offsetOf(after, start));
-    } catch {
-      setSlipMsg({ ok: false, text: 'That file couldn’t be read as a PDF.' });
-    } finally {
-      if (slipRef.current) slipRef.current.value = '';
-    }
-  }
+  // Once a payslip is saved, show that pay (its payday may have moved, so this waits for the saved budget).
+  useEffect(() => {
+    if (!jumpTo) return;
+    setOffset(offsetOf(budget, jumpTo));
+    setJumpTo(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [budget, jumpTo]);
 
   /** How many pays after the next one to come a pay is (negative = before it), in budget `b`. */
   function offsetOf(b: typeof budget, start: string): number {
@@ -324,13 +306,13 @@ export function Planner() {
                   <span className="row nowrap gap-4">
                     <button className="icon-btn mini has-tip" data-tip={plan.payIsActual ? 'Change pay' : 'Type in your pay'} aria-label={plan.payIsActual ? 'Change pay' : 'Type pay'}
                       onClick={() => setPayEdit(centsToInput(plan.pay))}><Icon name="edit" size={16} /></button>
-                    <button className="icon-btn mini has-tip" data-tip="Upload payslip (PDF)" aria-label="Upload payslip"
+                    <button className="icon-btn mini has-tip" data-tip="Upload payslip" aria-label="Upload payslip"
                       onClick={() => slipRef.current?.click()}><Icon name="upload" size={16} /></button>
                   </span>
                 )}
               </div>
-              <input ref={slipRef} type="file" accept="application/pdf" hidden
-                onChange={(e) => e.target.files?.[0] && uploadPayslip(e.target.files[0])} />
+              <input ref={slipRef} type="file" accept="application/pdf,image/*" hidden
+                onChange={(e) => { const f = e.target.files?.[0]; if (f) setJob(startRead(f, budget)); e.target.value = ''; }} />
               {payEdit === null ? (
                 <b className={known ? '' : 'muted'}>{known ? cash(v(plan.pay)) : 'Not in yet'}</b>
               ) : (
@@ -352,7 +334,11 @@ export function Planner() {
             </div>
           </div>
           {estimated && estOpen && <p className="small muted" role="status" style={{ marginTop: -6 }}>{estimateWhy}</p>}
-          {slipMsg && <p className={`small ${slipMsg.ok ? '' : 'error'}`} role="status">{slipMsg.text}</p>}
+          {job && (
+            <Suspense fallback={null}>
+              <UploadFlow key={job.file.name + job.file.lastModified} job={job} onClose={() => setJob(null)} onPayslip={setJumpTo} />
+            </Suspense>
+          )}
 
           {/* Balancing is automatic, so it only speaks up when there's something left to do. */}
           {!avg && known && (autoHere ? plan.leftover < 0 : needsBalance || byHand.length > 0) && (

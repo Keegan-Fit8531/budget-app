@@ -13,6 +13,8 @@ import type { DocKind, Extraction, Fig, ReaderSource } from './types';
 // ---------------------------------------------------------------------------------------------
 
 export const NEW_DEBT = '__new';
+/** Chosen in the rundown: this plan or order isn't one of yours (so it's never matched automatically). */
+export const NOT_MINE = '__none';
 /** The most any single figure can be: $1,000,000. */
 const MAX_CENTS = 100_000_000;
 /** How far a statement's plan expiry can be from one of yours and still be the same plan. */
@@ -145,6 +147,7 @@ export function toDraft(ex: Extraction, b: Budget, source: ReaderSource, makeId:
 
 /** The plan on `debt` a statement row is for: the one it names if the expiry agrees, else the one with that expiry. */
 export function resolvePlanRow(row: Pick<DraftPlanRow, 'planId' | 'ends'>, debt: Debt): DebtPlan | undefined {
+  if (row.planId === NOT_MINE) return undefined;
   const ends = validDate(row.ends);
   const close = (p: DebtPlan) => !ends || Math.abs(diffDays(planEnds(p), ends)) <= ENDS_SLACK_DAYS;
   const named = debt.plans.find((p) => p.id === row.planId);
@@ -158,6 +161,7 @@ export function resolvePlanRow(row: Pick<DraftPlanRow, 'planId' | 'ends'>, debt:
 
 /** The Afterpay order on `debt` a screenshot's order is: by id, or by shop with the purchase date or total. */
 export function resolveOrder(o: Pick<DraftOrder, 'planId' | 'merchant' | 'purchaseDate'> & { total?: Cents }, debt: Debt): DebtPlan | undefined {
+  if (o.planId === NOT_MINE) return undefined;
   const named = debt.plans.find((p) => p.id === o.planId);
   if (named) return named;
   const date = validDate(o.purchaseDate);

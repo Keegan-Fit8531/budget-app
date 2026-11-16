@@ -5,8 +5,9 @@ import { parsePayslipText, readPdfText, type Payslip } from './payslip';
 import type { Budget, Cents, Debt } from './types';
 
 // ---------------------------------------------------------------------------------------------
-// Reading a document you add (a payslip, or a card / loan statement) as a PDF or a photo.
-// Everything happens in the browser: the file never leaves your device.
+// Reading a document on this device (a payslip, or a card / loan statement, as a PDF or a photo), and
+// recording what it says. Documents are normally read by Google's Gemini (src/lib/reader/); this
+// reader is the backup, offered when Gemini can't be used, and with it the file never leaves your device.
 // ---------------------------------------------------------------------------------------------
 
 const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
