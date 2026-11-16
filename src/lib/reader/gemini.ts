@@ -99,9 +99,19 @@ export const PAGES_AT_ONCE = 4;
 export const REQUESTS_AT_ONCE = 16;
 
 const wait = (ms: number, signal?: AbortSignal) => new Promise<void>((resolve) => {
-  const t = setTimeout(resolve, ms);
-  signal?.addEventListener('abort', () => { clearTimeout(t); resolve(); });
+  const done = () => { clearTimeout(t); signal?.removeEventListener('abort', done); resolve(); };
+  const t = setTimeout(done, ms);
+  signal?.addEventListener('abort', done);
 });
+
+/** Parts in flight across every document being read (several chosen at once share them). */
+let inFlight = 0;
+const waiting: (() => void)[] = [];
+async function slot(): Promise<() => void> {
+  if (inFlight >= REQUESTS_AT_ONCE) await new Promise<void>((r) => waiting.push(r));
+  inFlight++;
+  return () => { inFlight--; waiting.shift()?.(); };
+}
 
 /** The last line with a year in it before some pages (e.g. "Statement period 10 Jun 2026 - 09 Sep 2026"), for dates printed without years. */
 function lastDated(pages: string[]): string | undefined {
@@ -177,11 +187,14 @@ export function geminiProvider(fetchImpl: typeof fetch = (...a) => fetch(...a)):
           // So many at once can be more than Google takes in a minute: wait a moment and try that part again.
           for (let attempt = 1; ; attempt++) {
             try {
-              results[k] = parseReply(await call(opts, request(ctx, [{ text: `${intro}\n\n${p.text}` }]), fetchImpl), ctx.today);
+              const release = await slot();
+              try {
+                results[k] = parseReply(await call(opts, request(ctx, [{ text: `${intro}\n\n${p.text}` }]), fetchImpl), ctx.today);
+              } finally { release(); }
               break;
             } catch (e) {
               const busy = e instanceof ReaderError && (e.kind === 'too_fast' || e.kind === 'overloaded');
-              if (!busy || attempt >= 4 || failed) { failed = true; throw e; }
+              if (!busy || attempt >= 6 || failed) { failed = true; throw e; }
               await wait(1500 * attempt * attempt, opts.signal);
               if (opts.signal?.aborted) { failed = true; throw new ReaderError('cancelled'); }
             }

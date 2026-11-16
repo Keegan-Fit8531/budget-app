@@ -1,4 +1,4 @@
-import { toISO, type ISODate } from './dates';
+import { addDays as addDaysISO, toISO, type ISODate } from './dates';
 import type { Cents, Txn } from './types';
 
 // ---------------------------------------------------------------------------------------------
@@ -65,7 +65,7 @@ export function csvDate(s: string): ISODate | undefined {
 export function csvAmount(s: string): Cents | undefined {
   const t = s.trim();
   if (!t) return undefined;
-  const negative = /^-|^\$-|^\(.*\)$|\bDR$/i.test(t) || /^−/.test(t);
+  const negative = /^-|^\$-|^\(.*\)$|\bDR$|-$/i.test(t) || /^−|−$/.test(t);
   const clean = t.replace(/NZD|DR|CR|[$,\s()−+-]/gi, '');
   if (!/^\d+(\.\d{1,2})?$/.test(clean)) return undefined;
   const cents = Math.round(parseFloat(clean) * 100);
@@ -125,7 +125,8 @@ export function readTransactionsCsv(text: string): CsvRead | undefined {
 
   // A card export: payments in are "Payment received"/"Thank you". If those are the negative ones,
   // this export writes spending as + and payments as −, so turn it round.
-  const payments = ordered.filter((t) => /payment|thank you/i.test(t.description));
+  // Only a card's own "Payment received - thank you": a bank export's "Bill payment" is money going out.
+  const payments = ordered.filter((t) => /payment received|thank you/i.test(t.description));
   const card = (number >= 0 && /card/.test(head[number]))
     || (payments.length > 0 && head.every((h) => !/balance/.test(h)) && payments.every((t) => !/transfer|direct debit|automatic payment/i.test(t.description)));
   if (card && payments.length && payments.filter((t) => t.amount < 0).length > payments.length / 2) for (const t of ordered) t.amount = -t.amount;
@@ -161,6 +162,7 @@ export function fromStatementRows(
   // The balance before each transaction, in the order printed: if a transaction's own balance only adds
   // up with its amount the other way round, the sign was misread (money in taken for money out).
   let before: Cents | undefined;
+  let lastDate: ISODate | undefined;
   for (const r of rows) {
     let date = csvDate(r.date ?? '');
     let amount = csvAmount(r.amount ?? '');
@@ -173,6 +175,9 @@ export function fromStatementRows(
     }
     if (!date || !amount) { skipped++; continue; }
     if (date > opts.today) date = `${Number(date.slice(0, 4)) - 1}${date.slice(4)}`;
+    // A statement is printed in date order: a date before the one above it was misread (a day or month).
+    if (lastDate && date < lastDate && date < addDaysISO(lastDate, -3)) { date = lastDate; unsure++; }
+    lastDate = date;
     if (before !== undefined && balance !== undefined && Math.abs(before + amount - balance) > 1) {
       if (Math.abs(before - amount - balance) <= 1) amount = -amount;
       else unsure++;

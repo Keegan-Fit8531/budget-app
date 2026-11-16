@@ -14,7 +14,7 @@ import type { Extraction, ReaderSource } from './types';
  * Where a Gemini read has got to: getting the file ready, then Google reading it (sent at `since`).
  * A long PDF is read in parts: `parts` of them, `done` so far, over `pages` pages.
  */
-export type ReadStage = { step: 'preparing' } | { step: 'reading'; bytes: number; since: number; parts?: number; done?: number; pages?: number };
+export type ReadStage = { step: 'preparing' } | { step: 'reading'; bytes: number; since: number; parts?: number; done?: number; pages?: number; read?: number };
 
 export interface ReadJob {
   file: File;
@@ -25,6 +25,13 @@ export interface ReadJob {
   onProgress: (fn: (fraction: number) => void) => () => void;
   /** The stage a Gemini read is at (the latest is given straight away). Returns an unsubscribe. */
   onStage: (fn: (stage: ReadStage) => void) => () => void;
+}
+
+/** Whether a PDF plainly has only a few pages (counted in the file, without opening it), so it's sent as it is. */
+async function fewPages(file: File, most: number): Promise<boolean> {
+  if (file.size > 2_000_000) return false;
+  const n = (new TextDecoder('latin1').decode(await file.arrayBuffer()).match(/\/Type\s*\/Page(?!s)/g) ?? []).length;
+  return n > 0 && n <= most;
 }
 
 /** A bank or card export. Windows says a CSV is an Excel file, so its name counts too. */
@@ -58,7 +65,7 @@ export function startRead(file: File, budget: Budget, source: ReaderSource = 'ge
     let ex: Extraction | undefined;
     // A long PDF with text in it (a year of bank statements) is read as its text, a few pages at a time:
     // as one PDF, Gemini couldn't list hundreds of transactions in one reply.
-    if (isPdf(file) && provider.readText) {
+    if (isPdf(file) && provider.readText && !(await fewPages(file, PAGES_AT_ONCE))) {
       const { hasText, readPdfPages } = await import('./pdftext');
       const pages = await readPdfPages(file).catch(() => [] as string[]);
       if (pages.length > PAGES_AT_ONCE && hasText(pages)) {
@@ -66,8 +73,8 @@ export function startRead(file: File, budget: Budget, source: ReaderSource = 'ge
         const bytes = pages.reduce((t, p) => t + p.length, 0);
         const since = Date.now();
         const parts = Math.ceil(pages.length / PAGES_AT_ONCE);
-        setStage({ step: 'reading', bytes, since, parts, done: 0, pages: pages.length });
-        ex = await provider.readText(pages, ctx, opts, (done) => setStage({ step: 'reading', bytes, since, parts, done, pages: pages.length }));
+        setStage({ step: 'reading', bytes, since, parts, done: 0, pages: pages.length, read: 0 });
+        ex = await provider.readText(pages, ctx, opts, (done) => setStage({ step: 'reading', bytes, since, parts, done, pages: pages.length, read: Math.min(pages.length, done * PAGES_AT_ONCE) }));
       }
     }
     if (!ex) {

@@ -205,7 +205,8 @@ export function csvTargets(b: Budget): { value: string; label: string; group: 'C
   ];
 }
 
-const txKey = (t: Txn) => `${t.date}|${t.amount}|${t.description.toLowerCase().replace(/\s+/g, ' ')}`;
+// Date, amount and the start of the description: a statement read again can word the rest differently.
+const txKey = (t: Txn) => `${t.date}|${t.amount}|${t.description.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 4)}`;
 
 /** The transactions not saved already (an export overlapping one before). Same-day duplicates (4 car washes) count separately. */
 export function newTransactions(existing: Txn[], incoming: Txn[]): Txn[] {
@@ -382,7 +383,8 @@ export function purchaseRows(d: Draft, debt: Debt | undefined): PurchaseRow[] {
     const date = validDate(x.date);
     if (!c || c.credit || !c.cents || !date) return [];
     const months = planMonths(debt, c.cents);
-    const existing = months ? debt.plans.find((p) => p.original === c.cents || (p.purchaseDate === date && p.remaining === c.cents)) : undefined;
+    // The same amount bought around the same time (a plan from a statement is dated at the statement).
+    const existing = months ? debt.plans.find((p) => (p.original === c.cents || p.remaining === c.cents) && Math.abs(diffDays(p.purchaseDate, date)) <= 45) : undefined;
     return [{ index, cents: c.cents, date, description: x.description.trim(), months, existing, add: !!months && !existing && x.add !== false }];
   });
 }

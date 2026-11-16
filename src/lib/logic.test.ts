@@ -1317,3 +1317,36 @@ describe('reading long bank statements quickly', () => {
     expect(t.issues.map((i) => i.text).join(' ')).toMatch(/One transaction doesn’t add up/);
   });
 });
+
+describe('review fixes', () => {
+  it('a bank export with bill payments and no balance column keeps its signs', () => {
+    const r = readTransactionsCsv('Date,Payee,Amount\n01/11/2026,POWER CO BILL PAYMENT,-120.00\n02/11/2026,Countdown,-30.00\n03/11/2026,Salary,900.00')!;
+    expect(r.card).toBe(false);
+    expect(r.rows.map((t) => t.amount)).toEqual([-12000, -3000, 90000]);
+  });
+
+  it('a trailing minus is money out', () => {
+    expect([csvAmount('45.20-'), csvAmount('$45.20-')]).toEqual([-4520, -4520]);
+  });
+
+  it('a statement read again with different wording isn’t saved twice', () => {
+    const b = debtBudget();
+    const doc = (desc: string): Extraction => ({ kind: 'transactions', transactions: { rows: [{ date: '2026-11-10', description: desc, amount: -4520 }], card: false, skipped: 0 } });
+    upload(b, doc('Pak N Save R'), '2026-11-16', (d) => { d.transactions.target = 'account:everyday'; });
+    const again = checkDoc(b, doc('PAK N SAVE R Mt Wgtn'), '2026-11-16', (d) => { d.transactions.target = 'account:everyday'; });
+    expect(again.issues.map((i) => i.text).join(' ')).toMatch(/Nothing new/);
+  });
+
+  it('a shop with “charge” in its name isn’t a fee', () => {
+    expect(categorize('ChargeNet NZ').category).not.toBe('fees');
+    expect(categorize('Late payment charge').category).toBe('fees');
+  });
+});
+
+it('a statement date that jumps backwards was misread: it takes the date above it, and is pointed out', () => {
+  const r = fromStatementRows([
+    { date: '2026-05-01', description: 'A', amount: '-1.00' }, { date: '2026-04-01', description: 'B', amount: '-2.00' }, { date: '2026-05-02', description: 'C', amount: '-3.00' },
+  ], { today: '2026-11-16' });
+  expect(r.rows.map((t) => t.date)).toEqual(['2026-05-01', '2026-05-01', '2026-05-02']);
+  expect(r.unsure).toBe(1);
+});
