@@ -581,3 +581,6 @@ button.acc-card:hover .acc-more { opacity: 1; }
 .add-choice { display: flex; align-items: center; gap: var(--s-3); width: 100%; text-align: left; font: inherit; color: inherit; background: var(--soft); border: 1px solid transparent; border-radius: var(--r-lg); padding: var(--s-3); cursor: pointer; }
 .add-choice:hover, .add-choice:focus-visible { border-color: var(--brand-2); }
 .add-choice-icon { width: 40px; height: 40px; border-radius: var(--r-md); background: var(--brand); color: var(--on-brand); display: grid; place-items: center; flex: 0 0 auto; }
+
+/* A button whose label can run to two lines on a small phone. */
+.btn.wrap-text { white-space: normal; text-align: center; padding-block: 6px; }

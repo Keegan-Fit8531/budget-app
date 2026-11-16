@@ -81,7 +81,7 @@ export function cycleNumbers(b: Budget, c: Period) {
   return { now, before, prev };
 }
 
-/** Everything about the cycle, as text for Gemini: no names or account numbers, only what was spent. */
+/** Everything about the cycle, as text for Gemini: your accounts' and goals' names and what was spent, but no account numbers. */
 export function reviewInput(b: Budget, c: Period & { partial?: boolean }): string {
   const mine = b.shopCategories as ShopCategories | undefined;
   const { now, before, prev } = cycleNumbers(b, c);
