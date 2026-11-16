@@ -294,7 +294,9 @@ export function Planner() {
 
           <div className="pay-stats">
             <div className="stat">
-              <div className="between nowrap gap-6" style={{ minHeight: 32 }}>
+              {/* Wraps (buttons drop below, right-aligned) when the label, Estimate pill and buttons don't fit,
+                  rather than pushing the buttons out of the card. */}
+              <div className="between gap-6" style={{ minHeight: 32, rowGap: 4 }}>
                 <span className="small muted row nowrap gap-6">
                   {plan.payIsActual ? 'Pay received' : 'Pay'}
                   {estimated && (
@@ -303,7 +305,7 @@ export function Planner() {
                   )}
                 </span>
                 {payEdit === null && (
-                  <span className="row nowrap gap-4">
+                  <span className="row nowrap gap-4" style={{ marginLeft: 'auto' }}>
                     <button className="icon-btn mini has-tip" data-tip={plan.payIsActual ? 'Change pay' : 'Type in your pay'} aria-label={plan.payIsActual ? 'Change pay' : 'Type pay'}
                       onClick={() => setPayEdit(centsToInput(plan.pay))}><Icon name="edit" size={16} /></button>
                     <button className="icon-btn mini has-tip" data-tip="Upload payslip" aria-label="Upload payslip"
