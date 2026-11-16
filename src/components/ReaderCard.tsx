@@ -1,21 +1,16 @@
 import { useState } from 'react';
-import { todayISO } from '../lib/dates';
 import { DEFAULT_MODEL, modelOf, readReaderConfig, writeReaderConfig } from '../lib/reader/config';
 import { errorMessage, ReaderError } from '../lib/reader/errors';
 import { testKey } from '../lib/reader/job';
-import { readUndo, undoKeeps, undoUpload, writeUndo } from '../lib/reader/undo';
-import { useBudget } from '../lib/store';
 import { Section } from './ui';
 
-/** Settings → Reading documents: the Google key (kept in this browser only), the model, and Undo for the last upload. */
+/** Settings → Reading documents: the Google key (kept in this browser only) and the model. */
 export function ReaderCard() {
-  const { budget, update } = useBudget();
   const [conf, setConf] = useState(readReaderConfig);
   const [key, setKey] = useState('');
   const [model, setModel] = useState(conf?.model ?? '');
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [testing, setTesting] = useState(false);
-  const [last, setLast] = useState(readUndo);
 
   function save(next: typeof conf) { writeReaderConfig(next); setConf(readReaderConfig()); }
 
@@ -74,28 +69,12 @@ export function ReaderCard() {
 
       <details className="small">
         <summary>Advanced: model</summary>
-        <p className="small muted">Google retires models from time to time. If uploads say the model has been retired, put a current one from Google’s models page here. Leave it empty for {DEFAULT_MODEL}.</p>
+        <p className="small muted">Google retires models from time to time. If uploads say Google didn’t recognise the model, put a current one from Google’s models page here. Leave it empty for {DEFAULT_MODEL}.</p>
         <div className="row wrap">
           <input value={model} placeholder={DEFAULT_MODEL} aria-label="Model" onChange={(e) => setModel(e.target.value)} />
           <button className="btn" disabled={!conf} onClick={() => { if (conf) { save({ ...conf, model: model.trim() || undefined }); void test(conf.key, model.trim() || DEFAULT_MODEL); } }}>Save model</button>
         </div>
       </details>
-
-      {last && (
-        <div className="stack gap-8">
-          <p className="small">Last upload: {last.title} ({last.fileName}), {new Date(last.at).toLocaleString('en-NZ', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}.</p>
-          <div className="row">
-            <button className="btn" onClick={() => {
-              const today = todayISO();
-              const kept = undoKeeps(budget, last, today);
-              update((b) => { undoUpload(b, last, today); return b; });
-              writeUndo(null);
-              setLast(null);
-              setMsg({ ok: true, text: `Last upload undone.${kept.length ? ` ${kept.join(' ')}` : ''}` });
-            }}>Undo last upload</button>
-          </div>
-        </div>
-      )}
     </Section>
   );
 }

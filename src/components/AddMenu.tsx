@@ -16,7 +16,8 @@ type Adding = 'menu' | 'cost' | 'goal' | 'debt' | 'pay';
 
 /**
  * The one "add" button: a cost, a savings goal, a debt, or a document (a payslip, a card or loan
- * statement, or Afterpay orders, as a PDF, photo or screenshot) that's read and shown for you to check.
+ * statement, or Afterpay orders, as a PDF, photo or screenshot; or a bank or card export as CSV) that's
+ * read and shown for you to check.
  */
 export function AddMenu({ render }: { render: (open: () => void) => React.ReactNode }) {
   const [adding, setAdding] = useState<Adding | null>(null);
@@ -26,7 +27,7 @@ export function AddMenu({ render }: { render: (open: () => void) => React.ReactN
   const { budget } = useBudget();
   const owing = (budget.debts ?? []).some((d) => !d.payroll && owed(d) > 0);
   const choices: { id: string; icon: string; title: string; hint: string; go: () => void }[] = [
-    { id: 'doc', icon: 'upload', title: 'Upload a payslip or statement', hint: 'PDF, photo or screenshot. Read by Google’s Gemini, then shown to you to check.', go: () => fileRef.current?.click() },
+    { id: 'doc', icon: 'upload', title: 'Upload a payslip or statement', hint: 'PDF, photo or screenshot (read by Google’s Gemini), or a bank or card export as CSV (read on this device). Shown to you to check.', go: () => fileRef.current?.click() },
     { id: 'cost', icon: 'transfer', title: 'Cost', hint: 'A bill, rent or regular transfer, or money put aside each pay for a WOF or tyres.', go: () => setAdding('cost') },
     { id: 'goal', icon: 'piggy', title: 'Savings goal', hint: 'Something to save towards, with a target and a date.', go: () => setAdding('goal') },
     { id: 'debt', icon: 'card', title: 'Debt', hint: 'A card, Afterpay, a loan or someone you owe.', go: () => setAdding('debt') },
@@ -35,7 +36,7 @@ export function AddMenu({ render }: { render: (open: () => void) => React.ReactN
   return (
     <>
       {render(() => setAdding('menu'))}
-      <input ref={fileRef} type="file" accept="application/pdf,image/*" hidden
+      <input ref={fileRef} type="file" accept="application/pdf,image/*,.csv,text/csv" hidden
         onChange={(e) => {
           // Reading starts here, once per file chosen (not in an effect, which runs twice in development).
           const f = e.target.files?.[0];

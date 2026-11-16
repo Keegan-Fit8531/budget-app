@@ -1,9 +1,10 @@
-import { addDays, diffDays, fmtShort, toDate, toISO, type ISODate } from '../dates';
-import { owed, planEnds } from '../debts';
+import { addDays, addMonths, diffDays, fmtShort, toDate, todayISO, toISO, type ISODate } from '../dates';
+import { owed, planEnds, suggestPlan } from '../debts';
 import { periodContaining, recordPayday, shiftPeriod } from '../engine';
 import { cash } from '../money';
 import type { Payslip } from '../payslip';
-import type { Budget, Cents, Debt, DebtPlan } from '../types';
+import type { CsvRead } from '../csv';
+import type { BalanceEntry, Budget, Cents, Debt, DebtPlan, Txn } from '../types';
 import type { DocKind, Extraction, Fig, ReaderSource } from './types';
 
 // ---------------------------------------------------------------------------------------------
@@ -32,6 +33,9 @@ export interface DraftOrder {
   instalments: { date: string; amount: string; label?: string; paid: boolean }[];
 }
 
+/** A purchase listed on a card app screen. `add` is null until you tick or untick it (then the default applies). */
+export interface DraftPurchase { date: string; description: string; amount: string; add: boolean | null; newId: string }
+
 export interface Draft {
   kind: DocKind;
   source: ReaderSource;
@@ -42,16 +46,33 @@ export interface Draft {
     newName: string;
     newDebtId: string;
     nameOnDocument: string;
+    /** A screenshot of the card's app (current balance, recent purchases) rather than a statement. */
+    appScreen: boolean;
     balance: DraftFig;
+    /** Available credit, used for what's owed (limit less available) when the balance isn't shown. */
+    available: DraftFig;
     inCredit: boolean;
     date: string;
     limit: DraftFig;
     minimum: DraftFig;
     plans: DraftPlanRow[];
-    purchases: { date: string; description: string; amount: string }[];
+    purchases: DraftPurchase[];
     payments: { date: string; amount: string }[];
   };
   afterpay: { debtId: string; orders: DraftOrder[] };
+  transactions: DraftTransactions;
+}
+
+/** A bank or card export, as read: which card or account it's for, and what's owed or in it now. */
+export interface DraftTransactions {
+  /** 'debt:<id>' or 'account:<id>'; '' until you choose (a file doesn't say whose it is). */
+  target: string;
+  /** Chosen for you because this card or account number was used before. */
+  matchedBy?: string;
+  read: CsvRead;
+  /** What's owed (a card) or in the account now. null until you change it: then the worked-out amount is used. */
+  amount: string | null;
+  eventId: string;
 }
 
 export interface PlanUpdate { planId: string; remaining: Cents; ends?: ISODate }
@@ -60,7 +81,15 @@ export interface OrderUpdate { planId: string; instalments: { date: ISODate; amo
 export type Proposal =
   | { kind: 'payslip'; slip: Payslip }
   | { kind: 'statement'; debtId: string; newDebt?: { name: string }; balance: Cents; inCredit: boolean; date: ISODate; limit?: Cents; plans: PlanUpdate[]; newPlans: DebtPlan[] }
-  | { kind: 'afterpay'; debtId: string; updates: OrderUpdate[]; paidOff: string[]; newPlans: DebtPlan[] };
+  | { kind: 'afterpay'; debtId: string; updates: OrderUpdate[]; paidOff: string[]; newPlans: DebtPlan[] }
+  | {
+    kind: 'transactions'; target: { type: 'debt' | 'account'; id: string }; ending?: string; add: Txn[];
+    /** What's owed or in the account, as at a date, if it changes. */
+    balance?: BalanceEntry;
+    /** Owed-over-time entries worked out from the transactions (a card). */
+    history: BalanceEntry[];
+    eventId: string;
+  };
 
 export interface Issue { level: 'block' | 'note'; text: string }
 export interface Review { proposal: Proposal | null; issues: Issue[]; ignored: string[] }
@@ -105,7 +134,7 @@ const keepsPlans = (d: Debt) => d.rules === 'gem' || d.plans.some((p) => p.type 
 
 // ---------- The reader's answer → a draft ----------
 
-export function toDraft(ex: Extraction, b: Budget, source: ReaderSource, makeId: () => string): Draft {
+export function toDraft(ex: Extraction, b: Budget, source: ReaderSource, makeId: () => string, today: ISODate = todayISO()): Draft {
   const p = ex.payslip ?? {};
   const s = ex.statement ?? {};
   const debtIds = new Set(statementDebts(b).map((d) => d.id));
@@ -124,13 +153,16 @@ export function toDraft(ex: Extraction, b: Budget, source: ReaderSource, makeId:
       newName: s.nameOnDocument ?? '',
       newDebtId: makeId(),
       nameOnDocument: s.nameOnDocument ?? '',
+      appScreen: !!s.appScreen,
       balance: fig(s.balance),
+      available: fig(s.available),
       inCredit: !!s.inCredit,
-      date: s.statementDate ?? '',
+      // An app screen shows what's owed now, so with no date on it, it's today's.
+      date: s.statementDate ?? (s.appScreen ? today : ''),
       limit: fig(s.limit),
       minimum: fig(s.minimum),
       plans: (s.plans ?? []).map((r) => ({ planId: r.planId ?? '', description: r.description ?? '', remaining: fig(r.remaining), ends: r.ends ?? '', addAsNew: false, newId: makeId() })),
-      purchases: (s.purchases ?? []).map((x) => ({ date: x.date ?? '', description: x.description ?? '', amount: x.amount?.amount ?? '' })),
+      purchases: (s.purchases ?? []).map((x) => ({ date: x.date ?? '', description: x.description ?? '', amount: x.amount?.amount ?? '', add: null, newId: makeId() })),
       payments: (s.paymentsShown ?? []).map((x) => ({ date: x.date ?? '', amount: x.amount?.amount ?? '' })),
     },
     afterpay: {
@@ -140,6 +172,142 @@ export function toDraft(ex: Extraction, b: Budget, source: ReaderSource, makeId:
         instalments: (o.instalments ?? []).map((i) => ({ date: i.date ?? '', amount: i.amount ?? '', label: i.label, paid: !!i.paid })),
       })),
     },
+    transactions: (() => {
+      const read = ex.transactions ?? { rows: [], card: false, skipped: 0 };
+      const target = read.ending ? matchEnding(b, read.ending) : '';
+      return { target, ...(target ? { matchedBy: read.ending } : {}), read, amount: null, eventId: makeId() };
+    })(),
+  };
+}
+
+// ---------- Bank and card exports ----------
+
+/** The card or account that has this number's ending saved, if exactly one does. */
+function matchEnding(b: Budget, ending: string): string {
+  const hits = [
+    ...(b.debts ?? []).filter((d) => d.ending === ending && !d.payroll).map((d) => `debt:${d.id}`),
+    ...b.accounts.filter((a) => a.ending === ending && !a.archived).map((a) => `account:${a.id}`),
+  ];
+  return hits.length === 1 ? hits[0] : '';
+}
+
+/** What an export can be for: cards and loans (not ones paid from your salary, or Afterpay) and bank accounts. */
+export function csvTargets(b: Budget): { value: string; label: string; group: 'Cards and loans' | 'Bank accounts' }[] {
+  return [
+    ...(b.debts ?? []).filter((d) => !d.payroll && !ordersOnly(d)).map((d) => ({ value: `debt:${d.id}`, label: d.name, group: 'Cards and loans' as const })),
+    ...b.accounts.filter((a) => a.kind === 'bank' && !a.archived).map((a) => ({ value: `account:${a.id}`, label: a.name, group: 'Bank accounts' as const })),
+  ];
+}
+
+const txKey = (t: Txn) => `${t.date}|${t.amount}|${t.description.toLowerCase().replace(/\s+/g, ' ')}`;
+
+/** The transactions not saved already (an export overlapping one before). Same-day duplicates (4 car washes) count separately. */
+export function newTransactions(existing: Txn[], incoming: Txn[]): Txn[] {
+  const have = new Map<string, number>();
+  for (const t of existing) have.set(txKey(t), (have.get(txKey(t)) ?? 0) + 1);
+  return incoming.filter((t) => {
+    const n = have.get(txKey(t)) ?? 0;
+    if (n > 0) { have.set(txKey(t), n - 1); return false; }
+    return true;
+  });
+}
+
+function targetOf(d: Draft, b: Budget): { debt?: Debt; account?: Budget['accounts'][number]; id: string; type: 'debt' | 'account' | '' } {
+  const [type, id = ''] = d.transactions.target.split(':') as ['debt' | 'account' | '', string?];
+  if (type === 'debt') return { type, id, debt: (b.debts ?? []).find((x) => x.id === id) };
+  if (type === 'account') return { type, id, account: b.accounts.find((x) => x.id === id) };
+  return { type: '', id: '' };
+}
+
+/** The last balance you checked on a card: kept from a statement, screenshot, export or typing it in (or, before that was kept, the balance if no payments have been counted on it since). */
+export function checkedBalance(debt: Debt): BalanceEntry | undefined {
+  return debt.checked ?? (debt.paid?.length ? undefined : debt.balance);
+}
+
+/**
+ * What's owed on the card (or in the account) after these transactions, worked out from the last
+ * balance you checked: plus what was spent, less what was paid in since. The account's own balance
+ * column is used when the export has one.
+ */
+export function csvBalance(d: Draft, b: Budget): { amount: Cents; asOf: ISODate; working: string } | undefined {
+  const rows = d.transactions.read.rows;
+  if (!rows.length) return undefined;
+  const last = rows[rows.length - 1];
+  const { debt, account } = targetOf(d, b);
+  if (account && last.balance !== undefined) {
+    // Not if you've entered a newer balance since.
+    const entered = b.balances?.[account.id];
+    return entered && entered.asOf > last.date ? undefined : { amount: last.balance, asOf: last.date, working: `The export’s balance after its last transaction, on ${fmtShort(last.date)}.` };
+  }
+  const anchor = debt ? checkedBalance(debt) : account ? b.balances?.[account.id] : undefined;
+  if (!anchor || anchor.asOf >= last.date) return undefined;
+  const since = rows.filter((t) => t.date > anchor.asOf);
+  const out = since.filter((t) => t.amount < 0).reduce((t, x) => t - x.amount, 0);
+  const inn = since.filter((t) => t.amount > 0).reduce((t, x) => t + x.amount, 0);
+  const amount = debt ? anchor.amount + out - inn : anchor.amount - out + inn;
+  return {
+    amount, asOf: last.date,
+    working: debt
+      ? `${cash(anchor.amount)} owed on ${fmtShort(anchor.asOf)}, plus ${cash(out)} spent and less ${cash(inn)} paid since.`
+      : `${cash(anchor.amount)} on ${fmtShort(anchor.asOf)}, plus ${cash(inn)} in and less ${cash(out)} out since.`,
+  };
+}
+
+function reviewTransactions(d: Draft, b: Budget, today: ISODate): Review {
+  const issues: Issue[] = [];
+  const ignored: string[] = [];
+  const block = (text: string) => issues.push({ level: 'block', text });
+  const note = (text: string) => issues.push({ level: 'note', text });
+  const t = d.transactions;
+  const rows = t.read.rows.map(({ date, description, amount }) => ({ date, description, amount }));
+  if (!rows.length) return { proposal: null, ignored, issues: [{ level: 'block', text: 'No transactions were found in the file.' }] };
+  const { type, id, debt, account } = targetOf(d, b);
+  if (!type) return { proposal: null, ignored, issues: [{ level: 'block', text: `Choose which ${t.read.card ? 'card' : 'card or account'} this is for: the file doesn’t say.` }] };
+  if (!debt && !account) return { proposal: null, ignored, issues: [{ level: 'block', text: 'Choose which card or account this is for.' }] };
+  const name = (debt ?? account)!.name;
+  if (debt && !t.read.card) note(`This looks like a bank account’s export, not a card’s. Check it’s ${name}.`);
+  if (account && t.read.card) note(`This looks like a credit card’s export. Check it’s ${name}.`);
+
+  const existing = debt ? debt.transactions ?? [] : b.accountTransactions?.[id] ?? [];
+  const add = newTransactions(existing, rows);
+  const dup = rows.length - add.length;
+  if (dup) ignored.push(`${dup} transaction${dup === 1 ? '' : 's'} already saved: not added again.`);
+  if (t.read.skipped) ignored.push(`${t.read.skipped} row${t.read.skipped === 1 ? '' : 's'} with no amount: left out.`);
+
+  // What's owed or in the account now: the worked-out amount, or what you typed.
+  const suggested = csvBalance(d, b);
+  let balance: BalanceEntry | undefined;
+  if (t.amount === null) {
+    if (suggested) balance = { amount: debt ? Math.max(0, suggested.amount) : suggested.amount, asOf: suggested.asOf };
+    else if (debt) note(`What’s owed on ${name} isn’t changed: there’s no checked balance from before these transactions to add them to. Type what your app says you owe now, or upload a statement or screenshot.`);
+  } else if (t.amount.trim()) {
+    const c = toCents(t.amount);
+    if (!c) block(`Check the amount ${debt ? 'owed' : 'in the account'}: it should look like 1,240.50.`);
+    else balance = { amount: debt ? (c.credit ? 0 : c.cents) : c.credit ? -c.cents : c.cents, asOf: today };
+  }
+  if (debt && suggested && suggested.amount < 0 && t.amount === null) note(`That works out as ${cash(-suggested.amount)} in credit, so nothing is owed. Check it against your app.`);
+  if (!add.length && !balance) block('Nothing new: every transaction in the file is already saved.');
+
+  // A card's owed-over-time history, worked out from the transactions.
+  const history: BalanceEntry[] = [];
+  if (debt) {
+    const net = (from: ISODate, to: ISODate) => rows.filter((r) => r.date > from && r.date <= to).reduce((x, r) => x - r.amount, 0);
+    const days = [...new Set(rows.map((r) => r.date))];
+    const known = [...(debt.history ?? []), ...(debt.balance ? [debt.balance] : [])].sort((x, y) => x.asOf.localeCompare(y.asOf));
+    const first = known[0];
+    // Before the first amount the app knew: worked back from it.
+    if (first) for (const day of days) if (day < first.asOf) history.push({ asOf: day, amount: Math.max(0, first.amount - net(day, first.asOf)) });
+    // Between the checked balance and the export's last day: worked forward from it (replacing estimates).
+    const anchor = checkedBalance(debt);
+    if (anchor && balance && t.amount === null) {
+      for (const day of days) if (day > anchor.asOf && day < balance.asOf) history.push({ asOf: day, amount: Math.max(0, anchor.amount + net(anchor.asOf, day)) });
+    }
+  }
+
+  if (issues.some((i) => i.level === 'block')) return { proposal: null, issues, ignored };
+  return {
+    proposal: { kind: 'transactions', target: { type: type as 'debt' | 'account', id }, ...(t.read.ending ? { ending: t.read.ending } : {}), add, ...(balance ? { balance } : {}), history, eventId: t.eventId },
+    issues, ignored,
   };
 }
 
@@ -174,10 +342,49 @@ export function resolveOrder(o: Pick<DraftOrder, 'planId' | 'merchant' | 'purcha
   return hits.length === 1 ? hits[0] : undefined;
 }
 
+/** How long a new purchase on this card is interest-free, if its rules make it a plan of its own (Gem: $250 or more). */
+function planMonths(debt: Debt, cents: Cents): number | undefined {
+  if (debt.rules !== 'gem') return undefined; // Mastercard: each rise in the balance already gets its own clock
+  const s = suggestPlan(debt, cents);
+  return s.type === 'interest-free' ? s.months ?? 6 : undefined;
+}
+
+export interface PurchaseRow {
+  index: number;
+  cents: Cents;
+  date: ISODate;
+  description: string;
+  /** Months interest-free if it should be a plan of its own; undefined for an ordinary purchase. */
+  months?: number;
+  /** One of your plans already for this purchase (same amount). */
+  existing?: DebtPlan;
+  /** Add it as a new plan: ticked unless you untick it, or it's already a plan. */
+  add: boolean;
+}
+
+/**
+ * The purchases on a card app screen, as they apply to `debt`. They're already in what's owed, so
+ * they only matter when the card's rules make one a plan of its own (a Gem purchase of $250 or more is
+ * 6 months interest-free); those are offered as new plans unless one of your plans has that amount.
+ */
+export function purchaseRows(d: Draft, debt: Debt | undefined): PurchaseRow[] {
+  const s = d.statement;
+  if (!debt || debt.payroll || ordersOnly(debt) || s.plans.length) return [];
+  return s.purchases.flatMap((x, index) => {
+    const c = toCents(x.amount);
+    const date = validDate(x.date);
+    if (!c || c.credit || !c.cents || !date) return [];
+    const months = planMonths(debt, c.cents);
+    const existing = months ? debt.plans.find((p) => p.original === c.cents || (p.purchaseDate === date && p.remaining === c.cents)) : undefined;
+    return [{ index, cents: c.cents, date, description: x.description.trim(), months, existing, add: !!months && !existing && x.add !== false }];
+  });
+}
+
 export function review(d: Draft, b: Budget, today: ISODate): Review {
   if (d.kind === 'payslip') return reviewPayslip(d, b, today);
   if (d.kind === 'statement') return reviewStatement(d, b, today);
   if (d.kind === 'afterpay') return reviewAfterpay(d, b, today);
+  if (d.kind === 'transactions') return reviewTransactions(d, b, today);
   return { proposal: null, ignored: [], issues: [{ level: 'block', text: 'Couldn’t tell what this document is. Choose Payslip, Statement or Afterpay above.' }] };
 }
 
@@ -245,7 +452,16 @@ function reviewStatement(d: Draft, b: Budget, today: ISODate): Review {
   else if (debt.payroll) block(`${debt.name} comes out of your pay, so it isn’t updated from a statement. Choose the card or loan this is for.`);
   else if (ordersOnly(debt)) block(`${debt.name} is worked out from its orders, not a balance. Upload a screenshot of your Afterpay orders instead.`);
 
-  const bal = toCents(s.balance.value);
+  let bal = toCents(s.balance.value);
+  if (bal === undefined) {
+    // Some app screens show only what's available: what's owed is the limit less that.
+    const av = toCents(s.available.value);
+    const lim = toCents(s.limit.value)?.cents ?? debt?.limit;
+    if (av && !av.credit && lim && av.cents <= lim) {
+      bal = { cents: lim - av.cents, credit: false };
+      note(`Only what’s available (${cash(av.cents)}) is shown, so what’s owed is the ${cash(lim)} limit less that: ${cash(lim - av.cents)}.`);
+    }
+  }
   if (bal === undefined) block('Enter what’s owed.');
   else if (bal === null) block('Check what’s owed: it should look like 1,240.50.');
   const credit = !!bal && (bal.credit || s.inCredit);
@@ -253,7 +469,7 @@ function reviewStatement(d: Draft, b: Budget, today: ISODate): Review {
   if (credit) note('The statement is in credit, so nothing is owed.');
 
   const date = validDate(s.date);
-  if (!date) block(s.date.trim() ? `Check the statement date (${s.date}).` : 'Enter the date the statement is as at.');
+  if (!date) block(s.date.trim() ? `Check the date (${s.date}).` : 'Enter the date what’s owed is as at.');
   else if (date > today) note(`The statement is dated ${fmtShort(date)}, after today, so it’s treated as today.`);
   else if (date < addDays(today, -400)) block(`The statement date, ${fmtShort(date)}, is over a year ago. Check it.`);
 
@@ -296,7 +512,7 @@ function reviewStatement(d: Draft, b: Budget, today: ISODate): Review {
     }
     if (unmatched) note(`${unmatched === 1 ? 'A plan' : `${unmatched} plans`} on the statement didn’t match one of yours. See “Not changed”.`);
     if (s.plans.length) for (const p of debt.plans) if (!used.has(p.id)) ignored.push(`${p.name}: not on this statement, left as it is.`);
-    if (debt.rules === 'gem' && debt.plans.length && !plans.length) {
+    if (debt.rules === 'gem' && debt.plans.length && !plans.length && !s.appScreen) {
       note('None of the Gem plans were updated, so the difference between the balance and the plans counts as “other purchases”, which are paid first. That changes the recommended payment.');
     }
     const planTotal = [...plans, ...newPlans].reduce((t, x) => t + x.remaining, 0);
@@ -304,7 +520,23 @@ function reviewStatement(d: Draft, b: Budget, today: ISODate): Review {
   } else if (s.plans.length) {
     ignored.push(`${s.plans.length === 1 ? 'A plan' : `${s.plans.length} plans`} listed on the statement: the balance already covers ${s.plans.length === 1 ? 'it' : 'them'}.`);
   }
-  for (const x of s.purchases) ignored.push(`${x.description || 'Purchase'}${x.amount ? ` ${cash(toCents(x.amount)?.cents ?? 0)}` : ''}${validDate(x.date) ? ` on ${fmtShort(x.date)}` : ''}: already included in what’s owed.`);
+  const rows = purchaseRows(d, debt);
+  const asOf = date && date <= today ? date : today;
+  for (const row of rows) {
+    const what = `${row.description || 'Purchase'} ${cash(row.cents)} on ${fmtShort(row.date)}`;
+    if (!row.months) continue;
+    if (row.existing) { ignored.push(`${what}: already your plan “${row.existing.name}”.`); continue; }
+    if (!row.add) { ignored.push(`${what}: not added as a plan (tick it to add it).`); continue; }
+    const ends = addMonths(row.date, row.months);
+    newPlans.push({ id: s.purchases[row.index].newId, name: row.description || `Purchase on ${fmtShort(row.date)}`, type: 'interest-free', months: row.months, original: row.cents, remaining: row.cents, asOf, purchaseDate: row.date, ends });
+  }
+  const added = newPlans.filter((x) => s.purchases.some((y) => y.newId === x.id));
+  if (debt && added.length && balance !== undefined) {
+    const planned = debt.plans.reduce((t, x) => t + (plans.find((u) => u.planId === x.id)?.remaining ?? x.remaining), 0) + added.reduce((t, x) => t + x.remaining, 0);
+    if (planned > balance + 100) note(`With ${added.length === 1 ? 'that new plan' : 'those new plans'}, your plans add up to ${cash(planned)}, more than the ${cash(balance)} owed. Some may be paid off or already plans: check them.`);
+  }
+  const others = s.purchases.length - rows.filter((r) => r.months).length;
+  if (others > 0) ignored.push(`${others === 1 ? 'A purchase' : `${others} purchases`} on the ${s.appScreen ? 'screenshot' : 'statement'}: already in what’s owed.`);
   for (const x of s.payments) ignored.push(`Payment${x.amount ? ` of ${cash(toCents(x.amount)?.cents ?? 0)}` : ''}${validDate(x.date) ? ` on ${fmtShort(x.date)}` : ''}: payments are counted automatically on their due dates.`);
   if (d.source === 'device' && debt) note(`Read on this device, which guesses the debt from words in the statement: check it’s ${debt.name}.`);
 

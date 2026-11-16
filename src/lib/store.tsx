@@ -5,6 +5,7 @@ import { debtPerPay, settleDue } from './debts';
 import { autoBalance } from './rebalance';
 import { seedBudget } from './seed';
 import type { Budget } from './types';
+import { keepCopy, type SavedVersion } from './versions';
 
 const KEY = 'paydays.budget.v1';
 
@@ -77,32 +78,7 @@ function settleAll(b: Budget) {
   for (const d of b.debts ?? []) settleDue(d, b.settings, today, debtPerPay(b, d));
 }
 
-// ---------- Earlier versions (automatic, so nothing is lost to a bad edit) ----------
-const HISTORY_KEY = 'paydays.versions.v1';
-const MAX_VERSIONS = 30;
-const MIN_GAP_MS = 2 * 60 * 1000;
-
-export interface SavedVersion { at: string; budget: Budget }
-
-export function readVersions(): SavedVersion[] {
-  try { return JSON.parse(localStorage.getItem(HISTORY_KEY) ?? '[]'); } catch { return []; }
-}
-
-/** Keep a copy of the data before a change (at most one every 2 minutes, the last 30). */
-function keepVersion(b: Budget, force = false) {
-  try {
-    const list = readVersions();
-    const last = list[0];
-    if (!force && last && Date.now() - Date.parse(last.at) < MIN_GAP_MS) return;
-    if (last && JSON.stringify(last.budget) === JSON.stringify(b)) return;
-    list.unshift({ at: new Date().toISOString(), budget: b });
-    while (list.length > MAX_VERSIONS) list.pop();
-    // If storage is full, drop the oldest copies until it fits.
-    for (;;) {
-      try { localStorage.setItem(HISTORY_KEY, JSON.stringify(list)); break; } catch { if (list.length <= 1) break; list.pop(); }
-    }
-  } catch { /* ignore */ }
-}
+// Saved copies (one a day, kept 3 months) are in versions.ts.
 
 export type SyncStatus =
   | { state: 'off' }
@@ -167,7 +143,7 @@ export function BudgetProvider({ children }: { children: ReactNode }) {
         sha.current = remote.sha;
         savedAt.current = remote.budget.updatedAt;
         if (remote.budget.updatedAt !== local.updatedAt) {
-          setBudget((cur) => { keepVersion(cur, true); return bringUpToDate(remote.budget); });
+          setBudget((cur) => { keepCopy(cur); return bringUpToDate(remote.budget); });
         }
       } else {
         sha.current = remote?.sha;
@@ -230,10 +206,10 @@ export function BudgetProvider({ children }: { children: ReactNode }) {
     return () => clearTimeout(t);
   }, [budget, reconcile, retry]);
 
-  const update = useCallback((fn: (b: Budget) => Budget) => setBudget((b) => { keepVersion(b); return stamp(autoBalance(fn(structuredClone(b)))); }), []);
-  const replace = useCallback((b: Budget) => setBudget((cur) => { keepVersion(cur, true); return stamp(bringUpToDate(structuredClone(b))); }), []);
-  const reset = useCallback(() => setBudget((cur) => { keepVersion(cur, true); return stamp(autoBalance(structuredClone(seedBudget))); }), []);
-  const restoreVersion = useCallback((v: SavedVersion) => setBudget((cur) => { keepVersion(cur, true); return stamp(bringUpToDate(structuredClone(v.budget))); }), []);
+  const update = useCallback((fn: (b: Budget) => Budget) => setBudget((b) => { keepCopy(b); return stamp(autoBalance(fn(structuredClone(b)))); }), []);
+  const replace = useCallback((b: Budget) => setBudget((cur) => { keepCopy(cur, true); return stamp(bringUpToDate(structuredClone(b))); }), []);
+  const reset = useCallback(() => setBudget((cur) => { keepCopy(cur, true); return stamp(autoBalance(structuredClone(seedBudget))); }), []);
+  const restoreVersion = useCallback((v: SavedVersion) => setBudget((cur) => { keepCopy(cur, true); return stamp(bringUpToDate(structuredClone(v.budget))); }), []);
 
   const connectSync = useCallback(async (c: SyncConfig) => {
     await pullBudget(c); // checks the repo and token before saving them

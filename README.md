@@ -33,12 +33,20 @@ Everything you enter is saved in your browser (localStorage), and in your own pr
 turn on Settings → Sync. Use Settings → Download backup to keep a copy, and Restore backup to move it to
 another browser or device.
 
-Documents you upload (payslips, card or loan statements, Afterpay screenshots) are sent to Google's
+Documents you upload (payslips, card or loan statements, screenshots of a card's app or of Afterpay) are sent to Google's
 Gemini to read, using your own Google key, and shown to you to check before anything changes. With
 prepaid (paid) use, Google doesn't use them to train its models. The key is kept in each browser only
 (Settings → Reading documents), never in the budget, the repo or the code; the QR code that connects your
 phone can carry it. When Gemini can't be used, the app offers to read the document on this device
 instead, where it never leaves the device.
+
+Bank and card exports (CSV) are read on the device and never sent anywhere. You're asked which card or
+account each is for (the file doesn't say); its number is remembered so the next one is matched, for you
+to check. The transactions are kept on that card or account, what's owed or the balance is worked out
+from them, and Insights shows what the spending went on.
+
+A copy of everything is saved in the browser once a day, before that day's first change, and kept for
+3 months (Settings → Saved copies), so an upload or an edit that went wrong can be put back.
 
 The published app starts with a blank budget. `src/lib/personal/` (git-ignored) can hold your own
 starting data, one-off data updates and the tests that use them; it stays on your computer.

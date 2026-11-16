@@ -1,11 +1,12 @@
 import { nextColor } from '../colors';
-import { fmtDay, fmtShort, monthName, type ISODate } from '../dates';
+import { fmtDay, fmtShort, fmtSpan, monthName, type ISODate } from '../dates';
 import { debtPerPay, exactForFirstPlan, owed, planEnds, recordHistory, settleDue } from '../debts';
 import { recordPayslip } from '../documents';
 import { paydayFor, planFor, recordPayday } from '../engine';
 import { cash } from '../money';
 import { autoBalance, autoPays } from '../rebalance';
-import type { Budget, Cents, Debt, PaidPayment } from '../types';
+import { setBalance } from '../history';
+import type { Budget, Cents, Debt, PaidPayment, Txn } from '../types';
 import type { Proposal } from './check';
 
 // ---------------------------------------------------------------------------------------------
@@ -16,6 +17,7 @@ import type { Proposal } from './check';
 
 export function applyProposal(b: Budget, p: Proposal, today: ISODate): Budget {
   if (p.kind === 'payslip') { recordPayslip(b, p.slip); return b; }
+  if (p.kind === 'transactions') { applyTransactions(b, p, today); return b; }
   if (p.kind === 'statement') {
     if (p.newDebt) addDebt(b, p.debtId, p.newDebt.name);
     applyStatement(b, p.debtId, p, today);
@@ -39,6 +41,35 @@ export function applyProposal(b: Budget, p: Proposal, today: ISODate): Budget {
   }
   recordHistory(debt, today);
   return b;
+}
+
+/** The most transactions kept for one card or account (a few years of a busy card). */
+const MAX_TXNS = 3000;
+
+/**
+ * A bank or card export: its new transactions are kept on that card or account, the card or account
+ * number is remembered (so the next export is matched to it), and what's owed or in the account is
+ * set, as at the export's last day, when it was worked out or typed in.
+ */
+function applyTransactions(b: Budget, p: Extract<Proposal, { kind: 'transactions' }>, today: ISODate): void {
+  const merge = (list: Txn[] = []) => [...list, ...p.add.map((t) => ({ ...t }))].sort((x, y) => x.date.localeCompare(y.date)).slice(-MAX_TXNS);
+  if (p.target.type === 'debt') {
+    const debt = (b.debts ?? []).find((d) => d.id === p.target.id);
+    if (!debt) return;
+    debt.transactions = merge(debt.transactions);
+    if (p.ending && !debt.ending) debt.ending = p.ending;
+    if (p.balance) applyStatement(b, debt.id, { balance: p.balance.amount, date: p.balance.asOf, plans: [], newPlans: [] }, today);
+    if (p.history.length) {
+      const days = new Set(p.history.map((h) => h.asOf));
+      debt.history = [...(debt.history ?? []).filter((h) => !days.has(h.asOf)), ...p.history].sort((x, y) => x.asOf.localeCompare(y.asOf)).slice(-500);
+    }
+    return;
+  }
+  const account = b.accounts.find((a) => a.id === p.target.id);
+  if (!account) return;
+  b.accountTransactions = { ...(b.accountTransactions ?? {}), [account.id]: merge(b.accountTransactions?.[account.id]) };
+  if (p.ending && !account.ending) account.ending = p.ending;
+  if (p.balance) setBalance(b, account.id, p.balance.amount, p.balance.asOf, p.eventId);
 }
 
 /** A debt that isn't set up yet: added with its own payday account, paid from the split like any other. */
@@ -78,6 +109,7 @@ export function applyStatement(b: Budget, debtId: string, s: Pick<Extract<Propos
   const asOf = s.date <= today ? s.date : today;
   if (asOf < today) windBack(debt, asOf);
   debt.balance = { amount: s.balance, asOf };
+  debt.checked = { amount: s.balance, asOf };
   if (s.limit !== undefined && s.limit > 0) debt.limit = s.limit;
   for (const u of s.plans) {
     const plan = debt.plans.find((x) => x.id === u.planId);
@@ -163,6 +195,25 @@ export function preview(before: Budget, p: Proposal, today: ISODate): Preview {
       const z = now.plans.find((x) => x.id === np.id);
       lines.push(`New plan: ${np.name}, ${cash(z?.remaining ?? np.remaining)} left, interest-free until ${fmtShort(np.ends!)}`);
     }
+  } else if (p.kind === 'transactions') {
+    const isDebt = p.target.type === 'debt';
+    const was = isDebt ? debtOf(before, p.target.id) : undefined;
+    const now = isDebt ? debtOf(after, p.target.id) : undefined;
+    const name = (isDebt ? now?.name : after.accounts.find((a) => a.id === p.target.id)?.name) ?? 'It';
+    if (p.add.length) lines.push(`${name}: ${p.add.length} transaction${p.add.length === 1 ? '' : 's'} saved, ${fmtSpan(p.add[0].date, p.add[p.add.length - 1].date)}.`);
+    if (was && now && p.balance) {
+      lines.push(`${name}: ${cash(owed(was))} → ${cash(owed(now))} owed`);
+      if (p.balance.asOf < today && owed(now) !== p.balance.amount) explain.push(`That’s ${cash(p.balance.amount)} on ${fmtShort(p.balance.asOf)}. Payments planned since then count as paid, so what’s owed today is ${cash(owed(now))}.`);
+    }
+    if (!isDebt && p.balance) {
+      const prev = before.balances?.[p.target.id];
+      lines.push(`${name}: balance ${prev ? `${cash(prev.amount)} → ` : ''}${cash(p.balance.amount)}, as at ${fmtShort(p.balance.asOf)}`);
+    }
+    const firstKnown = was?.history?.[0]?.asOf;
+    const back = isDebt ? p.history.filter((h) => !firstKnown || h.asOf < firstKnown).length : 0;
+    if (back) lines.push(`${name}: what was owed on ${back} earlier day${back === 1 ? '' : 's'} added to its history.`);
+    const knownBefore = isDebt ? was?.ending : before.accounts.find((a) => a.id === p.target.id)?.ending;
+    if (p.ending && !knownBefore) lines.push(`Next time, an export with number ending ${p.ending} goes to ${name} straight away.`);
   } else {
     const was = debtOf(before, p.debtId)!;
     const now = debtOf(after, p.debtId)!;

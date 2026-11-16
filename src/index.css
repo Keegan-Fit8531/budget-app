@@ -348,6 +348,7 @@ button.list-row:hover { background: color-mix(in srgb, var(--soft) 60%, transpar
 /* ---------- Bars ---------- */
 .bar { position: relative; height: 8px; border-radius: var(--r-pill); background: var(--soft); margin-top: var(--s-2); }
 .bar > div { height: 100%; border-radius: var(--r-pill); max-width: 100%; background: var(--brand-2); }
+.bar.moving > div { transition: width 0.25s linear; }
 .bar .target { position: absolute; top: -4px; width: 2px; height: 16px; background: var(--ink); border-radius: 1px; }
 /* A bar made of labelled parts (paid / still to come / spare), with a 2px gap between them */
 .parts { display: flex; height: 8px; border-radius: var(--r-pill); overflow: hidden; background: var(--soft); gap: 2px; }
@@ -469,8 +470,19 @@ select::-ms-expand { display: none; }
 /* In a stack (a card), it takes none of the stack's gap while closed: it pulls up by the gap and gives it back inside. */
 .collapse.stacked { margin-top: calc(-1 * var(--s-3)); }
 .collapse.stacked > div > .collapse-pad { padding-top: var(--s-3); }
+/* A note that shows for a few seconds at the bottom (above the phone's bottom bar), then goes */
+.toast {
+  position: fixed; left: 50%; bottom: calc(24px + env(safe-area-inset-bottom)); transform: translateX(-50%); z-index: 60;
+  width: max-content; max-width: min(440px, calc(100vw - 32px)); padding: 12px 16px; border-radius: var(--r-md);
+  background: var(--ink); color: var(--bg); box-shadow: var(--shadow-pop); font-size: var(--fs-md); line-height: 1.4;
+  animation: toast-in 0.2s ease-out; transition: opacity 0.25s;
+}
+.toast.out { opacity: 0; }
+@keyframes toast-in { from { opacity: 0; transform: translate(-50%, 8px); } }
+@media (max-width: 899px) { .toast { bottom: calc(84px + env(safe-area-inset-bottom)); } }
 @media (prefers-reduced-motion: reduce) {
   .collapse, .collapse[data-open="true"], .chev { transition: none; }
+  .bar.moving > div, .toast { transition: none; animation: none; }
 }
 .disc.ruled { border-top: 1px solid var(--line); padding-top: var(--s-1); }
 /* A row (account, debt, setting) that opens to show its details */

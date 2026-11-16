@@ -1,30 +1,39 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { fmtShort, todayISO, type ISODate } from '../lib/dates';
+import { addMonths, fmtShort, fmtSpan, todayISO, type ISODate } from '../lib/dates';
 import { owed, planEnds } from '../lib/debts';
-import { cash } from '../lib/money';
+import { cash, centsToInput } from '../lib/money';
 import { applyProposal, fingerprint, preview } from '../lib/reader/apply';
-import { NEW_DEBT, NOT_MINE, resolvePlanRow, review, toCents, toDraft, type Draft, type DraftFig } from '../lib/reader/check';
+import { csvBalance, csvTargets, NEW_DEBT, NOT_MINE, purchaseRows, resolvePlanRow, review, toCents, toDraft, type Draft, type DraftFig } from '../lib/reader/check';
+import { CATEGORY_LABEL, summarize } from '../lib/spending';
 import { DEVICE_FALLBACK, errorMessage, ReaderError } from '../lib/reader/errors';
-import { startRead, type ReadJob } from '../lib/reader/job';
+import { isCsv, startRead, type ReadJob, type ReadStage } from '../lib/reader/job';
 import type { DocKind, Extraction } from '../lib/reader/types';
-import { buildUndo, undoKeeps, undoUpload, writeUndo, type UndoRecord } from '../lib/reader/undo';
 import { newId, useBudget } from '../lib/store';
 import { Icon } from './Icon';
+import { showToast } from './toast';
 
 // ---------------------------------------------------------------------------------------------
 // The one upload flow, used by the Add button and the Planner: reading → a rundown of every change
-// (which you can correct) → Confirm → done, with Undo. Nothing in the budget changes before Confirm.
+// (which you can correct) → Confirm, which saves and closes. Nothing in the budget changes before
+// Confirm; a change can be put right from Settings → Saved copies.
 // ---------------------------------------------------------------------------------------------
 
 type Phase =
   | { s: 'reading' }
   | { s: 'error'; err: ReaderError }
-  | { s: 'review'; draft: Draft }
-  | { s: 'done'; kind: DocKind; lines: string[]; explain: string[]; rec: UndoRecord }
-  | { s: 'undone'; kept: string[] };
+  | { s: 'review'; draft: Draft };
 
-const KIND_TITLE: Record<DocKind, string> = { payslip: 'Check this payslip', statement: 'Check this statement', afterpay: 'Check these Afterpay orders', unknown: 'Check this document' };
+const KIND_TITLE: Record<DocKind, string> = { payslip: 'Check this payslip', statement: 'Check this statement', afterpay: 'Check these Afterpay orders', transactions: 'Check these transactions', unknown: 'Check this document' };
 const RETRY = new Set(['too_fast', 'overloaded', 'offline', 'unreachable', 'timeout', 'unusable']);
+const titleOf = (d: Draft) => (d.kind === 'statement' && d.statement.appScreen ? 'Check this card screenshot' : KIND_TITLE[d.kind]);
+
+/** How far along a Gemini read looks: getting the file ready, then Google reading it (a few seconds, plus the upload). */
+function readingProgress(stage: ReadStage, now: number): { pct: number; slow: boolean } {
+  if (stage.step === 'preparing') return { pct: 6, slow: false };
+  const expected = 2500 + stage.bytes / 1000; // about 2.5 s to read, and sending at about 1 MB a second
+  const t = Math.max(0, now - stage.since);
+  return { pct: 15 + 80 * (1 - Math.exp(-t / expected)), slow: t > expected * 3 };
+}
 
 /** A blank form, for typing the figures in. */
 const blank = (kind: DocKind): Extraction => ({ kind });
@@ -34,6 +43,8 @@ export function UploadFlow({ job: firstJob, onClose, onPayslip }: { job: ReadJob
   const [job, setJob] = useState(firstJob);
   const [phase, setPhase] = useState<Phase>({ s: 'reading' });
   const [progress, setProgress] = useState(0);
+  const [stage, setStage] = useState<ReadStage>({ step: 'preparing' });
+  const [now, setNow] = useState(() => Date.now());
   const budgetRef = useRef(budget);
   budgetRef.current = budget;
   const file = job.file;
@@ -44,6 +55,7 @@ export function UploadFlow({ job: firstJob, onClose, onPayslip }: { job: ReadJob
     setPhase({ s: 'reading' });
     setProgress(0);
     const off = job.onProgress((p) => { if (live) setProgress(p); });
+    const offStage = job.onStage((st) => { if (live) setStage(st); });
     job.promise.then(
       (ex) => { if (live) setPhase({ s: 'review', draft: toDraft(ex, budgetRef.current, job.source, newId) }); },
       (e) => {
@@ -52,13 +64,24 @@ export function UploadFlow({ job: firstJob, onClose, onPayslip }: { job: ReadJob
         if (err.kind === 'cancelled') onClose(); else setPhase({ s: 'error', err });
       },
     );
-    return () => { live = false; off(); };
+    return () => { live = false; off(); offStage(); };
     // A new job (read on this device, try again) restarts this; nothing else does.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [job]);
 
+  // While Google reads it, move the bar along with the time it usually takes.
+  const reading = phase.s === 'reading' && job.source === 'gemini';
+  useEffect(() => {
+    if (!reading) return;
+    const t = setInterval(() => setNow(Date.now()), 200);
+    return () => clearInterval(t);
+  }, [reading]);
+
   const close = () => { if (phase.s === 'reading') job.cancel(); onClose(); };
-  const title = phase.s === 'reading' ? 'Reading…' : phase.s === 'error' ? 'Couldn’t read it' : phase.s === 'review' ? KIND_TITLE[phase.draft.kind] : phase.s === 'done' ? 'Saved' : 'Undone';
+  const title = phase.s === 'reading' ? 'Reading…' : phase.s === 'error' ? 'Couldn’t read it' : titleOf(phase.draft);
+  const isPdf = file.type === 'application/pdf' || /\.pdf$/i.test(file.name);
+  const gp = readingProgress(stage, now);
+  const secs = stage.step === 'reading' ? Math.floor((now - stage.since) / 1000) : 0;
 
   return (
     <div className="modal-back" onClick={close}>
@@ -72,11 +95,19 @@ export function UploadFlow({ job: firstJob, onClose, onPayslip }: { job: ReadJob
         </div>
 
         {phase.s === 'reading' && (
-          <div role="status" className="stack gap-8">
-            <p className="small muted">{job.source === 'device'
-              ? (file.type.startsWith('image/') ? 'Reading the text in the photo on this device. This can take a little while the first time.' : 'Reading the PDF on this device.')
-              : 'Sent to Google’s Gemini to read. This usually takes a few seconds.'}</p>
-            <div className="bar"><div style={{ width: job.source === 'device' ? `${Math.max(6, Math.round(progress * 100))}%` : '40%' }} /></div>
+          <div className="stack gap-8">
+            <p className="small muted" role="status">{job.source === 'device'
+              ? (file.type.startsWith('image/') ? 'Reading the text in the photo on this device. This can take a little while the first time.' : isCsv(file) ? 'Reading the export on this device…' : 'Reading the PDF on this device.')
+              : stage.step === 'preparing'
+                ? (isPdf ? 'Getting the PDF ready to send…' : 'Making the image smaller to send…')
+                : `Google’s Gemini is reading it (${stage.bytes < 1e6 ? `${Math.max(1, Math.round(stage.bytes / 1000))} KB` : `${(stage.bytes / 1e6).toFixed(1)} MB`} sent)…`}</p>
+            <div className="bar moving" role="progressbar" aria-label="Reading" aria-valuemin={0} aria-valuemax={100}
+              aria-valuenow={Math.round(job.source === 'device' ? progress * 100 : gp.pct)}>
+              <div style={{ width: `${job.source === 'device' ? Math.max(6, Math.round(progress * 100)) : gp.pct.toFixed(1)}%` }} />
+            </div>
+            {job.source === 'gemini' && stage.step === 'reading' && (
+              <span className="xs muted">{gp.slow ? `${secs} s: taking longer than usual. You can keep waiting, or cancel and try again.` : secs >= 1 ? `${secs} s` : '\u00a0'}</span>
+            )}
             <div className="row end"><button className="btn" onClick={close}>Cancel</button></div>
           </div>
         )}
@@ -93,42 +124,14 @@ export function UploadFlow({ job: firstJob, onClose, onPayslip }: { job: ReadJob
             onEdit={(draft) => setPhase({ s: 'review', draft })}
             onCancel={onClose}
             onConfirm={(proposal, pv) => {
-              const today = todayISO();
-              const rec = buildUndo(budget, pv.after, proposal, file.name, KIND_TITLE[phase.draft.kind].replace('Check ', ''));
-              writeUndo(rec);
-              update((b) => applyProposal(b, proposal, today));
-              setPhase({ s: 'done', kind: proposal.kind, lines: pv.lines, explain: pv.explain, rec });
+              update((b) => applyProposal(b, proposal, todayISO()));
               if (proposal.kind === 'payslip' && pv.payStart) onPayslip?.(pv.payStart);
+              const more = pv.lines.length - 1;
+              showToast(`Saved. ${pv.lines[0] ?? ''}${more > 0 ? ` (and ${more} more change${more === 1 ? '' : 's'})` : ''}`);
+              onClose();
             }} />
         )}
 
-        {phase.s === 'done' && (
-          <>
-            <div role="status" className="stack gap-8">
-              <ul className="notes-list">{phase.lines.map((l) => <li key={l}>{l}</li>)}</ul>
-              {phase.explain.map((t) => <p key={t} className="small muted">{t}</p>)}
-            </div>
-            <div className="row end wrap">
-              <button className="btn" onClick={() => {
-                const today = todayISO();
-                const kept = undoKeeps(budget, phase.rec, today);
-                update((b) => { undoUpload(b, phase.rec, today); return b; });
-                writeUndo(null);
-                setPhase({ s: 'undone', kept });
-              }}>Undo</button>
-              <a className="btn" href={phase.kind === 'payslip' ? '#/planner' : '#/debts'} onClick={onClose}>{phase.kind === 'payslip' ? 'Open Planner' : 'Open Debts'}</a>
-              <button className="btn primary" onClick={onClose}>Done</button>
-            </div>
-          </>
-        )}
-
-        {phase.s === 'undone' && (
-          <>
-            <p role="status">That upload is undone: everything it changed is back as it was{phase.kept.length ? ', except:' : '.'}</p>
-            {phase.kept.length > 0 && <ul className="notes-list">{phase.kept.map((k) => <li key={k}>{k}</li>)}</ul>}
-            <div className="row end"><button className="btn primary" onClick={onClose}>Done</button></div>
-          </>
-        )}
       </div>
     </div>
   );
@@ -187,16 +190,22 @@ function Rundown({ draft, sourceLabel, onEdit, onCancel, onConfirm }: {
   const debts = (budget.debts ?? []).filter((d) => !d.payroll);
   const s = draft.statement;
   const debt = debts.find((d) => d.id === s.debtId);
+  // Purchases on a card app screen that its rules make plans of their own (Gem: $250 or more).
+  const buys = purchaseRows(draft, debt).filter((r) => r.months);
   const ap = (budget.debts ?? []).find((d) => d.id === draft.afterpay.debtId);
 
   return (
     <>
       <span className="pill" style={{ alignSelf: 'flex-start' }}>{sourceLabel}</span>
-      <div className="seg" role="group" aria-label="What this is" style={{ alignSelf: 'flex-start' }}>
-        {(['payslip', 'statement', 'afterpay'] as const).map((k) => (
-          <button key={k} aria-pressed={draft.kind === k} onClick={() => edit((d) => { d.kind = k; })}>{k === 'payslip' ? 'Payslip' : k === 'statement' ? 'Card or loan statement' : 'Afterpay'}</button>
-        ))}
-      </div>
+      {draft.kind !== 'transactions' && (
+        <div className="seg" role="group" aria-label="What this is" style={{ alignSelf: 'flex-start' }}>
+          {(['payslip', 'statement', 'afterpay'] as const).map((k) => (
+            <button key={k} aria-pressed={draft.kind === k} onClick={() => edit((d) => { d.kind = k; })}>{k === 'payslip' ? 'Payslip' : k === 'statement' ? 'Card or loan' : 'Afterpay'}</button>
+          ))}
+        </div>
+      )}
+
+      {draft.kind === 'transactions' && <TransactionsCheck draft={draft} edit={edit} />}
 
       {draft.kind === 'payslip' && (
         <div className="form-grid">
@@ -224,12 +233,26 @@ function Rundown({ draft, sourceLabel, onEdit, onCancel, onConfirm }: {
           )}
           <div className="form-grid">
             <Money label="Owed" fig={s.balance} placeholder="1,240.50" onChange={(v) => edit((d) => { d.statement.balance.value = v; })} />
-            <label className="field">As at (statement date)
+            <label className="field">{s.appScreen ? 'As at' : 'As at (statement date)'}
               <input type="date" value={s.date} max={today} onChange={(e) => edit((d) => { d.statement.date = e.target.value; })} />
             </label>
             <Money label="Credit limit (optional)" fig={s.limit} onChange={(v) => edit((d) => { d.statement.limit.value = v; })} />
           </div>
-          {toCents(s.minimum.value)?.cents !== undefined && <p className="small muted">The statement’s minimum payment is {cash(toCents(s.minimum.value)!.cents)}.</p>}
+          {toCents(s.minimum.value)?.cents !== undefined && <p className="small muted">The {s.appScreen ? 'last statement’s' : 'statement’s'} minimum payment is {cash(toCents(s.minimum.value)!.cents)}.</p>}
+          {buys.length > 0 && (
+            <div className="stack gap-8">
+              <b className="small">New interest-free purchases</b>
+              {buys.map((row) => (
+                <label key={row.index} className="check-row small">
+                  <input type="checkbox" checked={row.add} disabled={!!row.existing}
+                    onChange={(e) => edit((d) => { d.statement.purchases[row.index].add = e.target.checked; })} />
+                  <span>{row.description || 'Purchase'} {cash(row.cents)} on {fmtShort(row.date)}: {row.existing
+                    ? `already your plan “${row.existing.name}”`
+                    : `add as a plan, interest-free until ${fmtShort(addMonths(row.date, row.months!))}`}</span>
+                </label>
+              ))}
+            </div>
+          )}
           {debt && s.plans.length > 0 && (
             <div className="stack gap-8">
               <b className="small">Plans on the statement</b>
@@ -314,6 +337,53 @@ function Rundown({ draft, sourceLabel, onEdit, onCancel, onConfirm }: {
           onConfirm(r.proposal, pv);
         }}>Confirm</button>
       </div>
+    </>
+  );
+}
+
+/**
+ * A bank or card export: a file doesn't say whose it is, so you're asked which card or account (or
+ * shown the one with that number from last time, to check), and what's owed or in it now.
+ */
+function TransactionsCheck({ draft, edit }: { draft: Draft; edit: (fn: (d: Draft) => void) => void }) {
+  const { budget } = useBudget();
+  const t = draft.transactions;
+  const rows = t.read.rows;
+  const targets = csvTargets(budget);
+  const isDebt = t.target.startsWith('debt:');
+  const suggested = csvBalance(draft, budget);
+  const out = rows.filter((x) => x.amount < 0).reduce((a, x) => a - x.amount, 0);
+  const inn = rows.filter((x) => x.amount > 0).reduce((a, x) => a + x.amount, 0);
+  const matched = t.matchedBy ? targets.find((x) => x.value === t.target) : undefined;
+  const shown = t.amount ?? (suggested ? centsToInput(isDebt ? Math.max(0, suggested.amount) : suggested.amount) : '');
+  const top = rows.length ? summarize(rows, rows[0].date, rows[rows.length - 1].date).categories.filter((c) => c.category !== 'other').slice(0, 3) : [];
+  return (
+    <>
+      {rows.length > 0 && (
+        <p className="small">{rows.length} transaction{rows.length === 1 ? '' : 's'}, {fmtSpan(rows[0].date, rows[rows.length - 1].date)}: {cash(out)} {t.read.card ? 'spent' : 'out'}, {cash(inn)} {t.read.card ? 'paid' : 'in'}.
+          {top.length > 0 && <span className="muted"> Most went on {top.map((c) => `${CATEGORY_LABEL[c.category].toLowerCase()} (${cash(c.total, { whole: true })})`).join(', ')}.</span>}
+        </p>
+      )}
+      <label className="field">Which {t.read.card ? 'card' : 'card or account'} is this for?
+        <select value={t.target} onChange={(e) => edit((d) => { d.transactions.target = e.target.value; d.transactions.matchedBy = undefined; d.transactions.amount = null; })}>
+          {!t.target && <option value="">Choose…</option>}
+          {(['Cards and loans', 'Bank accounts'] as const).filter((g) => targets.some((x) => x.group === g)).map((g) => (
+            <optgroup key={g} label={g}>{targets.filter((x) => x.group === g).map((x) => <option key={x.value} value={x.value}>{x.label}</option>)}</optgroup>
+          ))}
+        </select>
+        <span className="xs muted">{matched
+          ? `Chosen because ${matched.label} has number ending ${t.matchedBy}. Change it if that’s wrong.`
+          : `The file doesn’t say whose it is${t.read.ending ? `. Once you confirm, number ending ${t.read.ending} goes straight to it next time` : ''}.`}</span>
+      </label>
+      {t.target && (
+        <label className="field">{isDebt ? 'Owed now' : 'Balance now'}
+          <input inputMode="decimal" value={shown} placeholder={isDebt ? 'What your app says you owe' : 'What your banking app says'}
+            onChange={(e) => edit((d) => { d.transactions.amount = e.target.value; })} />
+          <span className="xs muted">{t.amount === null && suggested
+            ? `${suggested.working} That’s as at ${fmtShort(suggested.asOf)}: check it against your app.`
+            : t.amount !== null && t.amount.trim() ? 'As at today, as you typed it.' : 'Leave it empty to keep what’s saved.'}</span>
+        </label>
+      )}
     </>
   );
 }

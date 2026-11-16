@@ -1,3 +1,4 @@
+import type { CsvRead } from '../csv';
 import type { ISODate } from '../dates';
 
 // ---------------------------------------------------------------------------------------------
@@ -6,7 +7,8 @@ import type { ISODate } from '../dates';
 // the budget; the app checks every field (check.ts) and applies it itself (apply.ts).
 // ---------------------------------------------------------------------------------------------
 
-export type DocKind = 'payslip' | 'statement' | 'afterpay' | 'unknown';
+/** `transactions` is a bank or card export (CSV), read on this device. */
+export type DocKind = 'payslip' | 'statement' | 'afterpay' | 'transactions' | 'unknown';
 
 /** A figure as printed, e.g. { amount: "1240.50", label: "Closing balance" }. */
 export interface Fig { amount: string; label?: string }
@@ -25,14 +27,18 @@ export interface RawPayslip {
 export interface RawStatement {
   debtId?: string | null;
   nameOnDocument?: string;
+  /** A screenshot of the card's app (what's owed now, recent purchases), not a statement. */
+  appScreen?: boolean;
   balance?: Fig;
+  /** Available credit, when shown. */
+  available?: Fig;
   inCredit?: boolean;
   statementDate?: string;
   limit?: Fig;
   minimum?: Fig;
   /** Plans shown on the statement (Gem's interest-free plans), matched to the debt's plans by id. */
   plans?: { planId?: string | null; description?: string; remaining?: Fig; ends?: string }[];
-  /** Purchases listed on the statement. They're inside its balance, so they're never added again. */
+  /** Purchases listed on a card app screen. They're inside its balance, so they're never added again (a Gem one of $250 or more becomes a plan). */
   purchases?: { date?: string; description?: string; amount?: Fig }[];
   /** Payments listed on the statement. They're counted automatically on their due dates, so they're ignored. */
   paymentsShown?: { date?: string; amount?: Fig }[];
@@ -53,6 +59,7 @@ export interface Extraction {
   payslip?: RawPayslip;
   statement?: RawStatement;
   afterpay?: RawAfterpay;
+  transactions?: CsvRead;
   notes?: string;
 }
 

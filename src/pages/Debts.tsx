@@ -3,6 +3,7 @@ import { DebtChart } from '../components/DebtChart';
 import { Icon } from '../components/Icon';
 import { AccIcon, Chevron, PageHead } from '../components/ui';
 import { PaydayControl } from '../components/PaydayControl';
+import { TransactionList } from '../components/Transactions';
 import { nextColor } from '../lib/colors';
 import { addDays, fmtDay, fmtShort, monthName, ordinal, todayISO, type ISODate } from '../lib/dates';
 import { applyPayment, beforeStatement, debtAdvice, debtPerPay, debtSchedules, exactForFirstPlan, gemPlan, historyOwed, owed, type DebtAdvice, PLAN_LABEL, plannedOwed, planSchedule, projectedOwed, recordHistory, suggestPlan, unplanned } from '../lib/debts';
@@ -219,6 +220,8 @@ export function Debts() {
               </button>
               {o > 0 && <button className="btn small" onClick={() => setPayModal(d)}><Icon name="check" size={16} /> Record a payment</button>}
             </div>
+
+            <TransactionList items={d.transactions ?? []} card />
 
             {!d.payroll && <div style={{ borderTop: '1px solid var(--line)', paddingTop: 12 }}>
               <PaydayControl accountId={d.accountId} sends={funded?.funded ?? 0} needs={funded?.need ?? 0}
@@ -530,7 +533,7 @@ function BalanceEditor({ debt: d, used, onAddPlan }: { debt: Debt; used: number;
     if (d.limit && c > d.limit * 1.2) return setErr('That\u2019s well over the credit limit. Check the amount, or update the limit with Edit.');
     update((b) => {
       const x = (b.debts ?? []).find((y) => y.id === d.id);
-      if (x) { x.balance = { amount: c, asOf: today }; recordHistory(x, today); }
+      if (x) { x.balance = { amount: c, asOf: today }; x.checked = { ...x.balance }; recordHistory(x, today); }
       return b;
     });
     setEditing(false);
