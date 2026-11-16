@@ -9,6 +9,7 @@ import { DEVICE_FALLBACK, errorMessage, ReaderError } from '../lib/reader/errors
 import { isCsv, startRead, type ReadJob, type ReadStage } from '../lib/reader/job';
 import type { DocKind, Extraction } from '../lib/reader/types';
 import { newId, useBudget } from '../lib/store';
+import { isStaleBuild } from './ErrorBoundary';
 import { Icon } from './Icon';
 import { showToast } from './toast';
 
@@ -86,7 +87,8 @@ export function UploadFlow({ job: firstJob, onClose, onPayslip, queue }: {
       (ex) => { if (live) setPhase({ s: 'review', draft: toDraft(ex, budgetRef.current, job.source, newId) }); },
       (e) => {
         if (!live) return;
-        const err = e instanceof ReaderError ? e : new ReaderError(job.source === 'device' ? 'bad_file' : 'unusable', { detail: job.source === 'device' ? 'That file couldn’t be read on this device. Type the figures in instead.' : undefined });
+        // A part of the reader that this older copy of the app can't load any more (a new version is up).
+        const err = e instanceof ReaderError ? e : isStaleBuild(e) ? new ReaderError('app_updated') : new ReaderError(job.source === 'device' ? 'bad_file' : 'unusable', { detail: job.source === 'device' ? 'That file couldn’t be read on this device. Type the figures in instead.' : undefined });
         if (err.kind === 'cancelled') { if (!queue) onClose(); } else setPhase({ s: 'error', err });
       },
     );
@@ -179,7 +181,7 @@ function ErrorView({ err, source, onClose, closeLabel, onDevice, onRetry, onType
       <div className="row end wrap">
         <button className="btn" onClick={onClose}>{closeLabel}</button>
         {(err.kind === 'no_key' || err.kind === 'bad_key' || err.kind === 'model_gone' || err.kind === 'billing_needed') && <a className="btn" href="#/settings" onClick={onClose}>Open Settings</a>}
-        <button className="btn" onClick={onType}>Type it in</button>
+        {err.kind === 'app_updated' ? <button className="btn primary" onClick={() => window.location.reload()}>Reload the app</button> : <button className="btn" onClick={onType}>Type it in</button>}
         {source === 'gemini' && DEVICE_FALLBACK.has(err.kind) && <button className="btn" onClick={onDevice}>Read it on this device instead</button>}
         {source === 'gemini' && RETRY.has(err.kind) && <button className="btn primary" onClick={onRetry}>Try again</button>}
       </div>
