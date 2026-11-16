@@ -71,8 +71,7 @@ export function Planner() {
   const estimated = !plan.payIsActual && !!plan.payEstimateFrom;
   const known = plan.payIsActual || estimated;
   const paydayPassed = plan.period.start <= today;
-  // Why the pay is an estimate: on hover, and shown under the pay when the pill is tapped.
-  const [estOpen, setEstOpen] = useState(false);
+  // Why the pay is an estimate: shown on hover over "Pay (estimate)".
   const estimateWhy = estimated
     ? `Using ${monthName(plan.payEstimateFrom!)}'s pay of ${cash(plan.pay)}. ${paydayPassed ? 'Payday has passed: upload the payslip to make it exact.' : `Upload the payslip when it arrives on ${fmtShort(period.start)}.`}`
     : '';
@@ -294,15 +293,12 @@ export function Planner() {
 
           <div className="pay-stats">
             <div className="stat">
-              {/* Wraps (buttons drop below, right-aligned) when the label, Estimate pill and buttons don't fit,
+              {/* Wraps (buttons drop below, right-aligned) when the label and buttons don't fit,
                   rather than pushing the buttons out of the card. */}
               <div className="between gap-6" style={{ minHeight: 32, rowGap: 4 }}>
-                <span className="small muted row nowrap gap-6">
-                  {plan.payIsActual ? 'Pay received' : 'Pay'}
-                  {estimated && (
-                    <button className="pill" title={estimateWhy} aria-expanded={estOpen} aria-label={`Estimate. ${estimateWhy}`} onClick={() => setEstOpen(!estOpen)}
-                      style={{ background: 'var(--card)' }}>Estimate</button>
-                  )}
+                {/* "(estimate)" until a real payslip is added. */}
+                <span className="small muted nowrap" title={estimated ? estimateWhy : undefined}>
+                  {plan.payIsActual ? 'Pay received' : estimated ? 'Pay (estimate)' : 'Pay'}
                 </span>
                 {payEdit === null && (
                   <span className="row nowrap gap-4" style={{ marginLeft: 'auto' }}>
@@ -335,7 +331,6 @@ export function Planner() {
               <b>{cash(totalBudgeted)}</b>
             </div>
           </div>
-          {estimated && estOpen && <p className="small muted" role="status" style={{ marginTop: -6 }}>{estimateWhy}</p>}
           {job && (
             <Suspense fallback={null}>
               <UploadFlow key={job.file.name + job.file.lastModified} job={job} onClose={() => setJob(null)} onPayslip={setJumpTo} />
