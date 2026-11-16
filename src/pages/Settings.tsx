@@ -12,6 +12,7 @@ import { newId, useBudget } from '../lib/store';
 import { KEEP_DAYS, listCopies, readCopy, type CopyInfo } from '../lib/versions';
 import { pairingLink, readSyncConfig, SyncError, type SyncConfig } from '../lib/sync';
 import { ReaderCard } from '../components/ReaderCard';
+import { BankCard } from '../components/BankCard';
 import { readReaderConfig } from '../lib/reader/config';
 import { looksLikeBudget } from '../lib/valid';
 import { readTheme, saveTheme, type Theme } from '../lib/theme';
@@ -234,6 +235,8 @@ export function Settings() {
       <SyncCard />
 
       <ReaderCard />
+
+      <BankCard />
 
       <ExportMonth />
 
