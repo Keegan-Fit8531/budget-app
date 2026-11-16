@@ -12,6 +12,7 @@ import { Savings } from './pages/Savings';
 import { LogoMark } from './components/LogoMark';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { BankAutoSync } from './components/BankCard';
+import { ReviewAutoRun } from './components/MonthlyInsights';
 
 function useHash(): string[] {
   const read = () => window.location.hash.replace(/^#\/?/, '').split('/').filter(Boolean);
@@ -53,6 +54,7 @@ export default function App() {
   return (
     <div className="app">
       <BankAutoSync />
+      <ReviewAutoRun />
       <nav className="sidebar" aria-label="Main">
         <div className="logo"><LogoMark size={36} />Paydays</div>
         {MAIN.map((n) => (
