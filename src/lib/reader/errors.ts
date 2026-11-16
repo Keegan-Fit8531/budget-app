@@ -5,7 +5,7 @@
 
 export type ReaderErrorKind =
   | 'no_key' | 'bad_key' | 'no_credit' | 'spend_cap' | 'billing_needed' | 'daily_quota' | 'too_fast' | 'overloaded'
-  | 'offline' | 'unreachable' | 'timeout' | 'refused_personal' | 'refused' | 'unusable' | 'model_gone' | 'bad_file' | 'cancelled';
+  | 'offline' | 'unreachable' | 'timeout' | 'refused_personal' | 'refused' | 'unusable' | 'model_gone' | 'bad_file' | 'app_updated' | 'cancelled';
 
 export class ReaderError extends Error {
   kind: ReaderErrorKind;
@@ -59,6 +59,7 @@ export function errorMessage(e: ReaderError): { title: string; body: string } {
     case 'unusable': return { title: 'Couldn’t make sense of what came back.', body: 'Try again.' };
     case 'model_gone': return { title: 'Google didn’t recognise the reading model.', body: 'It may have been retired, or the name in Settings → Reading documents → Model may be mistyped. Check it there.' };
     case 'bad_file': return { title: 'Couldn’t open that file.', body: e.detail ?? 'Try a screenshot, a JPEG photo or the PDF.' };
+    case 'app_updated': return { title: 'Paydays has been updated.', body: 'Reload the app to get the new version (your budget is saved), then choose the file again.' };
     case 'cancelled': return { title: 'Stopped.', body: '' };
   }
 }

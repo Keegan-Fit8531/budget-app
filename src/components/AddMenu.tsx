@@ -5,6 +5,7 @@ import { startRead, type ReadJob } from '../lib/reader/job';
 import { cash } from '../lib/money';
 import { useBudget } from '../lib/store';
 import { DebtModal, PaymentModal } from '../pages/Debts';
+import { ErrorBoundary } from './ErrorBoundary';
 import { GoalModal } from '../pages/Savings';
 import { Icon } from './Icon';
 import { ItemModal } from './ItemModal';
@@ -73,7 +74,12 @@ export function AddMenu({ render }: { render: (open: () => void) => React.ReactN
       {adding === 'goal' && <GoalModal onClose={close} />}
       {adding === 'debt' && <DebtModal onClose={close} onDelete={close} />}
       {adding === 'pay' && <PayAnyDebt onClose={close} />}
-      {jobs && <Suspense fallback={null}><UploadQueue key={jobs.map((j) => j.file.name + j.file.lastModified).join('|')} jobs={jobs} onClose={() => setJobs(null)} /></Suspense>}
+      {jobs && (
+        // Outside the page's own error boundary, so it has its own: a failure here mustn't blank the app.
+        <ErrorBoundary key={jobs.map((j) => j.file.name + j.file.lastModified).join('|')} onClose={() => { jobs.forEach((j) => j.cancel()); setJobs(null); }}>
+          <Suspense fallback={null}><UploadQueue jobs={jobs} onClose={() => setJobs(null)} /></Suspense>
+        </ErrorBoundary>
+      )}
       </>, document.body)}
     </>
   );

@@ -4,6 +4,7 @@ import { applyBalance, autoPays, balancePay, restoreOverrides, type BalanceResul
 import { accountMode, leftoverBeforeBudget, topsUp } from '../lib/balances';
 import { Donut, Legend } from '../components/Donut';
 import { Icon } from '../components/Icon';
+import { ErrorBoundary } from '../components/ErrorBoundary';
 import { AccIcon, Disclosure, Dot } from '../components/ui';
 import { WeeksView } from '../components/WeeksView';
 import { PayNav, useViewPeriod, ViewModes } from '../lib/period';
@@ -337,9 +338,11 @@ export function Planner() {
           </div>
           {estimated && estOpen && <p className="small muted" role="status" style={{ marginTop: -6 }}>{estimateWhy}</p>}
           {job && (
-            <Suspense fallback={null}>
-              <UploadFlow key={job.file.name + job.file.lastModified} job={job} onClose={() => setJob(null)} onPayslip={setJumpTo} />
-            </Suspense>
+            <ErrorBoundary key={job.file.name + job.file.lastModified} onClose={() => { job.cancel(); setJob(null); }}>
+              <Suspense fallback={null}>
+                <UploadFlow job={job} onClose={() => setJob(null)} onPayslip={setJumpTo} />
+              </Suspense>
+            </ErrorBoundary>
           )}
 
           {/* Balancing is automatic, so it only speaks up when there's something left to do. */}
