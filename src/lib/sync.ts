@@ -1,3 +1,4 @@
+import { BANK_URL, readBankConfig, writeBankConfig } from './bankConfig';
 import { readReaderConfig, writeReaderConfig } from './reader/config';
 import type { Budget } from './types';
 import { looksLikeBudget } from './valid';
@@ -109,8 +110,8 @@ const unb64url = (s: string) => fromBase64(s.replace(/-/g, '+').replace(/_/g, '/
  * A link that connects another device to the same repo (shown as a QR code). With `aiKey`, it also
  * carries the Google key for reading documents (field `a`; older versions of the app ignore it).
  */
-export function pairingLink(c: SyncConfig, now = Date.now(), aiKey?: string): string {
-  const payload = b64url(JSON.stringify({ r: c.repo, p: c.path, t: c.token, e: now + PAIR_MINUTES * 60_000, ...(aiKey ? { a: aiKey } : {}) }));
+export function pairingLink(c: SyncConfig, now = Date.now(), aiKey?: string, bankKey?: string): string {
+  const payload = b64url(JSON.stringify({ r: c.repo, p: c.path, t: c.token, e: now + PAIR_MINUTES * 60_000, ...(aiKey ? { a: aiKey } : {}), ...(bankKey ? { k: bankKey } : {}) }));
   return `${location.origin}${location.pathname}${PAIR_PREFIX}${payload}`;
 }
 
@@ -125,13 +126,15 @@ export function takePairingFromUrl(now = Date.now()): PairingResult {
   const payload = location.hash.slice(PAIR_PREFIX.length);
   history.replaceState(null, '', `${location.pathname}#/settings`);
   try {
-    const d = JSON.parse(unb64url(payload)) as { r: string; p?: string; t: string; e: number; a?: string };
+    const d = JSON.parse(unb64url(payload)) as { r: string; p?: string; t: string; e: number; a?: string; k?: string };
     if (!d.r || !d.t) return { ok: false, reason: 'That QR code isn’t a connect code.' };
     if (now > d.e) return { ok: false, reason: 'That QR code has expired. Show a new one on your other device.' };
     const config = { repo: d.r, path: d.p || 'budget.json', token: d.t };
     writeSyncConfig(config);
     // The Google key for reading documents, if it came too (the model chosen on this device is kept).
     if (typeof d.a === 'string' && d.a.trim()) writeReaderConfig({ provider: 'gemini', key: d.a.trim(), model: readReaderConfig()?.model });
+    // The bank connection's passphrase, if it came too.
+    if (typeof d.k === 'string' && d.k.trim()) writeBankConfig({ ...(readBankConfig() ?? {}), url: BANK_URL, key: d.k.trim() });
     return { ok: true, config, aiKey: !!d.a };
   } catch {
     return { ok: false, reason: 'That QR code couldn’t be read.' };

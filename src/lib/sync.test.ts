@@ -74,6 +74,16 @@ describe('connect another device by QR code', () => {
     expect(b.loc.hash).toBe('#/settings');
     expect(readSyncConfig()).toMatchObject({ repo: 'me/budget-data', token: 'secret' });
   });
+  it('can carry the bank connection passphrase too', async () => {
+    const { pairingLink, takePairingFromUrl } = await import('./sync');
+    const { readBankConfig } = await import('./bankConfig');
+    stubBrowser();
+    const link = pairingLink({ repo: 'me/budget-data', path: 'budget.json', token: 'secret' }, 1_000, undefined, 'four random words here');
+    expect(link).not.toContain('four random');
+    stubBrowser(link.slice(link.indexOf('#')));
+    expect(takePairingFromUrl(2_000)).toMatchObject({ ok: true });
+    expect(readBankConfig()).toMatchObject({ key: 'four random words here' });
+  });
   it('an old code (over 10 minutes) is refused and saves nothing', async () => {
     const { pairingLink, takePairingFromUrl, readSyncConfig } = await import('./sync');
     stubBrowser();
