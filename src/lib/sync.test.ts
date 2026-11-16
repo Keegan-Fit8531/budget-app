@@ -82,6 +82,26 @@ describe('connect another device by QR code', () => {
     expect(takePairingFromUrl(11 * 60_000)).toMatchObject({ ok: false });
     expect(readSyncConfig()).toBeNull();
   });
+  it('can carry the Google key for reading documents; without it, the key on this device is left alone', async () => {
+    const { pairingLink, takePairingFromUrl } = await import('./sync');
+    const { readReaderConfig, writeReaderConfig } = await import('./reader/config');
+    stubBrowser();
+    const withKey = pairingLink({ repo: 'me/budget-data', path: 'budget.json', token: 'secret' }, 1_000, 'AIza-test-key');
+    expect(withKey).not.toContain('AIza');
+    stubBrowser(withKey.slice(withKey.indexOf('#')));
+    expect(takePairingFromUrl(2_000)).toMatchObject({ ok: true, aiKey: true });
+    expect(readReaderConfig()).toMatchObject({ key: 'AIza-test-key' });
+    // A link without the key (or from an older version of the app) still connects, and keeps the key already here.
+    const without = pairingLink({ repo: 'me/budget-data', path: 'budget.json', token: 'secret' }, 1_000);
+    stubBrowser(without.slice(without.indexOf('#')));
+    writeReaderConfig({ provider: 'gemini', key: 'already-here' });
+    expect(takePairingFromUrl(2_000)).toMatchObject({ ok: true, aiKey: false });
+    expect(readReaderConfig()).toMatchObject({ key: 'already-here' });
+    // An old-style link, made before the key field existed.
+    const old = `#/connect/${btoa(JSON.stringify({ r: 'me/budget-data', p: 'budget.json', t: 'secret', e: 5_000 })).replace(/=+$/, '')}`;
+    stubBrowser(old);
+    expect(takePairingFromUrl(2_000)).toMatchObject({ ok: true, config: { token: 'secret' } });
+  });
   it('a normal address is left alone', async () => {
     const { takePairingFromUrl } = await import('./sync');
     const b = stubBrowser('#/planner');

@@ -1,0 +1,49 @@
+import { todayISO } from '../dates';
+import type { Budget } from '../types';
+import { modelOf, readReaderConfig } from './config';
+import { ReaderError } from './errors';
+import type { Extraction, ReaderSource } from './types';
+
+// ---------------------------------------------------------------------------------------------
+// Starting a read. Called once, from the file picker's change handler (not from a React effect, which
+// runs twice in development and would send the document twice). The reader code itself is loaded
+// only now, so it adds nothing to the app's first load.
+// ---------------------------------------------------------------------------------------------
+
+export interface ReadJob {
+  file: File;
+  source: ReaderSource;
+  promise: Promise<Extraction>;
+  cancel: () => void;
+  /** Progress from 0 to 1 (the on-device reader reports it; Gemini doesn't). Returns an unsubscribe. */
+  onProgress: (fn: (fraction: number) => void) => () => void;
+}
+
+export function startRead(file: File, budget: Budget, source: ReaderSource = 'gemini'): ReadJob {
+  const controller = new AbortController();
+  const listeners = new Set<(p: number) => void>();
+  const promise = (async (): Promise<Extraction> => {
+    if (source === 'device') {
+      const { readOnDevice } = await import('./local');
+      return readOnDevice(file, budget.debts ?? [], (p) => listeners.forEach((l) => l(p)));
+    }
+    const conf = readReaderConfig();
+    if (!conf) throw new ReaderError('no_key');
+    const [{ prepareFile }, { geminiProvider }, { buildContext }] = await Promise.all([import('./prepare'), import('./gemini'), import('./prompt')]);
+    const prepared = await prepareFile(file);
+    if (controller.signal.aborted) throw new ReaderError('cancelled');
+    return geminiProvider().read(prepared, buildContext(budget, todayISO()), { key: conf.key, model: modelOf(conf), signal: controller.signal });
+  })();
+  promise.catch(() => { /* handled by whoever shows the job */ });
+  return {
+    file, source, promise,
+    cancel: () => controller.abort(),
+    onProgress: (fn) => { listeners.add(fn); return () => { listeners.delete(fn); }; },
+  };
+}
+
+/** Check a key with a tiny request (no document). Resolves if Google accepts it; throws a ReaderError if not. */
+export async function testKey(key: string, model: string): Promise<void> {
+  const { geminiProvider } = await import('./gemini');
+  await geminiProvider().test({ key, model });
+}

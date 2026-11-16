@@ -303,6 +303,12 @@ export function accountHasPlans(b: Budget, accountId: string): boolean {
   return (b.debts ?? []).some((d) => d.accountId === accountId && d.plans.some((p) => p.remaining > 0));
 }
 
+/** A debt's first plan switches its payday amount to "pay exactly what's due". Call after adding the plan. */
+export function exactForFirstPlan(b: Budget, debt: Debt): void {
+  const line = b.split.find((l) => l.accountId === debt.accountId);
+  if (line && debt.plans.length === 1) { line.mode = 'exact'; delete line.auto; }
+}
+
 /** Suggested plan type for a new purchase on a card with known rules. */
 export function suggestPlan(debt: Debt, amount: Cents): { type: PlanType; months?: number } {
   if (debt.rules === 'afterpay' || debt.kind === 'bnpl') return { type: 'afterpay' };
@@ -408,7 +414,7 @@ export function settleDue(debt: Debt, s: Settings, today: ISODate, perPay?: Cent
     const p = sch.plan;
     const total = past.reduce((t, x) => t + x.amount, 0);
     paid += total;
-    for (const x of past) if (x.amount > 0) log.push({ date: x.date, amount: x.amount, name: p.name, ...(sch.synthetic ? { synthetic: true } : {}) });
+    for (const x of past) if (x.amount > 0) log.push({ date: x.date, amount: x.amount, name: p.name, ...(sch.synthetic ? { synthetic: true } : { planId: p.id }) });
     if (sch.synthetic) continue; // other purchases: comes off the entered balance below
     if (p.instalments?.length) {
       p.instalments = p.instalments.filter((i) => i.date >= today);

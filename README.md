@@ -29,8 +29,16 @@ The rules it follows: the brand colour is for the sidebar, primary buttons and p
 
 ## Your data
 
-Everything you enter is saved in your browser only (localStorage), never sent anywhere. Use
-Settings → Download backup to keep a copy, and Restore backup to move it to another browser or device.
+Everything you enter is saved in your browser (localStorage), and in your own private GitHub repo if you
+turn on Settings → Sync. Use Settings → Download backup to keep a copy, and Restore backup to move it to
+another browser or device.
+
+Documents you upload (payslips, card or loan statements, Afterpay screenshots) are sent to Google's
+Gemini to read, using your own Google key, and shown to you to check before anything changes. With
+prepaid (paid) use, Google doesn't use them to train its models. The key is kept in each browser only
+(Settings → Reading documents), never in the budget, the repo or the code; the QR code that connects your
+phone can carry it. When Gemini can't be used, the app offers to read the document on this device
+instead, where it never leaves the device.
 
 The published app starts with a blank budget. `src/lib/personal/` (git-ignored) can hold your own
 starting data, one-off data updates and the tests that use them; it stays on your computer.

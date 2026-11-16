@@ -10,6 +10,8 @@ import { nextColor } from '../lib/colors';
 import { CostCategoriesEditor } from '../components/CostCategories';
 import { newId, readVersions, useBudget } from '../lib/store';
 import { pairingLink, readSyncConfig, SyncError, type SyncConfig } from '../lib/sync';
+import { ReaderCard } from '../components/ReaderCard';
+import { readReaderConfig } from '../lib/reader/config';
 import { looksLikeBudget } from '../lib/valid';
 import { readTheme, saveTheme, type Theme } from '../lib/theme';
 import type { Budget, RuleBucket } from '../lib/types';
@@ -230,6 +232,8 @@ export function Settings() {
 
       <SyncCard />
 
+      <ReaderCard />
+
       <ExportMonth />
 
       <EarlierVersions />
@@ -405,18 +409,21 @@ function ConnectQr({ config }: { config: SyncConfig }) {
   const [svg, setSvg] = useState('');
   const [until, setUntil] = useState(0);
   const [now, setNow] = useState(() => Date.now());
+  // The Google key for reading documents goes too, unless you untick it.
+  const aiKey = readReaderConfig()?.key;
+  const [withKey, setWithKey] = useState(true);
   useEffect(() => {
     let live = true;
     const make = () => {
       const at = Date.now();
-      QRCode.toString(pairingLink(config, at), { type: 'svg', margin: 2, errorCorrectionLevel: 'M', color: { dark: '#000000', light: '#ffffff' } })
+      QRCode.toString(pairingLink(config, at, withKey ? aiKey : undefined), { type: 'svg', margin: 2, errorCorrectionLevel: 'M', color: { dark: '#000000', light: '#ffffff' } })
         .then((s) => { if (live) { setSvg(s); setUntil(at + 10 * 60_000); } })
         .catch(() => { if (live) setSvg(''); });
     };
     make();
     const t = setInterval(() => setNow(Date.now()), 1000);
     return () => { live = false; clearInterval(t); };
-  }, [config]);
+  }, [config, withKey, aiKey]);
   const left = Math.max(0, Math.ceil((until - now) / 60_000));
   const expired = until > 0 && now > until;
   return (
@@ -432,8 +439,14 @@ function ConnectQr({ config }: { config: SyncConfig }) {
             <b>Scan with your phone's camera</b> and open the link. It connects and loads your budget, with nothing to type.
           </p>
           <p className="small muted" style={{ margin: 0 }}>
-            Works for {left} more minute{left === 1 ? '' : 's'}. Anyone who scans it can open your budget, so only show it to your own devices.
+            Works for {left} more minute{left === 1 ? '' : 's'}. Anyone who scans it can open your budget{withKey && aiKey ? ' and use your Google credit' : ''}, so only show it to your own devices.
           </p>
+          {aiKey && (
+            <label className="check-row small" style={{ minHeight: 0 }}>
+              <input type="checkbox" checked={withKey} onChange={(e) => setWithKey(e.target.checked)} />
+              Include the Google key, for reading documents
+            </label>
+          )}
         </>
       ) : (
         <p className="small muted" style={{ margin: 0 }}>Making the code\u2026</p>

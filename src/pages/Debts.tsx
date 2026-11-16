@@ -5,7 +5,7 @@ import { AccIcon, Chevron, PageHead } from '../components/ui';
 import { PaydayControl } from '../components/PaydayControl';
 import { nextColor } from '../lib/colors';
 import { addDays, fmtDay, fmtShort, monthName, ordinal, todayISO, type ISODate } from '../lib/dates';
-import { applyPayment, beforeStatement, debtAdvice, debtPerPay, debtSchedules, gemPlan, historyOwed, owed, type DebtAdvice, PLAN_LABEL, plannedOwed, planSchedule, projectedOwed, recordHistory, suggestPlan, unplanned } from '../lib/debts';
+import { applyPayment, beforeStatement, debtAdvice, debtPerPay, debtSchedules, exactForFirstPlan, gemPlan, historyOwed, owed, type DebtAdvice, PLAN_LABEL, plannedOwed, planSchedule, projectedOwed, recordHistory, suggestPlan, unplanned } from '../lib/debts';
 import { periodContaining, planFor, upcomingPayPeriod } from '../lib/engine';
 import { DayPicker, useDayView } from '../components/DayPicker';
 import { cash, centsToInput, parseMoney } from '../lib/money';
@@ -303,8 +303,7 @@ function PlanModal({ debt, plan, prefill, onClose }: { debt: Debt; plan?: DebtPl
       const i = d.plans.findIndex((x) => x.id === next.id);
       if (i >= 0) d.plans[i] = next; else d.plans.push(next);
       // The first plan switches the payday amount to "pay exactly what's due".
-      const line = b.split.find((l) => l.accountId === d.accountId);
-      if (line && !plan && d.plans.length === 1) { line.mode = 'exact'; delete line.auto; }
+      if (!plan) exactForFirstPlan(b, d);
       recordHistory(d, todayISO());
       return b;
     });
