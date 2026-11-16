@@ -57,7 +57,7 @@ export function errorMessage(e: ReaderError): { title: string; body: string } {
     case 'refused_personal': return { title: 'Google wouldn’t read this because it shows personal details', body: 'such as an IRD or account number. Try a screenshot that crops them out.' };
     case 'refused': return { title: 'Google wouldn’t read this document.', body: 'Try a clearer photo or the PDF.' };
     case 'unusable': return { title: 'Couldn’t make sense of what came back.', body: 'Try again.' };
-    case 'model_gone': return { title: 'Google has retired the reading model.', body: 'Change it in Settings → Reading documents → Model.' };
+    case 'model_gone': return { title: 'Google didn’t recognise the reading model.', body: 'It may have been retired, or the name in Settings → Reading documents → Model may be mistyped. Check it there.' };
     case 'bad_file': return { title: 'Couldn’t open that file.', body: e.detail ?? 'Try a screenshot, a JPEG photo or the PDF.' };
     case 'cancelled': return { title: 'Stopped.', body: '' };
   }

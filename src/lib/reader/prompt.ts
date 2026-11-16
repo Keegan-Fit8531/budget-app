@@ -47,7 +47,6 @@ export function instructions(today: ISODate): string {
     '- kind: "payslip" for a payslip, "statement" for a card or loan statement, "afterpay" for Afterpay orders or instalments, "unknown" if you are not sure.',
     '- Choose debtId and planId ONLY from the list of debts you are given, or null if none fits. Never make one up. Never choose a debt marked neverAStatement.',
     '- Gem Visa statements list interest-free plans, each with an expiry date. Put each one in plans with the expiry date printed for it in "ends" and its plan balance in "remaining". Give a planId only if the statement names the plan the same way as one in the list; otherwise null (the app matches plans by their expiry dates). An amount that is not on a plan, such as "Standard purchases", is not a plan.',
-    '- Payments shown on a statement go in paymentsShown only. Purchases go in purchases.',
     '- Afterpay: one order per shop purchase, matched to a plan by shop name and purchase date. List every instalment you can see and mark the paid ones with "paid": true.',
     '- Payslip: payDay is the date the pay goes into the bank; net is the pay that reaches the bank account.',
   ].join('\n');
@@ -85,8 +84,8 @@ export const RESPONSE_SCHEMA = form({
     limit: amt,
     minimum: amt,
     plans: list(form({ planId: id, description: text(), remaining: amt, ends: date })),
-    purchases: list(form({ date, description: text(), amount: amt })),
-    paymentsShown: list(form({ date, amount: amt })),
+    // The statement's purchases and payments aren't asked for: they're already in its balance, so the
+    // app never uses them, and copying them was most of the reply (slower, and misread on photos).
   }, true),
   afterpay: form({
     orders: list(form({
