@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 import { fmtShort, fmtSpan, todayISO } from '../lib/dates';
 import { readBankConfig } from '../lib/bankConfig';
+import { localDay } from '../lib/versions';
 import type { Period } from '../lib/engine';
 import { cash } from '../lib/money';
 import { call } from '../lib/reader/gemini';
 import { modelOf, readReaderConfig } from '../lib/reader/config';
 import { errorMessage, ReaderError } from '../lib/reader/errors';
-import { cycleSoFar, makeReview, parseReview, REVIEW_INSTRUCTIONS, REVIEW_SCHEMA, reviewDue, reviewFrom, reviewInput, saveReview, type MonthlyReview } from '../lib/review';
+import { cycleSoFar, cycleTransactions, makeReview, parseReview, REVIEW_INSTRUCTIONS, REVIEW_SCHEMA, reviewDue, reviewFrom, reviewInput, saveReview, type MonthlyReview } from '../lib/review';
 import { useBudget } from '../lib/store';
 import type { Budget } from '../lib/types';
 import { Icon } from './Icon';
@@ -49,7 +50,7 @@ export function ReviewAutoRun() {
       if (!c || running.current || document.visibilityState === 'hidden' || !readReaderConfig()) return;
       const bank = readBankConfig();
       const linked = b.bankAuto !== false && !!b.bankLinks && Object.keys(b.bankLinks).length > 0;
-      if (bank && linked && (!bank.lastSync || bank.lastSync.slice(0, 10) < reviewFrom(c))) return; // wait for the bank's last days
+      if (bank && linked && (!bank.lastSync || localDay(new Date(bank.lastSync)) < reviewFrom(c))) return; // wait for the bank's last days
       try { if (Date.now() - Number(localStorage.getItem(TRIED) ?? 0) < RETRY_MS) return; localStorage.setItem(TRIED, String(Date.now())); } catch { /* storage blocked */ }
       running.current = true;
       generateReview(b, c).then((r) => {
@@ -100,20 +101,21 @@ export function MonthlyInsights() {
   }
 
   const soFar = cycleSoFar(budget, today);
+  const soFarCount = cycleTransactions(budget, soFar).length;
   const top = r ? Math.max(1, ...r.categories.map((c) => c.total)) : 1;
   return (
     <section className="card stack gap-16">
-      <div className="card-head nowrap top">
-        <div className="grow min0">
-          <h2 className="h2">{r?.partial ? 'This cycle so far' : 'This month’s insights'}</h2>
-          {r && <p className="small muted">Pay cycle {fmtSpan(r.from, r.to)}{r.partial ? ' (so far)' : ''} · tracked from {fmtShort(r.from)} · made {new Date(r.made).toLocaleString('en-NZ', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}</p>}
-        </div>
-        {reviews.length > 1 && (
+      <div>
+        <h2 className="h2">{r?.partial ? 'This cycle so far' : 'This month’s insights'}</h2>
+        {r && <p className="small muted">Pay cycle {fmtSpan(r.from, r.to)}{r.partial ? ' (so far)' : ''} · tracked from {fmtShort(r.from)} · made {new Date(r.made).toLocaleString('en-NZ', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}</p>}
+      </div>
+      {reviews.length > 1 && (
+        <label className="field small">Past insights
           <select aria-label="Past insights" value={r?.from} onChange={(e) => setPick(e.target.value)}>
             {reviews.map((x) => <option key={x.from} value={x.from}>{fmtSpan(x.from, x.to)}{x.partial ? ' (so far)' : ''}</option>)}
           </select>
-        )}
-      </div>
+        </label>
+      )}
 
       {!r && (
         <p className="note">
@@ -151,9 +153,10 @@ export function MonthlyInsights() {
       )}
 
       <div className="row wrap gap-8">
-        <button className="btn primary" disabled={busy || !hasKey} onClick={() => void make(soFar)}>{busy ? 'Working it out…' : `Insights so far this cycle (${fmtShort(soFar.start)} to today)`}</button>
-        {due && <button className="btn" disabled={busy || !hasKey} onClick={() => void make(due)}>Make {fmtSpan(due.start, due.end)} now</button>}
+        <button className="btn primary wrap-text" disabled={busy || !hasKey || !soFarCount} onClick={() => void make(soFar)}>{busy ? 'Working it out…' : `So far this cycle (${fmtShort(soFar.start)} to today)`}</button>
+        {due && <button className="btn wrap-text" disabled={busy || !hasKey} onClick={() => void make(due)}>Make {fmtSpan(due.start, due.end)} now</button>}
       </div>
+      {!soFarCount && <p className="small muted">No transactions since payday yet: they come from the bank connection, or upload a statement or export.</p>}
       {!hasKey && r && <p className="small muted">Add your Google key in Settings → Reading documents to make new ones.</p>}
       {err && <p className="small error" role="status">{err}</p>}
     </section>
