@@ -4,6 +4,7 @@ import { BarList, Donut, Legend } from '../components/Donut';
 import { tone } from '../lib/colors';
 import { Icon } from '../components/Icon';
 import { SpendingCard } from '../components/SpendingCard';
+import { MonthlyInsights } from '../components/MonthlyInsights';
 import { convert, planFor, plannedAverage, type View } from '../lib/engine';
 import { PayNav, useViewPeriod, ViewModes } from '../lib/period';
 import { cash } from '../lib/money';
@@ -83,6 +84,9 @@ export function Insights() {
             : `The next 12 pays, ${mode === 'month' ? 'averaged per month' : 'added up for the year'}, against pay of ${cash(pay)} ${per}.`}
         </p>
       )}
+
+      {/* Each pay cycle's spending, read by Gemini on payday. */}
+      <MonthlyInsights />
 
       {/* Groups as a ring (a few big parts of one whole); accounts as a ranked list (too many for a ring). */}
       {/* Left: the groups, and how they compare with the rule. Right: every account, and what to do about it. */}

@@ -300,6 +300,8 @@ export interface Budget {
   bankAuto?: boolean;
   /** Spending categories you've chosen for shops (by shop name in lower case), over the app's own guess. */
   shopCategories?: Record<string, string>;
+  /** This month's insights: one per pay cycle, by its payday (see review.ts), newest first. */
+  reviews?: Record<ISODate, import('./review').MonthlyReview>;
   /** Account balances you've entered, by account id. */
   balances?: Record<string, BalanceEntry>;
   /** Each account's history (balances entered, one-off costs), by account id, in the order they were recorded. */

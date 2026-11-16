@@ -10,12 +10,12 @@ import type { Extraction, PreparedFile, Provider, ProviderOptions, RawStatement,
 // in a header, never in the web address, so it doesn't end up in logs.
 // ---------------------------------------------------------------------------------------------
 
-interface GenerateResponse {
+export interface GenerateResponse {
   promptFeedback?: { blockReason?: string };
   candidates?: { finishReason?: string; content?: { parts?: { text?: string; thought?: boolean }[] } }[];
 }
 
-async function call(opts: ProviderOptions, body: unknown, fetchImpl: typeof fetch = fetch): Promise<GenerateResponse> {
+export async function call(opts: ProviderOptions, body: unknown, fetchImpl: typeof fetch = fetch): Promise<GenerateResponse> {
   const timeout = new AbortController();
   const timer = setTimeout(() => timeout.abort(), TIMEOUT_MS);
   const onCancel = () => timeout.abort();
