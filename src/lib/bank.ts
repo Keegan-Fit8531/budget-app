@@ -1,6 +1,7 @@
 import { endingOf } from './csv';
 import { addDays, todayISO, type ISODate } from './dates';
 import { setBalance } from './history';
+import { isKiwiSaver, recordReading } from './kiwisaver';
 import { applyProposal } from './reader/apply';
 import { newTransactions } from './reader/check';
 import type { BankConfig } from './bankConfig';
@@ -67,11 +68,23 @@ export interface BankResult { name: string; added: number; balance?: number }
 /** A new savings goal (with its own account, sent nothing from pay) for a bank account, e.g. KiwiSaver. Returns its link. */
 export function addGoalFor(b: Budget, acc: BankAccount, id: string, accountId: string, today: ISODate = todayISO()): string {
   const groupId = b.groups.find((g) => g.id === 'savings')?.id ?? b.groups.find((g) => g.bucket === 'savings')?.id ?? b.groups[0]?.id ?? '';
-  const name = /kiwi ?saver/i.test(`${acc.name} ${acc.type}`) || acc.type === 'KIWISAVER' ? 'KiwiSaver' : acc.name;
+  const kiwi = /kiwi ?saver/i.test(`${acc.name} ${acc.type}`) || acc.type === 'KIWISAVER';
+  const name = kiwi ? 'KiwiSaver' : acc.name;
+  const balance = Math.round((acc.balance ?? 0) * 100);
   b.accounts.push({ id: accountId, name, kind: 'bank', color: nextColor(b.accounts.map((x) => x.color)), groupId });
-  b.split.push({ accountId, amount: 0 });
-  b.savings = [...(b.savings ?? []), { id, name, accountId, balance: Math.round((acc.balance ?? 0) * 100), asOf: today, note: `Balance from ${acc.institution ?? 'your bank'} through the bank connection.` }];
+  // KiwiSaver comes out of your salary, so payday never sends it anything.
+  if (!kiwi) b.split.push({ accountId, amount: 0 });
+  b.savings = [...(b.savings ?? []), {
+    id, name, accountId, balance, asOf: today, note: `Balance from ${acc.institution ?? 'your bank'} through the bank connection.`,
+    ...(kiwi ? { kiwisaver: true, readings: [{ date: today, balance }] } : {}),
+  }];
   return `saving:${id}`;
+}
+
+/** A goal's balance from the bank. A KiwiSaver goal keeps each one, for its history of returns. */
+function setGoalBalance(goal: NonNullable<Budget['savings']>[number], cents: number, today: ISODate): void {
+  if (isKiwiSaver(goal)) recordReading(goal, { date: today, balance: cents });
+  else { goal.balance = cents; goal.asOf = today; }
 }
 
 /** Add the new transactions to each linked account or card, and savings goals' balances. Returns how many were added to each. */
@@ -84,7 +97,7 @@ export function applyBank(b: Budget, data: BankData, links: Record<string, strin
       const goal = (b.savings ?? []).find((g) => g.id === id);
       if (goal && acc.balance !== null) {
         const cents = Math.round(acc.balance * 100);
-        if (goal.balance !== cents) { goal.balance = cents; goal.asOf = today; out.push({ name: goal.name, added: 0, balance: cents }); }
+        if (goal.balance !== cents) { setGoalBalance(goal, cents, today); out.push({ name: goal.name, added: 0, balance: cents }); }
       }
       continue;
     }
@@ -108,7 +121,7 @@ export function applyBank(b: Budget, data: BankData, links: Record<string, strin
     }
     if (live && type === 'account' && b.balances?.[id]?.amount !== cents) setBalance(b, id, cents, today, `bank-${acc.id}-${today}`);
     // The account behind a savings goal: the goal's balance is the bank's.
-    if (live && type === 'account') for (const g of b.savings ?? []) if (g.accountId === id && g.balance !== cents) { g.balance = cents; g.asOf = today; }
+    if (live && type === 'account') for (const g of b.savings ?? []) if (g.accountId === id && g.balance !== cents) setGoalBalance(g, cents, today);
     out.push({ name: target.name, added: add.length });
   }
   return out;

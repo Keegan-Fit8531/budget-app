@@ -1386,10 +1386,12 @@ it('KiwiSaver: a new savings goal for an account, whose balance then follows it'
   const link = addGoalFor(b, kiwi, 'g-ks', 'a-ks', '2026-11-16');
   expect(link).toBe('saving:g-ks');
   expect(b.savings!.find((g) => g.id === 'g-ks')).toMatchObject({ name: 'KiwiSaver', balance: 1234567, accountId: 'a-ks' });
-  expect(b.split.find((l) => l.accountId === 'a-ks')!.amount).toBe(0); // nothing sent from pay
+  expect(b.split.some((l) => l.accountId === 'a-ks')).toBe(false); // nothing sent from pay: it comes from your salary
   const r = applyBank(b, { accounts: [{ ...kiwi, balance: 12400 }], transactions: [] }, { acc_k: link }, '2026-11-17');
   expect(r).toEqual([{ name: 'KiwiSaver', added: 0, balance: 1240000 }]);
   expect(b.savings!.find((g) => g.id === 'g-ks')).toMatchObject({ balance: 1240000, asOf: '2026-11-17' });
+  // Each balance is kept, for its history of gains and losses.
+  expect(b.savings!.find((g) => g.id === 'g-ks')!.readings).toEqual([{ date: '2026-11-16', balance: 1234567 }, { date: '2026-11-17', balance: 1240000 }]);
 });
 
 describe('bank connection: balances and categories', () => {

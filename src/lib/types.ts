@@ -211,6 +211,40 @@ export interface SavingsGoal {
   personBase?: Record<string, Cents>;
   /** This person's total is worked out as whatever's left of the balance after everyone else's. */
   remainderPerson?: string;
+  /**
+   * KiwiSaver: taken from pay automatically and locked in, so payday sends it nothing and nothing is
+   * added or taken out by hand. Unset: worked out from the name.
+   */
+  kiwisaver?: boolean;
+  /** The funds it's invested in, in the order they're shown (each keeps its colour). */
+  funds?: { name: string; color: string }[];
+  /** Its balance over time (and each fund's), oldest first, one per day. */
+  readings?: KiwiReading[];
+}
+
+/** A KiwiSaver balance on a day: from the bank connection, a statement, or typed in. */
+export interface KiwiReading {
+  date: ISODate;
+  balance: Cents;
+  /** Each fund's value, by fund name. */
+  funds?: Record<string, Cents>;
+  /** From a statement: what went in and what it earned from `since` to this date. */
+  statement?: KiwiStatement;
+}
+
+export interface KiwiStatement {
+  since: ISODate;
+  employee?: Cents;
+  employer?: Cents;
+  government?: Cents;
+  voluntary?: Cents;
+  withdrawals?: Cents;
+  /** Investment earnings or losses before tax (negative for a loss). */
+  earnings?: Cents;
+  /** PIE tax taken (as a positive amount). */
+  tax?: Cents;
+  /** Returns after tax, when that's all it shows (e.g. "Returns (all time)"). */
+  returns?: Cents;
 }
 
 export interface GoalGift {

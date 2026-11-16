@@ -4,7 +4,8 @@ import { periodContaining, recordPayday, shiftPeriod } from '../engine';
 import { cash } from '../money';
 import type { Payslip } from '../payslip';
 import type { CsvRead } from '../csv';
-import type { BalanceEntry, Budget, Cents, Debt, DebtPlan, Txn } from '../types';
+import { isKiwiSaver, statementEarned, statementIn } from '../kiwisaver';
+import type { BalanceEntry, Budget, Cents, Debt, DebtPlan, KiwiReading, KiwiStatement, Txn } from '../types';
 import type { DocKind, Extraction, Fig, ReaderSource } from './types';
 
 // ---------------------------------------------------------------------------------------------
@@ -14,6 +15,8 @@ import type { DocKind, Extraction, Fig, ReaderSource } from './types';
 // ---------------------------------------------------------------------------------------------
 
 export const NEW_DEBT = '__new';
+/** Chosen in the rundown: a new KiwiSaver goal for this statement. */
+export const NEW_GOAL = '__newgoal';
 /** Chosen in the rundown: this plan or order isn't one of yours (so it's never matched automatically). */
 export const NOT_MINE = '__none';
 /** The most any single figure can be: $1,000,000. */
@@ -60,8 +63,21 @@ export interface Draft {
     payments: { date: string; amount: string }[];
   };
   afterpay: { debtId: string; orders: DraftOrder[] };
+  kiwisaver: DraftKiwiSaver;
   transactions: DraftTransactions;
 }
+
+export type KiwiFigure = 'balance' | 'opening' | 'employee' | 'employer' | 'government' | 'voluntary' | 'withdrawals' | 'earnings' | 'tax' | 'returns';
+/** A KiwiSaver statement or screen, as read: which goal it's for, its figures, and each fund's value. */
+export type DraftKiwiSaver = Record<KiwiFigure, DraftFig> & {
+  goalId: string;
+  newGoalId: string;
+  newAccountId: string;
+  provider: string;
+  date: string;
+  since: string;
+  funds: { name: string; value: string }[];
+};
 
 /** A bank or card export, as read: which card or account it's for, and what's owed or in it now. */
 export interface DraftTransactions {
@@ -82,6 +98,7 @@ export type Proposal =
   | { kind: 'payslip'; slip: Payslip }
   | { kind: 'statement'; debtId: string; newDebt?: { name: string }; balance: Cents; inCredit: boolean; date: ISODate; limit?: Cents; plans: PlanUpdate[]; newPlans: DebtPlan[] }
   | { kind: 'afterpay'; debtId: string; updates: OrderUpdate[]; paidOff: string[]; newPlans: DebtPlan[] }
+  | { kind: 'kiwisaver'; goalId: string; newGoal?: { accountId: string; note?: string }; readings: KiwiReading[] }
   | {
     kind: 'transactions'; target: { type: 'debt' | 'account'; id: string }; ending?: string; add: Txn[];
     /** What's owed or in the account, as at a date, if it changes. */
@@ -172,6 +189,17 @@ export function toDraft(ex: Extraction, b: Budget, source: ReaderSource, makeId:
         instalments: (o.instalments ?? []).map((i) => ({ date: i.date ?? '', amount: i.amount ?? '', label: i.label, paid: !!i.paid })),
       })),
     },
+    kiwisaver: (() => {
+      const k = ex.kiwisaver ?? {};
+      const goal = (b.savings ?? []).find(isKiwiSaver);
+      return {
+        goalId: goal?.id ?? NEW_GOAL, newGoalId: makeId(), newAccountId: makeId(), provider: k.provider ?? '',
+        date: k.date ?? '', since: k.since ?? '',
+        balance: fig(k.balance), opening: fig(k.opening), employee: fig(k.employee), employer: fig(k.employer), government: fig(k.government),
+        voluntary: fig(k.voluntary), withdrawals: fig(k.withdrawals), earnings: fig(k.earnings), tax: fig(k.tax), returns: fig(k.returns),
+        funds: (k.funds ?? []).filter((f) => f.name?.trim()).map((f) => ({ name: f.name!.trim(), value: f.amount?.amount ?? '' })),
+      };
+    })(),
     transactions: (() => {
       const read = ex.transactions ?? { rows: [], card: false, skipped: 0 };
       const target = read.ending ? matchEnding(b, read.ending) : '';
@@ -394,7 +422,71 @@ export function review(d: Draft, b: Budget, today: ISODate): Review {
   if (d.kind === 'statement') return reviewStatement(d, b, today);
   if (d.kind === 'afterpay') return reviewAfterpay(d, b, today);
   if (d.kind === 'transactions') return reviewTransactions(d, b, today);
-  return { proposal: null, ignored: [], issues: [{ level: 'block', text: 'Couldn’t tell what this document is. Choose Payslip, Statement or Afterpay above.' }] };
+  if (d.kind === 'kiwisaver') return reviewKiwiSaver(d, b, today);
+  return { proposal: null, ignored: [], issues: [{ level: 'block', text: 'Couldn’t tell what this document is. Choose Payslip, Card or loan, KiwiSaver or Afterpay above.' }] };
+}
+
+function reviewKiwiSaver(d: Draft, b: Budget, today: ISODate): Review {
+  const issues: Issue[] = [];
+  const block = (text: string) => issues.push({ level: 'block', text });
+  const note = (text: string) => issues.push({ level: 'note', text });
+  const k = d.kiwisaver;
+  const NAMES: Record<KiwiFigure, string> = {
+    balance: 'balance', opening: 'opening value', employee: 'employee contributions', employer: 'employer contributions', government: 'government contribution',
+    voluntary: 'voluntary contributions', withdrawals: 'withdrawals', earnings: 'investment earnings', tax: 'PIE tax', returns: 'returns',
+  };
+  // Earnings and returns can be a loss; everything else is an amount, whatever sign it's printed with.
+  const amount = (key: KiwiFigure): Cents | undefined => {
+    const c = toCents(k[key].value);
+    if (c === null) { block(`Check the ${NAMES[key]}: it should look like 1,240.50.`); return undefined; }
+    if (!c) return undefined;
+    return (key === 'earnings' || key === 'returns') && c.credit ? -c.cents : c.cents;
+  };
+  const goal = (b.savings ?? []).find((g) => g.id === k.goalId);
+  if (k.goalId !== NEW_GOAL && !goal) block('Choose which KiwiSaver this is.');
+  const balance = amount('balance');
+  if (balance === undefined && !issues.length) block('Enter the balance.');
+  const date = validDate(k.date);
+  if (!date) block(k.date.trim() ? `Check the date (${k.date}).` : 'Enter the date the balance is as at.');
+  else if (date > addDays(today, 1)) block(`The date, ${fmtShort(date)}, is in the future. Check it.`);
+  const since = k.since.trim() ? validDate(k.since) : undefined;
+  if (k.since.trim() && !since) block(`Check the start date (${k.since}).`);
+  else if (since && date && since >= date) block('The start date should be before the balance’s date.');
+  const figs = Object.fromEntries((['opening', 'employee', 'employer', 'government', 'voluntary', 'withdrawals', 'earnings', 'tax', 'returns'] as const).map((key) => [key, amount(key)])) as Partial<Record<KiwiFigure, Cents>>;
+  const funds: Record<string, Cents> = {};
+  for (const f of k.funds) {
+    const name = f.name.trim();
+    const c = toCents(f.value);
+    if (!name) { if (f.value.trim()) block('Give each fund a name.'); continue; }
+    if (c === null) block(`Check ${name}’s value: it should look like 1,240.50.`);
+    else if (c) funds[name] = (funds[name] ?? 0) + c.cents;
+  }
+  if (issues.some((i) => i.level === 'block') || balance === undefined || !date) return { proposal: null, issues, ignored: [] };
+
+  const sum = Object.values(funds).reduce((t, v) => t + v, 0);
+  if (Object.keys(funds).length && Math.abs(sum - balance) > 100) note(`The funds add up to ${cash(sum)}, not the ${cash(balance)} balance. They’re kept as each fund’s share of it.`);
+  const statement: KiwiStatement | undefined = since ? {
+    since,
+    ...Object.fromEntries((['employee', 'employer', 'government', 'voluntary', 'withdrawals', 'earnings', 'tax', 'returns'] as const).filter((key) => figs[key] !== undefined).map((key) => [key, figs[key]])),
+  } : undefined;
+  const put = statement && statementIn(statement);
+  const earned = statement && statementEarned(statement);
+  if (statement && figs.opening !== undefined && put !== undefined && earned !== undefined) {
+    const expected = figs.opening + put + earned;
+    if (Math.abs(expected - balance) > 100) note(`The opening value, contributions and returns come to ${cash(expected)}, not the ${cash(balance)} balance. Check the figures.`);
+  }
+  if (!since && (figs.returns !== undefined || figs.earnings !== undefined)) note('There’s no start date for the returns, so only the balance and funds are kept. Add the date they’re from (the opening value’s date) to see them on the chart.');
+  if (since && figs.opening === undefined && !(goal?.readings ?? []).some((r) => r.date === since)) note(`There’s no balance for ${fmtShort(since)} (the opening value), so the returns can’t be placed on the chart yet.`);
+  if (goal && date < goal.asOf) note(`This is from ${fmtShort(date)}, before the balance you have (${fmtShort(goal.asOf)}), so it’s added to the history and the balance stays.`);
+
+  const readings: KiwiReading[] = [];
+  if (since && figs.opening !== undefined) readings.push({ date: since, balance: figs.opening });
+  readings.push({ date, balance, ...(Object.keys(funds).length ? { funds } : {}), ...(statement ? { statement } : {}) });
+  const goalId = goal?.id ?? k.newGoalId;
+  return {
+    proposal: { kind: 'kiwisaver', goalId, ...(goal ? {} : { newGoal: { accountId: k.newAccountId, ...(k.provider.trim() ? { note: k.provider.trim() } : {}) } }), readings },
+    issues, ignored: [],
+  };
 }
 
 function reviewPayslip(d: Draft, b: Budget, today: ISODate): Review {

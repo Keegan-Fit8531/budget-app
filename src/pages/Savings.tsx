@@ -14,12 +14,17 @@ import { averageSplit, planFor } from '../lib/engine';
 import { PayNav, useViewPeriod } from '../lib/period';
 import { cash, centsToInput, parseMoney } from '../lib/money';
 import { forecast } from '../lib/savings';
+import { isKiwiSaver, kiwiPerPay, recordReading } from '../lib/kiwisaver';
+import { KiwiSaverCard } from '../components/KiwiSaver';
 import { newId, useBudget } from '../lib/store';
 import type { SavingsGoal } from '../lib/types';
 
 export function Savings() {
   const { budget } = useBudget();
-  const goals = budget.savings ?? [];
+  const all = budget.savings ?? [];
+  // KiwiSaver comes from your salary and is locked in: it has its own card, and isn't in the payday totals or projection.
+  const goals = all.filter((g) => !isKiwiSaver(g));
+  const kiwis = all.filter(isKiwiSaver);
   const today = todayISO();
   const [modal, setModal] = useState<{ goal?: SavingsGoal } | null>(null);
   const { period } = useViewPeriod();
@@ -27,8 +32,8 @@ export function Savings() {
 
   const forecasts = goals.map((g) => forecast(budget, g, today));
   const saved = goals.reduce((t, g) => t + g.balance, 0);
-  const latestSlip = Object.entries(budget.payslips ?? {}).sort((a, b) => b[0].localeCompare(a[0]))[0]?.[1];
-  const kiwi = latestSlip ? (latestSlip.kiwisaver ?? 0) + (latestSlip.employerKiwisaver ?? 0) : 0;
+  const kiwi = kiwiPerPay(budget)?.total ?? 0;
+  const kiwiSaved = kiwis.reduce((t, g) => t + g.balance, 0);
 
   return (
     <>
@@ -44,16 +49,20 @@ export function Savings() {
           <b>{cash(goals.reduce((t, g) => t + (plan.accounts.find((a) => a.account.id === g.accountId)?.funded ?? 0), 0))}</b>
           <span className="small muted">normally {cash(goals.reduce((t, g) => t + averageSplit(budget, g.accountId), 0))}</span>
         </div>
-        {kiwi > 0 && (
-          <div className="stat"><span className="small muted">KiwiSaver each pay</span><b>{cash(kiwi)}</b><span className="small muted">you + employer</span></div>
+        {kiwis.length > 0 ? (
+          <div className="stat"><span className="small muted">KiwiSaver</span><b>{cash(kiwiSaved, { whole: true })}</b>{kiwi > 0 && <span className="small muted">+{cash(kiwi)} each pay, from your salary</span>}</div>
+        ) : kiwi > 0 && (
+          <div className="stat"><span className="small muted">KiwiSaver each pay</span><b>{cash(kiwi)}</b><span className="small muted">you + employer, after tax</span></div>
         )}
       </section>
 
-      {goals.length === 0 && <p className="muted">Add a goal to start tracking your savings.</p>}
+      {all.length === 0 && <p className="muted">Add a goal to start tracking your savings.</p>}
 
       {forecasts.map((f) => <GoalCard key={f.goal.id} f={f} plan={plan} period={period} onEdit={() => setModal({ goal: f.goal })} />)}
 
-      <SavingsChart budget={budget} />
+      {kiwis.map((g) => <KiwiSaverCard key={g.id} goal={g} onEdit={() => setModal({ goal: g })} />)}
+
+      {goals.length > 0 && <SavingsChart budget={{ ...budget, savings: goals }} />}
 
       {modal && <GoalModal goal={modal.goal} onClose={() => setModal(null)} />}
     </>
@@ -174,6 +183,7 @@ export function GoalModal({ goal, onClose }: { goal?: SavingsGoal; onClose: () =
   const [targetDate, setTargetDate] = useState(goal?.targetDate ?? '');
   const [other, setOther] = useState(goal?.otherPerPay ? centsToInput(goal.otherPerPay) : '');
   const [note, setNote] = useState(goal?.note ?? '');
+  const [kiwi, setKiwi] = useState(goal ? isKiwiSaver(goal) : false);
   const [err, setErr] = useState('');
 
   function save() {
@@ -191,8 +201,10 @@ export function GoalModal({ goal, onClose }: { goal?: SavingsGoal; onClose: () =
         accId = newId();
         const groupId = b.groups.find((g) => g.id === 'savings')?.id ?? b.groups.find((g) => g.bucket === 'savings')?.id ?? b.groups[0]?.id ?? '';
         b.accounts.push({ id: accId, name: name.trim(), kind: 'bank', color: nextColor(b.accounts.map((x) => x.color)), groupId });
-        b.split.push({ accountId: accId, amount: 0 });
+        if (!kiwi) b.split.push({ accountId: accId, amount: 0 });
       }
+      // KiwiSaver is paid from your salary: payday sends it nothing, so an empty payday line goes.
+      if (kiwi) b.split = b.split.filter((l) => l.accountId !== accId || l.amount !== 0 || (l.mode ?? 'fixed') !== 'fixed' || l.auto);
       const balanceChanged = !goal || goal.balance !== bal;
       // Keep everything the form doesn't edit (costs, money added…) from the saved goal.
       const existing = goal ? b.savings.find((x) => x.id === goal.id) : undefined;
@@ -200,8 +212,14 @@ export function GoalModal({ goal, onClose }: { goal?: SavingsGoal; onClose: () =
         ...existing,
         id: goal?.id ?? newId(), name: name.trim(), accountId: accId, balance: bal,
         asOf: balanceChanged ? today : goal!.asOf, target: tgt, targetDate: targetDate || undefined,
-        otherPerPay: oth || undefined, note: note.trim() || undefined,
+        otherPerPay: kiwi ? undefined : oth || undefined, note: note.trim() || undefined,
+        kiwisaver: kiwi === /kiwi\s?saver/i.test(name.trim()) ? undefined : kiwi,
       };
+      if (kiwi) {
+        next.targetDate = undefined;
+        // Its balance over time is its history of gains and losses.
+        if (balanceChanged || !next.readings?.length) recordReading(next, { date: next.asOf, balance: bal });
+      }
       const i = b.savings.findIndex((x) => x.id === next.id);
       if (i >= 0) b.savings[i] = next; else b.savings.push(next);
       return b;
@@ -230,25 +248,35 @@ export function GoalModal({ goal, onClose }: { goal?: SavingsGoal; onClose: () =
             {options.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
           </select>
         </label>
+        <label className="check-row">
+          <input type="checkbox" checked={kiwi} onChange={(e) => setKiwi(e.target.checked)} />
+          <span>KiwiSaver: taken from my pay, and I can’t add to it or take it out</span>
+        </label>
         <div className="form-grid">
-          <label className="field">Saved so far
+          <label className="field">{kiwi ? 'Balance' : 'Saved so far'}
             <input inputMode="decimal" value={balance} onChange={(e) => setBalance(e.target.value)} placeholder="0.00" />
           </label>
           <label className="field">Target (optional)
             <input inputMode="decimal" value={target} onChange={(e) => setTarget(e.target.value)} placeholder="20,000.00" />
           </label>
-          <label className="field">Target date (optional)
-            <input type="date" value={targetDate} onChange={(e) => setTargetDate(e.target.value)} />
-          </label>
-          <label className="field">Others add each pay (optional)
-            <input inputMode="decimal" value={other} onChange={(e) => setOther(e.target.value)} placeholder="e.g. a partner's share" />
-          </label>
+          {!kiwi && (
+            <>
+              <label className="field">Target date (optional)
+                <input type="date" value={targetDate} onChange={(e) => setTargetDate(e.target.value)} />
+              </label>
+              <label className="field">Others add each pay (optional)
+                <input inputMode="decimal" value={other} onChange={(e) => setOther(e.target.value)} placeholder="e.g. a partner's share" />
+              </label>
+            </>
+          )}
         </div>
         <label className="field">Note (optional)
           <input value={note} onChange={(e) => setNote(e.target.value)} />
         </label>
         {targetDate && targetDate <= today && <p className="small muted">That target date has passed, so nothing more is planned for this goal. Pick a later date to keep saving towards it.</p>}
-        <p className="small muted">Update "saved so far" whenever you check your balance. Investment fund returns aren't predicted.</p>
+        <p className="small muted">{kiwi
+          ? 'Payday sends it nothing. Each balance you enter (or the bank connection brings in) is kept, to chart its gains and losses.'
+          : 'Update "saved so far" whenever you check your balance. Investment fund returns aren\'t predicted.'}</p>
         {err && <p className="error" role="alert">{err}</p>}
         <div className="between">
           {goal ? <button className="btn ghost danger" onClick={remove}>Remove goal</button> : <span />}
