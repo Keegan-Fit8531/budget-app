@@ -2,6 +2,8 @@ import { endingOf } from './csv';
 import { addDays, todayISO, type ISODate } from './dates';
 import { applyProposal } from './reader/apply';
 import { newTransactions } from './reader/check';
+import type { BankConfig } from './bankConfig';
+import { nextColor } from './colors';
 import type { Budget, Txn } from './types';
 
 // ---------------------------------------------------------------------------------------------
@@ -11,13 +13,11 @@ import type { Budget, Txn } from './types';
 // linked each bank account to, the same way an uploaded export's are.
 // ---------------------------------------------------------------------------------------------
 
-/** Your server function (it reads from Akahu with your tokens). */
-export const BANK_URL = 'https://ardxcgyhyxicnxxzzxdp.supabase.co/functions/v1/akahu-sync';
-const CONF_KEY = 'paydays.bank';
-/** Synced automatically when the app opens, at most this often. */
-export const AUTO_EVERY_MS = 6 * 60 * 60 * 1000;
+export { BANK_URL, readBankConfig, writeBankConfig, type BankConfig } from './bankConfig';
 
-export interface BankConfig { url: string; key: string; lastSync?: string }
+/** Synced automatically while the app is open, at most this often. */
+export const AUTO_EVERY_MS = 60 * 60 * 1000;
+
 export interface BankAccount { id: string; name: string; number: string | null; type: string; institution: string | null; balance: number | null; transactions: boolean }
 export interface BankTxn { account: string; id: string; date: ISODate; description: string; amount: number; balance: number | null; merchant: string | null }
 export interface BankData { accounts: BankAccount[]; transactions: BankTxn[] }
@@ -35,22 +35,12 @@ export const bankMessage = (e: unknown): string => {
         : `Akahu didn’t answer properly${e instanceof Error && e.message !== 'failed' ? ` (${e.message})` : ''}. Try again later.`;
 };
 
-export function readBankConfig(): BankConfig | null {
-  try {
-    const c = JSON.parse(localStorage.getItem(CONF_KEY) ?? 'null') as BankConfig | null;
-    return c?.key ? { ...c, url: c.url || BANK_URL } : null;
-  } catch { return null; }
-}
-
-export function writeBankConfig(c: BankConfig | null): void {
-  try { if (c) localStorage.setItem(CONF_KEY, JSON.stringify(c)); else localStorage.removeItem(CONF_KEY); } catch { /* storage blocked */ }
-}
-
 /** Your accounts and their settled transactions since a day (all Akahu has, up to 2 years, the first time). */
-export async function fetchBank(conf: BankConfig, since?: ISODate, fetchImpl: typeof fetch = (...a) => fetch(...a)): Promise<BankData> {
+export async function fetchBank(conf: BankConfig, since?: ISODate, fetchImpl: typeof fetch = (...a) => fetch(...a), refresh = false): Promise<BankData> {
   let res: Response;
+  const q = [since && `since=${since}`, refresh && 'refresh=1'].filter(Boolean).join('&');
   try {
-    res = await fetchImpl(`${conf.url}${since ? `?since=${since}` : ''}`, { headers: { 'x-paydays-key': conf.key } });
+    res = await fetchImpl(`${conf.url}${q ? `?${q}` : ''}`, { headers: { 'x-paydays-key': conf.key } });
   } catch { throw new BankError('unreachable'); }
   let body: { error?: string } & Partial<BankData> = {};
   try { body = await res.json(); } catch { /* not JSON */ }
@@ -71,11 +61,32 @@ export function suggestLink(b: Budget, acc: BankAccount): string {
   return hits.length === 1 ? hits[0] : '';
 }
 
-/** Add the new transactions to each linked account or card. Returns how many were added to each. */
-export function applyBank(b: Budget, data: BankData, links: Record<string, string>, today: ISODate = todayISO()): { name: string; added: number }[] {
-  const out: { name: string; added: number }[] = [];
+export interface BankResult { name: string; added: number; balance?: number }
+
+/** A new savings goal (with its own account, sent nothing from pay) for a bank account, e.g. KiwiSaver. Returns its link. */
+export function addGoalFor(b: Budget, acc: BankAccount, id: string, accountId: string, today: ISODate = todayISO()): string {
+  const groupId = b.groups.find((g) => g.id === 'savings')?.id ?? b.groups.find((g) => g.bucket === 'savings')?.id ?? b.groups[0]?.id ?? '';
+  const name = /kiwi ?saver/i.test(`${acc.name} ${acc.type}`) || acc.type === 'KIWISAVER' ? 'KiwiSaver' : acc.name;
+  b.accounts.push({ id: accountId, name, kind: 'bank', color: nextColor(b.accounts.map((x) => x.color)), groupId });
+  b.split.push({ accountId, amount: 0 });
+  b.savings = [...(b.savings ?? []), { id, name, accountId, balance: Math.round((acc.balance ?? 0) * 100), asOf: today, note: `Balance from ${acc.institution ?? 'your bank'} through the bank connection.` }];
+  return `saving:${id}`;
+}
+
+/** Add the new transactions to each linked account or card, and savings goals' balances. Returns how many were added to each. */
+export function applyBank(b: Budget, data: BankData, links: Record<string, string>, today: ISODate = todayISO()): BankResult[] {
+  const out: BankResult[] = [];
   for (const acc of data.accounts) {
-    const [type, id] = (links[acc.id] ?? '').split(':') as ['account' | 'debt' | '', string?];
+    const [type, id] = (links[acc.id] ?? '').split(':') as ['account' | 'debt' | 'saving' | '', string?];
+    // A savings goal (KiwiSaver, an investment): its balance follows the account's.
+    if (type === 'saving' && id) {
+      const goal = (b.savings ?? []).find((g) => g.id === id);
+      if (goal && acc.balance !== null) {
+        const cents = Math.round(acc.balance * 100);
+        if (goal.balance !== cents) { goal.balance = cents; goal.asOf = today; out.push({ name: goal.name, added: 0, balance: cents }); }
+      }
+      continue;
+    }
     if ((type !== 'account' && type !== 'debt') || !id) continue;
     const target = type === 'debt' ? (b.debts ?? []).find((d) => d.id === id) : b.accounts.find((a) => a.id === id);
     if (!target) continue;

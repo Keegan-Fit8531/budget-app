@@ -21,7 +21,7 @@ import { prepareFile } from './reader/prepare';
 import { buildContext, RESPONSE_SCHEMA } from './reader/prompt';
 import type { Extraction } from './reader/types';
 import { KEEP_DAYS, localDay, needsCopy, toForget } from './versions';
-import { applyBank, fetchBank, suggestLink } from './bank';
+import { addGoalFor, applyBank, fetchBank, suggestLink } from './bank';
 import { csvAmount, csvDate, endingOf, fromStatementRows, readTransactionsCsv } from './csv';
 import { layoutPage } from './reader/pdftext';
 import { mergeReads, splitRow } from './reader/gemini';
@@ -1378,4 +1378,16 @@ describe('bank connection (Akahu)', () => {
     await expect(fetchBank({ url: 'u', key: 'k' }, undefined, res(401))).rejects.toMatchObject({ kind: 'not_allowed' });
     await expect(fetchBank({ url: 'u', key: 'k' }, undefined, res(503))).rejects.toMatchObject({ kind: 'not_set_up' });
   });
+});
+
+it('KiwiSaver: a new savings goal for an account, whose balance then follows it', () => {
+  const b = debtBudget();
+  const kiwi = { id: 'acc_k', name: 'Kernel KiwiSaver', number: null, type: 'KIWISAVER', institution: 'Kernel', balance: 12345.67, transactions: false };
+  const link = addGoalFor(b, kiwi, 'g-ks', 'a-ks', '2026-11-16');
+  expect(link).toBe('saving:g-ks');
+  expect(b.savings!.find((g) => g.id === 'g-ks')).toMatchObject({ name: 'KiwiSaver', balance: 1234567, accountId: 'a-ks' });
+  expect(b.split.find((l) => l.accountId === 'a-ks')!.amount).toBe(0); // nothing sent from pay
+  const r = applyBank(b, { accounts: [{ ...kiwi, balance: 12400 }], transactions: [] }, { acc_k: link }, '2026-11-17');
+  expect(r).toEqual([{ name: 'KiwiSaver', added: 0, balance: 1240000 }]);
+  expect(b.savings!.find((g) => g.id === 'g-ks')).toMatchObject({ balance: 1240000, asOf: '2026-11-17' });
 });
