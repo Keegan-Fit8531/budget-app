@@ -4,7 +4,7 @@ import { owed, planEnds } from '../lib/debts';
 import { cash, centsToInput } from '../lib/money';
 import { applyProposal, fingerprint, preview } from '../lib/reader/apply';
 import { csvBalance, csvTargets, NEW_DEBT, NOT_MINE, purchaseRows, resolvePlanRow, review, toCents, toDraft, type Draft, type DraftFig } from '../lib/reader/check';
-import { CATEGORY_LABEL, summarize } from '../lib/spending';
+import { CATEGORY_LABEL, summarize, type ShopCategories } from '../lib/spending';
 import { DEVICE_FALLBACK, errorMessage, ReaderError } from '../lib/reader/errors';
 import { isCsv, startRead, type ReadJob, type ReadStage } from '../lib/reader/job';
 import type { DocKind, Extraction } from '../lib/reader/types';
@@ -127,7 +127,7 @@ export function UploadFlow({ job: firstJob, onClose, onPayslip, queue }: {
               : stage.step === 'preparing'
                 ? (isPdf ? 'Getting the PDF ready to send…' : 'Making the image smaller to send…')
                 : stage.parts
-                  ? `Google’s Gemini is reading the ${stage.pages} pages, a few at a time: ${Math.min(stage.pages ?? 0, (stage.done ?? 0) * 4)} of ${stage.pages} read…`
+                  ? `Google’s Gemini is reading the ${stage.pages} pages, a few at a time: ${stage.read ?? 0} of ${stage.pages} read…`
                   : `Google’s Gemini is reading it (${stage.bytes < 1e6 ? `${Math.max(1, Math.round(stage.bytes / 1000))} KB` : `${(stage.bytes / 1e6).toFixed(1)} MB`} sent)…`}</p>
             <div className="bar moving" role="progressbar" aria-label="Reading" aria-valuemin={0} aria-valuemax={100}
               aria-valuenow={Math.round(job.source === 'device' ? progress * 100 : gp.pct)}>
@@ -387,7 +387,7 @@ function TransactionsCheck({ draft, edit }: { draft: Draft; edit: (fn: (d: Draft
   const inn = rows.filter((x) => x.amount > 0).reduce((a, x) => a + x.amount, 0);
   const matched = t.matchedBy ? targets.find((x) => x.value === t.target) : undefined;
   const shown = t.amount ?? (suggested ? centsToInput(isDebt ? Math.max(0, suggested.amount) : suggested.amount) : '');
-  const top = rows.length ? summarize(rows, rows[0].date, rows[rows.length - 1].date).categories.filter((c) => c.category !== 'other').slice(0, 3) : [];
+  const top = rows.length ? summarize(rows, rows[0].date, rows[rows.length - 1].date, budget.shopCategories as ShopCategories | undefined).categories.filter((c) => c.category !== 'other').slice(0, 3) : [];
   return (
     <>
       {rows.length > 0 && (
