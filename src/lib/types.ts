@@ -163,6 +163,8 @@ export interface PaidPayment {
   name: string;
   /** It came off the balance outside any plan (worked out from the balance, so redone if an older statement is added). */
   synthetic?: boolean;
+  /** The plan's id (saved since document reading was added; older entries only have the name). */
+  planId?: string;
 }
 
 export interface SavingsGoal {

@@ -1,3 +1,4 @@
+import { readReaderConfig, writeReaderConfig } from './reader/config';
 import type { Budget } from './types';
 import { looksLikeBudget } from './valid';
 
@@ -104,13 +105,16 @@ const PAIR_MINUTES = 10;
 const b64url = (s: string) => toBase64(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 const unb64url = (s: string) => fromBase64(s.replace(/-/g, '+').replace(/_/g, '/'));
 
-/** A link that connects another device to the same repo (shown as a QR code). */
-export function pairingLink(c: SyncConfig, now = Date.now()): string {
-  const payload = b64url(JSON.stringify({ r: c.repo, p: c.path, t: c.token, e: now + PAIR_MINUTES * 60_000 }));
+/**
+ * A link that connects another device to the same repo (shown as a QR code). With `aiKey`, it also
+ * carries the Google key for reading documents (field `a`; older versions of the app ignore it).
+ */
+export function pairingLink(c: SyncConfig, now = Date.now(), aiKey?: string): string {
+  const payload = b64url(JSON.stringify({ r: c.repo, p: c.path, t: c.token, e: now + PAIR_MINUTES * 60_000, ...(aiKey ? { a: aiKey } : {}) }));
   return `${location.origin}${location.pathname}${PAIR_PREFIX}${payload}`;
 }
 
-export type PairingResult = { ok: true; config: SyncConfig } | { ok: false; reason: string } | null;
+export type PairingResult = { ok: true; config: SyncConfig; aiKey?: boolean } | { ok: false; reason: string } | null;
 
 /**
  * If the app was opened from a connect link: save the connection for this browser and take the link out
@@ -121,12 +125,14 @@ export function takePairingFromUrl(now = Date.now()): PairingResult {
   const payload = location.hash.slice(PAIR_PREFIX.length);
   history.replaceState(null, '', `${location.pathname}#/settings`);
   try {
-    const d = JSON.parse(unb64url(payload)) as { r: string; p?: string; t: string; e: number };
+    const d = JSON.parse(unb64url(payload)) as { r: string; p?: string; t: string; e: number; a?: string };
     if (!d.r || !d.t) return { ok: false, reason: 'That QR code isn’t a connect code.' };
     if (now > d.e) return { ok: false, reason: 'That QR code has expired. Show a new one on your other device.' };
     const config = { repo: d.r, path: d.p || 'budget.json', token: d.t };
     writeSyncConfig(config);
-    return { ok: true, config };
+    // The Google key for reading documents, if it came too (the model chosen on this device is kept).
+    if (typeof d.a === 'string' && d.a.trim()) writeReaderConfig({ provider: 'gemini', key: d.a.trim(), model: readReaderConfig()?.model });
+    return { ok: true, config, aiKey: !!d.a };
   } catch {
     return { ok: false, reason: 'That QR code couldn’t be read.' };
   }
