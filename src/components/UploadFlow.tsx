@@ -3,7 +3,7 @@ import { fmtShort, todayISO, type ISODate } from '../lib/dates';
 import { owed, planEnds } from '../lib/debts';
 import { cash } from '../lib/money';
 import { applyProposal, fingerprint, preview } from '../lib/reader/apply';
-import { NEW_DEBT, NOT_MINE, review, toCents, toDraft, type Draft, type DraftFig } from '../lib/reader/check';
+import { NEW_DEBT, NOT_MINE, resolvePlanRow, review, toCents, toDraft, type Draft, type DraftFig } from '../lib/reader/check';
 import { DEVICE_FALLBACK, errorMessage, ReaderError } from '../lib/reader/errors';
 import { startRead, type ReadJob } from '../lib/reader/job';
 import type { DocKind, Extraction } from '../lib/reader/types';
@@ -233,7 +233,7 @@ function Rundown({ draft, sourceLabel, onEdit, onCancel, onConfirm }: {
           {debt && s.plans.length > 0 && (
             <div className="stack gap-8">
               <b className="small">Plans on the statement</b>
-              {s.plans.map((row, i) => (
+              {s.plans.map((row, i) => { const match = resolvePlanRow(row, debt); return (
                 <div key={row.newId} className="inset stack gap-8" style={{ padding: 'var(--s-3)' }}>
                   <span className="small">{row.description || 'Plan'}{row.ends ? `, interest-free until ${fmtShort(row.ends)}` : ''}</span>
                   <div className="form-grid">
@@ -246,12 +246,16 @@ function Rundown({ draft, sourceLabel, onEdit, onCancel, onConfirm }: {
                       </select>
                     </label>
                   </div>
-                  <label className="check-row small">
-                    <input type="checkbox" checked={row.addAsNew} onChange={(e) => edit((d) => { d.statement.plans[i].addAsNew = e.target.checked; })} />
-                    If it doesn’t match one of mine, add it as a new plan
-                  </label>
+                  {match ? (
+                    <span className="xs muted">Matched to your plan “{match.name}”.</span>
+                  ) : (
+                    <label className="check-row small">
+                      <input type="checkbox" checked={row.addAsNew} onChange={(e) => edit((d) => { d.statement.plans[i].addAsNew = e.target.checked; })} />
+                      It isn’t one of my plans: add it as a new plan
+                    </label>
+                  )}
                 </div>
-              ))}
+              ); })}
             </div>
           )}
         </>
@@ -259,8 +263,8 @@ function Rundown({ draft, sourceLabel, onEdit, onCancel, onConfirm }: {
 
       {draft.kind === 'afterpay' && ap && draft.afterpay.orders.map((o, i) => (
         <div key={o.newId} className="inset stack gap-8" style={{ padding: 'var(--s-3)' }}>
-          <span className="small"><b>{o.merchant || 'Order'}</b>{o.purchaseDate ? `, bought ${fmtShort(o.purchaseDate)}` : ''}{o.total.value ? `, ${o.total.value} total` : ''}</span>
-          <span className="xs muted">{o.instalments.map((x) => `${x.label ?? ''} ${x.amount} on ${x.date ? fmtShort(x.date) : '?'}${x.paid ? ' (paid)' : ''}`.trim()).join(' · ') || 'No instalments read'}</span>
+          <span className="small"><b>{o.merchant || 'Order'}</b>{o.purchaseDate ? `, bought ${fmtShort(o.purchaseDate)}` : ''}{toCents(o.total.value) ? `, ${cash(toCents(o.total.value)!.cents)} total` : ''}</span>
+          <span className="xs muted">{o.instalments.map((x) => `${x.label ?? ''} ${toCents(x.amount) ? cash(toCents(x.amount)!.cents) : x.amount} on ${x.date ? fmtShort(x.date) : '?'}${x.paid ? ' (paid)' : ''}`.trim()).join(' · ') || 'No instalments read'}</span>
           <label className="field">It’s
             <select value={o.planId && ap.plans.some((p) => p.id === o.planId) ? o.planId : o.planId === NOT_MINE ? NOT_MINE : ''} onChange={(e) => edit((d) => { d.afterpay.orders[i].planId = e.target.value; })}>
               <option value="">Match automatically</option>
