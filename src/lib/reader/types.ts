@@ -88,6 +88,8 @@ export interface ProviderOptions { key: string; model: string; signal?: AbortSig
 export interface Provider {
   id: string;
   read(file: PreparedFile, ctx: ReadContext, opts: ProviderOptions): Promise<Extraction>;
+  /** A long PDF as its pages' text, read a few pages at a time; `onPart` says how many parts are done. */
+  readText?(pages: string[], ctx: ReadContext, opts: ProviderOptions, onPart?: (done: number, total: number) => void): Promise<Extraction>;
   /** A tiny request with no document, to check the key, the model and the credit. */
   test(opts: ProviderOptions): Promise<void>;
 }

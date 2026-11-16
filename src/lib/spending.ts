@@ -20,6 +20,8 @@ export const CATEGORY_LABEL: Record<SpendCategory, string> = {
 /** Shop name patterns, in order (the first that matches wins), with a tidy name for the shop. */
 const RULES: [RegExp, SpendCategory, string?][] = [
   [/payment received|thank you|\btfr\b|transfer|internet banking|online banking|automatic payment|\bA\/P\b|direct credit|salary|wages/i, 'transfers'],
+  // Paying a card or loan from a bank account: what was bought is counted on the card, not again here.
+  [/mastercard|\bvisa\b|\bamex\b|credit card|card repayment|loan repayment/i, 'transfers'],
   [/interest|\bfee\b|fees|charge/i, 'fees'],
   [/afterpay/i, 'bnpl', 'Afterpay'], [/laybuy/i, 'bnpl', 'Laybuy'], [/\bzip\b/i, 'bnpl', 'Zip'],
   [/mylotto|lotto/i, 'gambling', 'Lotto'], [/casino|skycity|\bTAB\b|betting|pokies/i, 'gambling'],

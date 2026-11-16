@@ -14,14 +14,16 @@ import { seedBudget } from './seed';
 import type { Budget, Debt, SavingsGoal } from './types';
 import { looksLikeBudget } from './valid';
 import { applyProposal, preview, windBack } from './reader/apply';
-import { NEW_DEBT, review, toCents, toDraft, validDate, type Draft } from './reader/check';
+import { csvTargets, NEW_DEBT, review, toCents, toDraft, validDate, type Draft } from './reader/check';
 import { classifyHttpError, nextPacificMidnight, nzTime, ReaderError } from './reader/errors';
 import { geminiProvider, parseReply } from './reader/gemini';
 import { prepareFile } from './reader/prepare';
 import { buildContext, RESPONSE_SCHEMA } from './reader/prompt';
 import type { Extraction } from './reader/types';
 import { KEEP_DAYS, localDay, needsCopy, toForget } from './versions';
-import { csvAmount, csvDate, readTransactionsCsv } from './csv';
+import { csvAmount, csvDate, endingOf, fromStatementRows, readTransactionsCsv } from './csv';
+import { layoutPage } from './reader/pdftext';
+import { mergeReads } from './reader/gemini';
 import { categorize, summarize } from './spending';
 
 /** A blank budget paid on the 19th, with automatic balancing off so amounts are exactly as set. */
@@ -1228,5 +1230,69 @@ describe('reading bank and card exports', () => {
     // Payments in aren't spending, and October is outside the dates.
     expect(s).toMatchObject({ total: 5950, count: 3, small: { count: 2, total: 1950 } });
     expect(s.categories[0]).toMatchObject({ category: 'transport', total: 4000 });
+  });
+});
+
+describe('reading bank account statements', () => {
+  it('a bank account statement comes back as the account’s transactions, not a card statement', () => {
+    const reply = { candidates: [{ content: { parts: [{ text: JSON.stringify({
+      kind: 'account', payslip: null, statement: null, afterpay: null, notes: null,
+      account: { name: 'Go', number: '06-0999-0123456-00', closingBalance: { amount: '46.67', label: 'Balance' }, closingDate: '2026-06-15', rows: [
+        { date: '2026-06-10', description: 'CREDIT TRANSFER', amount: '150.00', balance: '151.00' },
+        { date: '2026-06-15', description: 'FRESHCHOICE', amount: '-4.49', balance: null },
+      ] },
+    }) }] } }] };
+    const ex = parseReply(reply, '2026-11-16');
+    expect(ex.kind).toBe('transactions');
+    expect(ex.transactions).toEqual({ rows: [
+      { date: '2026-06-10', description: 'CREDIT TRANSFER', amount: 15000, balance: 15100 },
+      { date: '2026-06-15', description: 'FRESHCHOICE', amount: -449, balance: 4667 }, // the closing balance, on the last one
+    ], ending: '3456', card: false, skipped: 0 });
+  });
+
+  it('a date that would be after today (a statement printed without years) is last year’s', () => {
+    const r = fromStatementRows([{ date: '2026-12-20', description: 'Kmart', amount: '-10.00' }, { date: '2026-01-05', description: 'Pay', amount: '100.00' }, { description: 'Opening balance' }], { today: '2026-11-16' });
+    expect(r.rows.map((t) => t.date)).toEqual(['2025-12-20', '2026-01-05']);
+    expect(r.skipped).toBe(1);
+    // An opening balance listed as if it were money in is left out.
+    expect(fromStatementRows([{ date: '2025-12-11', description: 'Opening balance', amount: '35.50' }, { date: '2025-12-11', description: 'Balance brought forward from previous page', amount: '46.67' }], { today: '2026-11-16' }).rows).toEqual([]);
+  });
+
+  it('a long statement read a few pages at a time is put back together in order', () => {
+    const part = (rows: [string, number][]): Extraction => ({ kind: 'transactions', transactions: { rows: rows.map(([date, amount]) => ({ date, description: 'x', amount })), card: false, skipped: 0 } });
+    const all = mergeReads([part([['2026-01-02', -1], ['2026-01-03', -2]]), { kind: 'unknown' }, { ...part([['2026-01-03', -3], ['2026-01-09', 4]]), transactions: { rows: [{ date: '2026-01-03', description: 'x', amount: -3 }, { date: '2026-01-09', description: 'x', amount: 4 }], ending: '4910', card: false, skipped: 1 } }]);
+    expect(all.kind).toBe('transactions');
+    expect(all.transactions!.rows.map((t) => t.amount)).toEqual([-1, -2, -3, 4]);
+    expect(all.transactions).toMatchObject({ ending: '4910', skipped: 1 });
+    // A card statement over a few pages: its figures from the first, its plans from all.
+    const st = mergeReads([
+      { kind: 'statement', statement: { balance: { amount: '3084.17' }, statementDate: '2026-10-21', plans: [{ remaining: { amount: '1150.00' }, ends: '2027-01-20' }] } },
+      { kind: 'statement', statement: { plans: [{ remaining: { amount: '870.00' }, ends: '2027-03-21' }] } },
+    ]);
+    expect(st.statement).toMatchObject({ balance: { amount: '3084.17' }, statementDate: '2026-10-21' });
+    expect(st.statement!.plans).toHaveLength(2);
+  });
+
+  it('a page’s text keeps its columns, so withdrawals and deposits stay apart', () => {
+    const text = layoutPage([
+      { s: 'Date', x: 60, y: 700 }, { s: 'Withdrawals', x: 470, y: 700 }, { s: 'Deposits', x: 560, y: 700 },
+      { s: '10 Jun', x: 60, y: 680 }, { s: 'PAY', x: 110, y: 680 }, { s: '150.00', x: 570, y: 680 },
+      { s: '11 Jun', x: 60, y: 660 }, { s: 'KMART', x: 110, y: 660 }, { s: '8.49', x: 480, y: 660 },
+    ]);
+    const lines = text.split('\n');
+    expect(lines[1].indexOf('150.00')).toBeGreaterThan(lines[0].indexOf('Deposits') - 3);
+    expect(lines[2].indexOf('8.49')).toBeLessThan(lines[0].indexOf('Deposits'));
+  });
+
+  it('the account number is found in a statement’s file name; any account (not a card’s own) can be chosen', () => {
+    expect(endingOf('06-0115-0123456-00_Statement_multiple.pdf')).toBe('3456');
+    const b = debtBudget();
+    b.accounts.push({ id: 'allowance', name: 'Allowance (other bank)', kind: 'external', color: '#000', groupId: 'lifestyle' });
+    const targets = csvTargets(b).map((t) => t.value);
+    expect(targets).toContain('account:allowance');
+    expect(targets).toContain('account:everyday');
+    expect(targets).not.toContain('account:gem'); // Gem's payment account: choose the card instead
+    // Paying a card from the account isn't spending (it's counted on the card).
+    expect(categorize('Q Mastercard Payment').category).toBe('transfers');
   });
 });

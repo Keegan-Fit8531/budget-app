@@ -30,8 +30,15 @@ const titleOf = (d: Draft) => (d.kind === 'statement' && d.statement.appScreen ?
 /** How far along a Gemini read looks: getting the file ready, then Google reading it (a few seconds, plus the upload). */
 function readingProgress(stage: ReadStage, now: number): { pct: number; slow: boolean } {
   if (stage.step === 'preparing') return { pct: 6, slow: false };
-  const expected = 2500 + stage.bytes / 1000; // about 2.5 s to read, and sending at about 1 MB a second
   const t = Math.max(0, now - stage.since);
+  if (stage.parts) {
+    // A long PDF in parts: a step for each part read, and a little more while the next is on its way.
+    const done = stage.done ?? 0;
+    const step = 80 / stage.parts;
+    const moving = done < stage.parts ? step * 0.8 * (1 - Math.exp(-t / 8000)) : 0;
+    return { pct: 15 + step * done + moving, slow: t > Math.ceil(stage.parts / 3) * 30_000 };
+  }
+  const expected = 2500 + stage.bytes / 1000; // about 2.5 s to read, and sending at about 1 MB a second
   return { pct: 15 + 80 * (1 - Math.exp(-t / expected)), slow: t > expected * 3 };
 }
 
@@ -100,7 +107,9 @@ export function UploadFlow({ job: firstJob, onClose, onPayslip }: { job: ReadJob
               ? (file.type.startsWith('image/') ? 'Reading the text in the photo on this device. This can take a little while the first time.' : isCsv(file) ? 'Reading the export on this device…' : 'Reading the PDF on this device.')
               : stage.step === 'preparing'
                 ? (isPdf ? 'Getting the PDF ready to send…' : 'Making the image smaller to send…')
-                : `Google’s Gemini is reading it (${stage.bytes < 1e6 ? `${Math.max(1, Math.round(stage.bytes / 1000))} KB` : `${(stage.bytes / 1e6).toFixed(1)} MB`} sent)…`}</p>
+                : stage.parts
+                  ? `Google’s Gemini is reading the ${stage.pages} pages, a few at a time: ${Math.min(stage.pages ?? 0, (stage.done ?? 0) * 4)} of ${stage.pages} read…`
+                  : `Google’s Gemini is reading it (${stage.bytes < 1e6 ? `${Math.max(1, Math.round(stage.bytes / 1000))} KB` : `${(stage.bytes / 1e6).toFixed(1)} MB`} sent)…`}</p>
             <div className="bar moving" role="progressbar" aria-label="Reading" aria-valuemin={0} aria-valuemax={100}
               aria-valuenow={Math.round(job.source === 'device' ? progress * 100 : gp.pct)}>
               <div style={{ width: `${job.source === 'device' ? Math.max(6, Math.round(progress * 100)) : gp.pct.toFixed(1)}%` }} />
@@ -367,7 +376,7 @@ function TransactionsCheck({ draft, edit }: { draft: Draft; edit: (fn: (d: Draft
       <label className="field">Which {t.read.card ? 'card' : 'card or account'} is this for?
         <select value={t.target} onChange={(e) => edit((d) => { d.transactions.target = e.target.value; d.transactions.matchedBy = undefined; d.transactions.amount = null; })}>
           {!t.target && <option value="">Choose…</option>}
-          {(['Cards and loans', 'Bank accounts'] as const).filter((g) => targets.some((x) => x.group === g)).map((g) => (
+          {(t.read.card ? (['Cards and loans', 'Accounts'] as const) : (['Accounts', 'Cards and loans'] as const)).filter((g) => targets.some((x) => x.group === g)).map((g) => (
             <optgroup key={g} label={g}>{targets.filter((x) => x.group === g).map((x) => <option key={x.value} value={x.value}>{x.label}</option>)}</optgroup>
           ))}
         </select>

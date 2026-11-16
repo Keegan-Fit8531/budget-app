@@ -10,8 +10,11 @@ import type { Extraction, ReaderSource } from './types';
 // only now, so it adds nothing to the app's first load.
 // ---------------------------------------------------------------------------------------------
 
-/** Where a Gemini read has got to: getting the file ready, then Google reading it (sent at `since`). */
-export type ReadStage = { step: 'preparing' } | { step: 'reading'; bytes: number; since: number };
+/**
+ * Where a Gemini read has got to: getting the file ready, then Google reading it (sent at `since`).
+ * A long PDF is read in parts: `parts` of them, `done` so far, over `pages` pages.
+ */
+export type ReadStage = { step: 'preparing' } | { step: 'reading'; bytes: number; since: number; parts?: number; done?: number; pages?: number };
 
 export interface ReadJob {
   file: File;
@@ -48,11 +51,38 @@ export function startRead(file: File, budget: Budget, source: ReaderSource = 'ge
     }
     const conf = readReaderConfig();
     if (!conf) throw new ReaderError('no_key');
-    const [{ prepareFile }, { geminiProvider }, { buildContext }] = await Promise.all([import('./prepare'), import('./gemini'), import('./prompt')]);
-    const prepared = await prepareFile(file);
-    if (controller.signal.aborted) throw new ReaderError('cancelled');
-    setStage({ step: 'reading', bytes: prepared.bytes, since: Date.now() });
-    return geminiProvider().read(prepared, buildContext(budget, todayISO()), { key: conf.key, model: modelOf(conf), signal: controller.signal });
+    const [{ isPdf, prepareFile }, { geminiProvider, PAGES_AT_ONCE }, { buildContext }] = await Promise.all([import('./prepare'), import('./gemini'), import('./prompt')]);
+    const ctx = buildContext(budget, todayISO());
+    const opts = { key: conf.key, model: modelOf(conf), signal: controller.signal };
+    const provider = geminiProvider();
+    let ex: Extraction | undefined;
+    // A long PDF with text in it (a year of bank statements) is read as its text, a few pages at a time:
+    // as one PDF, Gemini couldn't list hundreds of transactions in one reply.
+    if (isPdf(file) && provider.readText) {
+      const { hasText, readPdfPages } = await import('./pdftext');
+      const pages = await readPdfPages(file).catch(() => [] as string[]);
+      if (pages.length > PAGES_AT_ONCE && hasText(pages)) {
+        if (controller.signal.aborted) throw new ReaderError('cancelled');
+        const bytes = pages.reduce((t, p) => t + p.length, 0);
+        const since = Date.now();
+        const parts = Math.ceil(pages.length / PAGES_AT_ONCE);
+        setStage({ step: 'reading', bytes, since, parts, done: 0, pages: pages.length });
+        ex = await provider.readText(pages, ctx, opts, (done) => setStage({ step: 'reading', bytes, since, parts, done, pages: pages.length }));
+      }
+    }
+    if (!ex) {
+      const prepared = await prepareFile(file);
+      if (controller.signal.aborted) throw new ReaderError('cancelled');
+      setStage({ step: 'reading', bytes: prepared.bytes, since: Date.now() });
+      ex = await provider.read(prepared, ctx, opts);
+    }
+    // A bank statement's file name often has the account number in it (06-0115-0123456-00_Statement.pdf).
+    if (ex.kind === 'transactions' && ex.transactions && !ex.transactions.ending) {
+      const { endingOf } = await import('../csv');
+      const ending = endingOf(file.name);
+      if (ending) ex = { ...ex, transactions: { ...ex.transactions, ending } };
+    }
+    return ex;
   })();
   promise.catch(() => { /* handled by whoever shows the job */ });
   return {
