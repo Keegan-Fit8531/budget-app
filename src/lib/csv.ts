@@ -129,13 +129,57 @@ export function readTransactionsCsv(text: string): CsvRead | undefined {
   if (card && payments.length && payments.filter((t) => t.amount < 0).length > payments.length / 2) for (const t of ordered) t.amount = -t.amount;
 
   // An account number above the column names (bank exports), or the card number column.
-  let ending = [...numbers.entries()].sort((x, y) => y[1] - x[1])[0]?.[0];
-  if (!ending) {
-    const above = all.slice(0, hi).flat().join(' ');
-    // NZ account numbers are bank-branch-account-suffix (12-3456-0654321-00): the account part's end.
-    const nz = /\b\d{2}-\d{4}-(\d{7})-\d{2,3}\b/.exec(above);
-    const bare = /\b\d{6,}\b/.exec(above);
-    if (nz) ending = nz[1].slice(-4); else if (bare) ending = bare[0].slice(-4);
-  }
+  const ending = [...numbers.entries()].sort((x, y) => y[1] - x[1])[0]?.[0] ?? endingOf(all.slice(0, hi).flat().join(' '));
   return { rows: ordered, ...(ending ? { ending } : {}), card, skipped };
+}
+
+/**
+ * The end of an account or card number in some text (a file name, the lines above an export's columns).
+ * NZ account numbers are bank-branch-account-suffix (12-3456-0654321-00): the account part's end.
+ */
+export function endingOf(text: string): string | undefined {
+  const nz = /\b\d{2}-\d{4}-(\d{7})-\d{2,3}\b/.exec(text);
+  if (nz) return nz[1].slice(-4);
+  const bare = /\b\d{6,}\b/.exec(text);
+  return bare ? bare[0].slice(-4) : undefined;
+}
+
+/**
+ * Transactions Gemini read from a bank statement, in the same form as an export's: dates checked
+ * (a date that would be after today, from a statement printed without years, is last year's), amounts
+ * as cents, oldest first. The closing balance goes on the last transaction if it has none.
+ */
+export function fromStatementRows(
+  rows: { date?: string; description?: string; amount?: string; balance?: string }[],
+  opts: { today: ISODate; number?: string; closing?: { amount?: string; date?: string } },
+): CsvRead {
+  let skipped = 0;
+  const out: CsvRead['rows'] = [];
+  for (const r of rows) {
+    let date = csvDate(r.date ?? '');
+    const amount = csvAmount(r.amount ?? '');
+    // Balances and totals printed between the transactions aren't transactions (Gemini sometimes lists them).
+    if (/opening balance|closing balance|brought forward|carried forward|totals? (at|for)|^balance$/i.test(r.description ?? '')) { skipped++; continue; }
+    if (!date || !amount) { skipped++; continue; }
+    if (date > opts.today) date = `${Number(date.slice(0, 4)) - 1}${date.slice(4)}`;
+    const balance = csvAmount(r.balance ?? '');
+    out.push({ date, description: (r.description ?? '').replace(/\s{2,}/g, ' ').trim() || 'Transaction', amount, ...(balance !== undefined ? { balance } : {}) });
+  }
+  const ordered = out.map((t, i) => ({ t, i })).sort((a, b) => a.t.date.localeCompare(b.t.date) || a.i - b.i).map((x) => x.t);
+  const last = ordered[ordered.length - 1];
+  const closing = csvAmount(opts.closing?.amount ?? '');
+  const closingDate = csvDate(opts.closing?.date ?? '');
+  if (last && last.balance === undefined && closing !== undefined && closingDate && closingDate >= last.date) last.balance = closing;
+  const ending = opts.number ? endingOf(opts.number) ?? (opts.number.replace(/\D/g, '').slice(-4) || undefined) : undefined;
+  return { rows: ordered, ...(ending ? { ending } : {}), card: false, skipped };
+}
+
+/** Several reads of one long document (a few pages each), as one. */
+export function joinReads(reads: CsvRead[]): CsvRead {
+  return {
+    rows: reads.flatMap((r) => r.rows).map((t, i) => ({ t, i })).sort((a, b) => a.t.date.localeCompare(b.t.date) || a.i - b.i).map((x) => x.t),
+    ...(reads.find((r) => r.ending) ? { ending: reads.find((r) => r.ending)!.ending } : {}),
+    card: reads.some((r) => r.card),
+    skipped: reads.reduce((t, r) => t + r.skipped, 0),
+  };
 }

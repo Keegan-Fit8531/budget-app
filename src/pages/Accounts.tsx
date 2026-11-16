@@ -23,6 +23,7 @@ export function Accounts() {
   // The pay account (e.g. Weekly allowance) only passes pay on to the others on payday, so it isn't tracked here.
   const payAcc = budget.accounts.find((a) => a.id === budget.settings.payAccountId);
   const accounts = budget.accounts.filter((a) => a.kind === 'bank' && !a.archived && !managed.has(a.id) && a.id !== budget.settings.payAccountId);
+  const others = budget.accounts.filter((a) => !accounts.includes(a) && budget.accountTransactions?.[a.id]?.length);
   const today = todayISO();
   const period = periodContaining(today, budget.settings);
   // Which pay and day to look at: today in the pay you're in now, by default.
@@ -60,6 +61,20 @@ export function Accounts() {
       <div className="cards-2">
         {accounts.map((a) => <BalanceCard key={a.id} account={a} view={live ? undefined : view} day={day} onPick={(i) => { goPay(i); window.scrollTo({ top: 0, behavior: 'smooth' }); }} />)}
       </div>
+
+      {/* Statements or exports uploaded for accounts that aren't shown above (the pay account, one at another bank). */}
+      {others.length > 0 && (
+        <section className="card stack gap-8">
+          <h2 className="h2">Uploaded transactions</h2>
+          {others.map((a) => (
+            <div key={a.id} className="stack gap-2">
+              <b className="small">{a.name}</b>
+              <TransactionList items={budget.accountTransactions![a.id]} />
+            </div>
+          ))}
+          <p className="xs muted">See where it went in <a href="#/insights">Insights</a>.</p>
+        </section>
+      )}
 
       <p className="note">
         {payAcc ? `${payAcc.name} isn't shown: pay lands there and is sent on to these accounts on payday. ` : ''}Savings balances are kept with their goals in <a href="#/savings">Savings</a>. What payday sends to each account is set in <a href="#/deposits">Deposits</a>.

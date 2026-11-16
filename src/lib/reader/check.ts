@@ -191,11 +191,17 @@ function matchEnding(b: Budget, ending: string): string {
   return hits.length === 1 ? hits[0] : '';
 }
 
-/** What an export can be for: cards and loans (not ones paid from your salary, or Afterpay) and bank accounts. */
-export function csvTargets(b: Budget): { value: string; label: string; group: 'Cards and loans' | 'Bank accounts' }[] {
+/**
+ * What an export or account statement can be for: cards and loans (not ones paid from your salary, or
+ * Afterpay), and your accounts: any of them, bank accounts first (an allowance account at another bank
+ * may be set up as somewhere pay is sent), but not a card's own payment account (choose the card).
+ */
+export function csvTargets(b: Budget): { value: string; label: string; group: 'Cards and loans' | 'Accounts' }[] {
+  const debtAccounts = new Set((b.debts ?? []).map((d) => d.accountId));
   return [
     ...(b.debts ?? []).filter((d) => !d.payroll && !ordersOnly(d)).map((d) => ({ value: `debt:${d.id}`, label: d.name, group: 'Cards and loans' as const })),
-    ...b.accounts.filter((a) => a.kind === 'bank' && !a.archived).map((a) => ({ value: `account:${a.id}`, label: a.name, group: 'Bank accounts' as const })),
+    ...b.accounts.filter((a) => !a.archived && !debtAccounts.has(a.id)).sort((x, y) => (x.kind === 'bank' ? 0 : 1) - (y.kind === 'bank' ? 0 : 1))
+      .map((a) => ({ value: `account:${a.id}`, label: a.name, group: 'Accounts' as const })),
   ];
 }
 
