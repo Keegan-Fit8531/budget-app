@@ -21,6 +21,7 @@ import { prepareFile } from './reader/prepare';
 import { buildContext, RESPONSE_SCHEMA } from './reader/prompt';
 import type { Extraction } from './reader/types';
 import { KEEP_DAYS, localDay, needsCopy, toForget } from './versions';
+import { applyBank, fetchBank, suggestLink } from './bank';
 import { csvAmount, csvDate, endingOf, fromStatementRows, readTransactionsCsv } from './csv';
 import { layoutPage } from './reader/pdftext';
 import { mergeReads, splitRow } from './reader/gemini';
@@ -1353,4 +1354,28 @@ it('a statement date that jumps backwards was misread: it takes the date above i
 
 it('short capitals in a shop name stay capitals', () => {
   expect(categorize('SPARK NZ TRADING Auckland').shop).toBe('Spark NZ');
+});
+
+describe('bank connection (Akahu)', () => {
+  const data = {
+    accounts: [{ id: 'acc_1', name: 'Go', number: '06-0999-0123456-00', type: 'CHECKING', institution: 'ANZ', balance: 100, transactions: true },
+      { id: 'acc_2', name: 'Kernel', number: null, type: 'INVESTMENT', institution: 'Kernel', balance: 5000, transactions: false }],
+    transactions: [{ account: 'acc_1', id: 't1', date: '2026-11-14', description: 'COUNTDOWN HENDERSON', amount: -45.2, balance: 100, merchant: null },
+      { account: 'acc_1', id: 't2', date: '2026-11-15', description: 'SALARY', amount: 900, balance: 1000, merchant: null }],
+  };
+  it('adds a linked account’s new transactions once, and remembers its number', () => {
+    const b = debtBudget();
+    const links = { acc_1: 'account:everyday', acc_2: 'ignore' };
+    expect(applyBank(b, data, links, '2026-11-16')).toEqual([{ name: 'Everyday', added: 2 }]);
+    expect(b.accountTransactions?.everyday?.map((t) => t.amount)).toEqual([-4520, 90000]);
+    expect(b.accounts.find((a) => a.id === 'everyday')!.ending).toBe('3456');
+    expect(applyBank(b, data, links, '2026-11-17')).toEqual([{ name: 'Everyday', added: 0 }]);
+    // Next time it's suggested by the number.
+    expect(suggestLink(b, data.accounts[0])).toBe('account:everyday');
+  });
+  it('the passphrase and setup problems are told apart', async () => {
+    const res = (status: number) => (async () => new Response(JSON.stringify({ error: 'x' }), { status })) as unknown as typeof fetch;
+    await expect(fetchBank({ url: 'u', key: 'k' }, undefined, res(401))).rejects.toMatchObject({ kind: 'not_allowed' });
+    await expect(fetchBank({ url: 'u', key: 'k' }, undefined, res(503))).rejects.toMatchObject({ kind: 'not_set_up' });
+  });
 });

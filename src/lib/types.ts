@@ -291,6 +291,8 @@ export interface Budget {
   savings?: SavingsGoal[];
   /** Bank accounts' transactions, from CSV exports, by account id, oldest first. */
   accountTransactions?: Record<string, Txn[]>;
+  /** Bank connection (Akahu): which of your accounts or cards each bank account's transactions go to ('account:id', 'debt:id', or 'ignore'). */
+  bankLinks?: Record<string, string>;
   /** Spending categories you've chosen for shops (by shop name in lower case), over the app's own guess. */
   shopCategories?: Record<string, string>;
   /** Account balances you've entered, by account id. */
