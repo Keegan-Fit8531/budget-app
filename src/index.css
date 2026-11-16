@@ -305,6 +305,8 @@ h1, h2, h3, p { margin: 0; }
 .pay-stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--s-3); }
 /* Pay has a label, a pill and two buttons: two boxes side by side only fit once there is room. */
 @media (max-width: 520px) { .pay-stats { grid-template-columns: minmax(0, 1fr); gap: var(--s-2); } }
+/* Keep the Pay and Total budgeted amounts level when one label row wraps. */
+.pay-stats .stat > b { margin-top: auto; }
 /* Three figures in a row that never wrap their labels (e.g. in the account / still to come / spare) */
 .trio { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--s-2); }
 .trio .stat { padding: 10px var(--s-3); }
