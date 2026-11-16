@@ -66,6 +66,11 @@ export function fmtShort(iso: ISODate): string {
   return `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]}`;
 }
 
+/** Two dates as a range, with the years when it crosses one: "3 Nov to 15 Nov", "17 Nov 2025 to 15 Nov 2026". */
+export function fmtSpan(a: ISODate, b: ISODate): string {
+  return a.slice(0, 4) === b.slice(0, 4) ? `${fmtShort(a)} to ${fmtShort(b)}` : `${fmtShort(a)} ${a.slice(0, 4)} to ${fmtShort(b)} ${b.slice(0, 4)}`;
+}
+
 export function fmtDay(iso: ISODate): string {
   const d = toDate(iso);
   return `${DAYS[d.getUTCDay()]} ${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]}`;

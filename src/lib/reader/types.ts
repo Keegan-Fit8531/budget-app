@@ -1,3 +1,4 @@
+import type { CsvRead } from '../csv';
 import type { ISODate } from '../dates';
 
 // ---------------------------------------------------------------------------------------------
@@ -6,7 +7,8 @@ import type { ISODate } from '../dates';
 // the budget; the app checks every field (check.ts) and applies it itself (apply.ts).
 // ---------------------------------------------------------------------------------------------
 
-export type DocKind = 'payslip' | 'statement' | 'afterpay' | 'unknown';
+/** `transactions` is a bank or card export (CSV), read on this device. */
+export type DocKind = 'payslip' | 'statement' | 'afterpay' | 'transactions' | 'unknown';
 
 /** A figure as printed, e.g. { amount: "1240.50", label: "Closing balance" }. */
 export interface Fig { amount: string; label?: string }
@@ -57,6 +59,7 @@ export interface Extraction {
   payslip?: RawPayslip;
   statement?: RawStatement;
   afterpay?: RawAfterpay;
+  transactions?: CsvRead;
   notes?: string;
 }
 

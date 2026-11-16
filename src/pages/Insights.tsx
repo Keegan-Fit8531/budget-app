@@ -3,6 +3,7 @@ import { Dot } from '../components/ui';
 import { BarList, Donut, Legend } from '../components/Donut';
 import { tone } from '../lib/colors';
 import { Icon } from '../components/Icon';
+import { SpendingCard } from '../components/SpendingCard';
 import { convert, planFor, plannedAverage, type View } from '../lib/engine';
 import { PayNav, useViewPeriod, ViewModes } from '../lib/period';
 import { cash } from '../lib/money';
@@ -182,6 +183,9 @@ export function Insights() {
       )}
         </div>
       </div>
+
+      {/* What was actually spent, from uploaded bank and card exports (not the plan above). */}
+      <SpendingCard />
     </>
   );
 }

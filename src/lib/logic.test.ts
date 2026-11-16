@@ -21,6 +21,8 @@ import { prepareFile } from './reader/prepare';
 import { buildContext, RESPONSE_SCHEMA } from './reader/prompt';
 import type { Extraction } from './reader/types';
 import { KEEP_DAYS, localDay, needsCopy, toForget } from './versions';
+import { csvAmount, csvDate, readTransactionsCsv } from './csv';
+import { categorize, summarize } from './spending';
 
 /** A blank budget paid on the 19th, with automatic balancing off so amounts are exactly as set. */
 function budget(): Budget {
@@ -1125,5 +1127,106 @@ describe('saved copies', () => {
     const daysAgo = (n: number) => new Date(now.getTime() - n * 86_400_000).toISOString();
     expect(KEEP_DAYS).toBe(90);
     expect(toForget([daysAgo(1), daysAgo(89), daysAgo(91), daysAgo(200)], now)).toEqual([daysAgo(91), daysAgo(200)]);
+  });
+});
+
+// ---------------------------------------------------------------------------------------------
+// Bank and card exports (CSV), read on the device. All made up.
+// ---------------------------------------------------------------------------------------------
+
+const qExport = [
+  'Date,Card Number,Description,Amount',
+  '15/11/26,9999,McDonalds 123 Queen St,-$12.50',
+  '12/11/26,,Payment Received - Thank You,$100.00',
+  '10/11/26,9999,"SUPERCHEAP AUTO 7 Mth 0% Int, 7 Mth Pmt Hol",-$40.00',
+  '05/11/26,9999,Afterpay afterpay.co NZL,$0.00',
+  '02/11/26,9999,MYLOTTO.CO.NZ NEW ZEALAND,-$7.00',
+  '28/10/26,9999,Countdown Glen Eden,-$30.00',
+].join('\n');
+
+const csvDoc = (text: string): Extraction => ({ kind: 'transactions', transactions: readTransactionsCsv(text)! });
+
+describe('reading bank and card exports', () => {
+  it('reads a card export: newest first, quoted commas, $0 rows left out, the card number kept', () => {
+    const r = readTransactionsCsv(qExport)!;
+    expect(r).toMatchObject({ ending: '9999', card: true, skipped: 1 });
+    expect(r.rows.map((t) => [t.date, t.amount])).toEqual([['2026-10-28', -3000], ['2026-11-02', -700], ['2026-11-10', -4000], ['2026-11-12', 10000], ['2026-11-15', -1250]]);
+    expect(r.rows[2].description).toBe('SUPERCHEAP AUTO 7 Mth 0% Int, 7 Mth Pmt Hol');
+  });
+
+  it('reads a bank export with the account above the columns, a balance column, and separate money in and out', () => {
+    const bank = readTransactionsCsv(['"Everyday Account","12-3456-0123456-00"', 'Date,Payee,Particulars,Code,Reference,Amount,Balance',
+      '14/11/2026,Countdown Henderson,,,,-45.20,354.80', '15/11/2026,Transfer from savings,,,,100.00,454.80', '16/11/2026,McDonalds Albany,,,,-15.40,439.40'].join('\n'))!;
+    expect(bank).toMatchObject({ ending: '3456', card: false });
+    expect(bank.rows[2]).toMatchObject({ date: '2026-11-16', amount: -1540, balance: 43940 });
+    const split = readTransactionsCsv('Date,Description,Debit,Credit\n01/11/2026,Countdown,12.50,\n02/11/2026,Pay,,500.00')!;
+    expect(split.rows.map((t) => t.amount)).toEqual([-1250, 50000]);
+    // A card export that writes spending as + and payments as −: turned round.
+    const flipped = readTransactionsCsv('Transaction Date,Details,Amount\n2026-11-01,PAYMENT RECEIVED,-100.00\n2026-11-02,KMART,25.00')!;
+    expect(flipped.rows.map((t) => t.amount)).toEqual([10000, -2500]);
+    expect([csvDate('3 Nov 2026'), csvDate('03-Nov-26'), csvDate('31/02/2026'), csvAmount('(12.40)'), csvAmount('1,240.50 DR')]).toEqual(['2026-11-03', '2026-11-03', undefined, -1240, -124050]);
+    expect(readTransactionsCsv('Name,Colour\nBob,blue')).toBeUndefined();
+  });
+
+  it('the first time, it asks which card it is: nothing is saved until you choose', () => {
+    const r = checkDoc(debtBudget(), csvDoc(qExport), '2026-11-16');
+    expect(r.proposal).toBeNull();
+    expect(r.issues[0].text).toMatch(/Choose which card this is for/);
+  });
+
+  it('keeps the transactions on the card, works out what’s owed from the last checked balance, and fills in its history', () => {
+    const b = debtBudget(); // the Q card: $500 checked on 1 Nov
+    const r = upload(b, csvDoc(qExport), '2026-11-16', (d) => { d.transactions.target = 'debt:qcard'; });
+    expect(r.proposal).toMatchObject({ kind: 'transactions', balance: { amount: 50000 + 700 + 4000 - 10000 + 1250, asOf: '2026-11-15' } });
+    const q = debt(b, 'qcard');
+    expect(q.transactions).toHaveLength(5);
+    expect(q.ending).toBe('9999');
+    expect(owed(q)).toBe(45950);
+    expect(q.checked).toEqual({ amount: 45950, asOf: '2026-11-15' });
+    // Before the $500 it knew of, worked back; after it, worked forward day by day.
+    expect(q.history!.map((h) => [h.asOf, h.amount])).toEqual(expect.arrayContaining([['2026-10-28', 50000], ['2026-11-02', 50700], ['2026-11-10', 54700], ['2026-11-12', 44700], ['2026-11-15', 45950]]));
+
+    // Next time it's matched by the card number (and shown, to check), and only what's new is added.
+    const again = toDraft(csvDoc(`${qExport}\n16/11/26,9999,Countdown Glen Eden,-$20.00`), b, 'device', seq(), '2026-11-16');
+    expect(again.transactions).toMatchObject({ target: 'debt:qcard', matchedBy: '9999' });
+    const r2 = review(again, b, '2026-11-16');
+    expect(r2.proposal).toMatchObject({ add: [{ date: '2026-11-16', amount: -2000 }], balance: { amount: 47950, asOf: '2026-11-16' } });
+    expect(r2.ignored[0]).toMatch(/5 transactions already saved/);
+    applyProposal(b, r2.proposal!, '2026-11-16');
+    const r3 = checkDoc(b, csvDoc(qExport), '2026-11-16');
+    expect(r3.proposal).toBeNull();
+    expect(r3.issues.map((i) => i.text).join(' ')).toMatch(/Nothing new/);
+  });
+
+  it('what’s owed can be typed in instead, and isn’t guessed when there’s no checked balance to add to', () => {
+    const b = debtBudget();
+    debt(b, 'qcard').paid = [{ date: '2026-11-05', amount: 10000, name: 'Balance' }]; // payments were counted automatically
+    const guessed = checkDoc(b, csvDoc(qExport), '2026-11-16', (d) => { d.transactions.target = 'debt:qcard'; });
+    expect(guessed.proposal).toMatchObject({ kind: 'transactions' });
+    expect((guessed.proposal as { balance?: unknown }).balance).toBeUndefined();
+    expect(guessed.issues.map((i) => i.text).join(' ')).toMatch(/isn’t changed/);
+    const typed = checkDoc(b, csvDoc(qExport), '2026-11-16', (d) => { d.transactions.target = 'debt:qcard'; d.transactions.amount = '612.40'; });
+    expect(typed.proposal).toMatchObject({ balance: { amount: 61240, asOf: '2026-11-16' } });
+  });
+
+  it('a bank export goes on the account, with its balance from the export', () => {
+    const b = debtBudget();
+    const text = ['Date,Payee,Amount,Balance', '14/11/2026,Countdown Henderson,-45.20,354.80', '16/11/2026,McDonalds Albany,-15.40,339.40'].join('\n');
+    upload(b, csvDoc(text), '2026-11-16', (d) => { d.transactions.target = 'account:everyday'; });
+    expect(b.accountTransactions?.everyday).toHaveLength(2);
+    expect(b.balances?.everyday).toEqual({ amount: 33940, asOf: '2026-11-16' });
+  });
+
+  it('puts purchases in categories by the shop, so Insights can show what adds up', () => {
+    expect(categorize('McDonalds 123456 Queen St A NZL')).toEqual({ category: 'takeaways', shop: 'McDonald’s' });
+    expect(categorize('MYLOTTO.CO.NZ NEW ZEALAND 5 Months No Payments No Interest').category).toBe('gambling'); // not "interest"
+    expect(categorize('International Transaction Fee').category).toBe('fees');
+    expect(categorize('Pak N Save Henderson Henderson').shop).toBe('Pak’nSave');
+    // A shop you've put in another category stays there.
+    expect(categorize('SOME ONLINE GAME CO London', { 'some online': 'gambling' })).toEqual({ category: 'gambling', shop: 'Some Online' });
+    const s = summarize(readTransactionsCsv(qExport)!.rows, '2026-11-01', '2026-11-16');
+    // Payments in aren't spending, and October is outside the dates.
+    expect(s).toMatchObject({ total: 5950, count: 3, small: { count: 2, total: 1950 } });
+    expect(s.categories[0]).toMatchObject({ category: 'transport', total: 4000 });
   });
 });

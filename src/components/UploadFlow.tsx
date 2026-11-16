@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { addMonths, fmtShort, todayISO, type ISODate } from '../lib/dates';
+import { addMonths, fmtShort, fmtSpan, todayISO, type ISODate } from '../lib/dates';
 import { owed, planEnds } from '../lib/debts';
-import { cash } from '../lib/money';
+import { cash, centsToInput } from '../lib/money';
 import { applyProposal, fingerprint, preview } from '../lib/reader/apply';
-import { NEW_DEBT, NOT_MINE, purchaseRows, resolvePlanRow, review, toCents, toDraft, type Draft, type DraftFig } from '../lib/reader/check';
+import { csvBalance, csvTargets, NEW_DEBT, NOT_MINE, purchaseRows, resolvePlanRow, review, toCents, toDraft, type Draft, type DraftFig } from '../lib/reader/check';
+import { CATEGORY_LABEL, summarize } from '../lib/spending';
 import { DEVICE_FALLBACK, errorMessage, ReaderError } from '../lib/reader/errors';
-import { startRead, type ReadJob, type ReadStage } from '../lib/reader/job';
+import { isCsv, startRead, type ReadJob, type ReadStage } from '../lib/reader/job';
 import type { DocKind, Extraction } from '../lib/reader/types';
 import { newId, useBudget } from '../lib/store';
 import { Icon } from './Icon';
@@ -22,7 +23,7 @@ type Phase =
   | { s: 'error'; err: ReaderError }
   | { s: 'review'; draft: Draft };
 
-const KIND_TITLE: Record<DocKind, string> = { payslip: 'Check this payslip', statement: 'Check this statement', afterpay: 'Check these Afterpay orders', unknown: 'Check this document' };
+const KIND_TITLE: Record<DocKind, string> = { payslip: 'Check this payslip', statement: 'Check this statement', afterpay: 'Check these Afterpay orders', transactions: 'Check these transactions', unknown: 'Check this document' };
 const RETRY = new Set(['too_fast', 'overloaded', 'offline', 'unreachable', 'timeout', 'unusable']);
 const titleOf = (d: Draft) => (d.kind === 'statement' && d.statement.appScreen ? 'Check this card screenshot' : KIND_TITLE[d.kind]);
 
@@ -96,7 +97,7 @@ export function UploadFlow({ job: firstJob, onClose, onPayslip }: { job: ReadJob
         {phase.s === 'reading' && (
           <div className="stack gap-8">
             <p className="small muted" role="status">{job.source === 'device'
-              ? (file.type.startsWith('image/') ? 'Reading the text in the photo on this device. This can take a little while the first time.' : 'Reading the PDF on this device.')
+              ? (file.type.startsWith('image/') ? 'Reading the text in the photo on this device. This can take a little while the first time.' : isCsv(file) ? 'Reading the export on this device…' : 'Reading the PDF on this device.')
               : stage.step === 'preparing'
                 ? (isPdf ? 'Getting the PDF ready to send…' : 'Making the image smaller to send…')
                 : `Google’s Gemini is reading it (${stage.bytes < 1e6 ? `${Math.max(1, Math.round(stage.bytes / 1000))} KB` : `${(stage.bytes / 1e6).toFixed(1)} MB`} sent)…`}</p>
@@ -196,11 +197,15 @@ function Rundown({ draft, sourceLabel, onEdit, onCancel, onConfirm }: {
   return (
     <>
       <span className="pill" style={{ alignSelf: 'flex-start' }}>{sourceLabel}</span>
-      <div className="seg" role="group" aria-label="What this is" style={{ alignSelf: 'flex-start' }}>
-        {(['payslip', 'statement', 'afterpay'] as const).map((k) => (
-          <button key={k} aria-pressed={draft.kind === k} onClick={() => edit((d) => { d.kind = k; })}>{k === 'payslip' ? 'Payslip' : k === 'statement' ? 'Card or loan' : 'Afterpay'}</button>
-        ))}
-      </div>
+      {draft.kind !== 'transactions' && (
+        <div className="seg" role="group" aria-label="What this is" style={{ alignSelf: 'flex-start' }}>
+          {(['payslip', 'statement', 'afterpay'] as const).map((k) => (
+            <button key={k} aria-pressed={draft.kind === k} onClick={() => edit((d) => { d.kind = k; })}>{k === 'payslip' ? 'Payslip' : k === 'statement' ? 'Card or loan' : 'Afterpay'}</button>
+          ))}
+        </div>
+      )}
+
+      {draft.kind === 'transactions' && <TransactionsCheck draft={draft} edit={edit} />}
 
       {draft.kind === 'payslip' && (
         <div className="form-grid">
@@ -332,6 +337,53 @@ function Rundown({ draft, sourceLabel, onEdit, onCancel, onConfirm }: {
           onConfirm(r.proposal, pv);
         }}>Confirm</button>
       </div>
+    </>
+  );
+}
+
+/**
+ * A bank or card export: a file doesn't say whose it is, so you're asked which card or account (or
+ * shown the one with that number from last time, to check), and what's owed or in it now.
+ */
+function TransactionsCheck({ draft, edit }: { draft: Draft; edit: (fn: (d: Draft) => void) => void }) {
+  const { budget } = useBudget();
+  const t = draft.transactions;
+  const rows = t.read.rows;
+  const targets = csvTargets(budget);
+  const isDebt = t.target.startsWith('debt:');
+  const suggested = csvBalance(draft, budget);
+  const out = rows.filter((x) => x.amount < 0).reduce((a, x) => a - x.amount, 0);
+  const inn = rows.filter((x) => x.amount > 0).reduce((a, x) => a + x.amount, 0);
+  const matched = t.matchedBy ? targets.find((x) => x.value === t.target) : undefined;
+  const shown = t.amount ?? (suggested ? centsToInput(isDebt ? Math.max(0, suggested.amount) : suggested.amount) : '');
+  const top = rows.length ? summarize(rows, rows[0].date, rows[rows.length - 1].date).categories.filter((c) => c.category !== 'other').slice(0, 3) : [];
+  return (
+    <>
+      {rows.length > 0 && (
+        <p className="small">{rows.length} transaction{rows.length === 1 ? '' : 's'}, {fmtSpan(rows[0].date, rows[rows.length - 1].date)}: {cash(out)} {t.read.card ? 'spent' : 'out'}, {cash(inn)} {t.read.card ? 'paid' : 'in'}.
+          {top.length > 0 && <span className="muted"> Most went on {top.map((c) => `${CATEGORY_LABEL[c.category].toLowerCase()} (${cash(c.total, { whole: true })})`).join(', ')}.</span>}
+        </p>
+      )}
+      <label className="field">Which {t.read.card ? 'card' : 'card or account'} is this for?
+        <select value={t.target} onChange={(e) => edit((d) => { d.transactions.target = e.target.value; d.transactions.matchedBy = undefined; d.transactions.amount = null; })}>
+          {!t.target && <option value="">Choose…</option>}
+          {(['Cards and loans', 'Bank accounts'] as const).filter((g) => targets.some((x) => x.group === g)).map((g) => (
+            <optgroup key={g} label={g}>{targets.filter((x) => x.group === g).map((x) => <option key={x.value} value={x.value}>{x.label}</option>)}</optgroup>
+          ))}
+        </select>
+        <span className="xs muted">{matched
+          ? `Chosen because ${matched.label} has number ending ${t.matchedBy}. Change it if that’s wrong.`
+          : `The file doesn’t say whose it is${t.read.ending ? `. Once you confirm, number ending ${t.read.ending} goes straight to it next time` : ''}.`}</span>
+      </label>
+      {t.target && (
+        <label className="field">{isDebt ? 'Owed now' : 'Balance now'}
+          <input inputMode="decimal" value={shown} placeholder={isDebt ? 'What your app says you owe' : 'What your banking app says'}
+            onChange={(e) => edit((d) => { d.transactions.amount = e.target.value; })} />
+          <span className="xs muted">{t.amount === null && suggested
+            ? `${suggested.working} That’s as at ${fmtShort(suggested.asOf)}: check it against your app.`
+            : t.amount !== null && t.amount.trim() ? 'As at today, as you typed it.' : 'Leave it empty to keep what’s saved.'}</span>
+        </label>
+      )}
     </>
   );
 }

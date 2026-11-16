@@ -29,6 +29,15 @@ export interface Account {
    * trims round down, top-ups round up. 0 or unset = off.
    */
   round?: Cents;
+  /** The end of its account number, as in its CSV exports, so an export is matched to it. */
+  ending?: string;
+}
+
+/** A transaction from a bank or card export (CSV). + is money in (or paid off a card), − is money out (spent). */
+export interface Txn {
+  date: ISODate;
+  description: string;
+  amount: Cents;
 }
 
 /** Something that takes money out of an account on a schedule (a bill, rent, a weekly transfer). */
@@ -148,6 +157,15 @@ export interface Debt {
   payroll?: { perPay: Cents; applied?: ISODate[] };
   /** Colour for a debt with no payday account (e.g. a payroll-deducted loan). */
   color?: string;
+  /**
+   * The last balance you checked (a statement, screenshot, export or typed in), before any payments
+   * were counted automatically. A card export's purchases and payments are added on from here.
+   */
+  checked?: BalanceEntry;
+  /** The card number's last digits, as in its CSV exports, so an export is matched to it. */
+  ending?: string;
+  /** Its transactions, from CSV exports, oldest first. */
+  transactions?: Txn[];
   /**
    * Planned payments already counted as paid (they're automatic), oldest first. Kept so the pay a payment
    * came out of still shows it once it has gone: without this a pay's total would shrink, and its leftover
@@ -271,6 +289,10 @@ export interface Budget {
   /** Cards, buy-now-pay-later and people you owe, with their payment plans. */
   debts?: Debt[];
   savings?: SavingsGoal[];
+  /** Bank accounts' transactions, from CSV exports, by account id, oldest first. */
+  accountTransactions?: Record<string, Txn[]>;
+  /** Spending categories you've chosen for shops (by shop name in lower case), over the app's own guess. */
+  shopCategories?: Record<string, string>;
   /** Account balances you've entered, by account id. */
   balances?: Record<string, BalanceEntry>;
   /** Each account's history (balances entered, one-off costs), by account id, in the order they were recorded. */

@@ -311,7 +311,7 @@ export function Planner() {
                   </span>
                 )}
               </div>
-              <input ref={slipRef} type="file" accept="application/pdf,image/*" hidden
+              <input ref={slipRef} type="file" accept="application/pdf,image/*,.csv,text/csv" hidden
                 onChange={(e) => { const f = e.target.files?.[0]; if (f) setJob(startRead(f, budget)); e.target.value = ''; }} />
               {payEdit === null ? (
                 <b className={known ? '' : 'muted'}>{known ? cash(v(plan.pay)) : 'Not in yet'}</b>

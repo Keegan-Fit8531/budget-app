@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { AccountHistoryList, OneOffCostModal } from '../components/AccountHistory';
+import { TransactionList } from '../components/Transactions';
 import { DayPicker, useDayView } from '../components/DayPicker';
 import { Icon } from '../components/Icon';
 import { MonthTracker, PayProjectionView } from '../components/MonthTracker';
@@ -169,6 +170,7 @@ function BalanceCard({ account: a, view, day, onPick }: { account: Account; view
       )}
 
       <AccountHistoryList account={a} />
+      <TransactionList items={budget.accountTransactions?.[a.id] ?? []} />
 
       {entry && !editing && (
         <p className="small muted">

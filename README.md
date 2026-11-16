@@ -40,6 +40,11 @@ prepaid (paid) use, Google doesn't use them to train its models. The key is kept
 phone can carry it. When Gemini can't be used, the app offers to read the document on this device
 instead, where it never leaves the device.
 
+Bank and card exports (CSV) are read on the device and never sent anywhere. You're asked which card or
+account each is for (the file doesn't say); its number is remembered so the next one is matched, for you
+to check. The transactions are kept on that card or account, what's owed or the balance is worked out
+from them, and Insights shows what the spending went on.
+
 A copy of everything is saved in the browser once a day, before that day's first change, and kept for
 3 months (Settings → Saved copies), so an upload or an edit that went wrong can be put back.
 

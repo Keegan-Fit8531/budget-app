@@ -145,6 +145,7 @@ export function recordStatement(b: Budget, debtId: string, s: { balance: Cents; 
   if (!debt) return undefined;
   const asOf = s.date && s.date <= today ? s.date : today;
   debt.balance = { amount: s.balance, asOf };
+  debt.checked = { amount: s.balance, asOf };
   if (s.limit !== undefined && s.limit > 0) debt.limit = s.limit;
   const hist = (debt.history ?? []).filter((h) => h.asOf !== asOf);
   hist.push({ amount: owed(debt), asOf });
