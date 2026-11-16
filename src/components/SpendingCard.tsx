@@ -47,8 +47,8 @@ export function SpendingCard() {
 
   return (
     <section className="card stack gap-16">
-      <div className="card-head wrap">
-        <h2 className="h2 grow">Where your money went</h2>
+      <h2 className="h2">Where your money went</h2>
+      <div className="row wrap gap-8">
         {sources.length > 1 && (
           <select aria-label="Which card or account" value={source} onChange={(e) => setSource(e.target.value)}>
             <option value="all">All uploaded</option>

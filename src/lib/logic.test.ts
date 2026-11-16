@@ -1350,3 +1350,7 @@ it('a statement date that jumps backwards was misread: it takes the date above i
   expect(r.rows.map((t) => t.date)).toEqual(['2026-05-01', '2026-05-01', '2026-05-02']);
   expect(r.unsure).toBe(1);
 });
+
+it('short capitals in a shop name stay capitals', () => {
+  expect(categorize('SPARK NZ TRADING Auckland').shop).toBe('Spark NZ');
+});

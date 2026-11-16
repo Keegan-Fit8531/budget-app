@@ -53,7 +53,8 @@ export function cleanDescription(d: string): string {
 function shopName(d: string): string {
   const words = cleanDescription(d).replace(/[*#]/g, ' ').split(/\s+/).filter((w) => w && !/\d/.test(w));
   const name = words.slice(0, 2).join(' ') || d;
-  return name.toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
+  // Title case, but short capitals stay as they are ("NZ", "ATM", "BP").
+  return name.split(' ').map((w) => (/^[A-Z]{2,3}$/.test(w) ? w : w.toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase()))).join(' ');
 }
 
 /** Categories you've chosen for shops (Insights → tap a category → change a shop's), by shop name in lower case. */
