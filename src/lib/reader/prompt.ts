@@ -45,7 +45,7 @@ export function instructions(today: ISODate): string {
     `- Dates: YYYY-MM-DD. New Zealand documents write the day first: 03/11/2026 is 3 November 2026. If a date has no year, use the year that puts it closest to today, ${today}.`,
     '- For each figure, put the words printed next to it on the document in "label".',
     '- kind: "payslip" for a payslip, "statement" for a credit card or loan statement or a card app screen (it shows what is owed, usually with a credit limit), "account" for a bank account statement or list of a bank account\'s transactions (an everyday, cheque, debit card or savings account: money in and out with a running balance, nothing owed), "afterpay" for Afterpay orders or instalments, "unknown" if you are not sure. A bank account is never a "statement".',
-    '- A bank account ("account"): put every transaction in account.rows, in the order printed. date: its date (a date printed without a year takes the year of the statement period around it). description: who it was paid to or from and what it was (e.g. "Pak N Save R", "SPARK NZ TRADING SALARY"), without card numbers or "Orig date" lines. amount: money out (withdrawals, debits, purchases, payments) with a minus sign, like "-45.20"; money in (deposits, credits) without, like "150.00". balance: the balance printed after it, or null. Leave out opening balances, balances brought forward, and page or statement totals. closingBalance and closingDate: the latest closing balance shown, and its date.',
+    '- A bank account ("account"): put every transaction in account.rows, in the order printed, each as one line "date|description|amount|balance", like "2026-06-10|Pizza Hut Ho|-8.49|342.51". date: YYYY-MM-DD (a date printed without a year takes the year of the statement period around it). description: who it was paid to or from and what it was (e.g. "Pak N Save R", "SPARK NZ TRADING SALARY"), without card numbers or "Orig date" lines. amount: money out (withdrawals, debits, purchases, payments) with a minus sign, like "-45.20"; money in (deposits, credits) without, like "150.00". balance: the balance printed after it, or nothing if none is printed ("2026-06-10|Pizza Hut Ho|-8.49|"). Leave out opening balances, balances brought forward, and page or statement totals. closingBalance and closingDate: the last balance shown (after the last transaction), and its date.',
     '- A card app screen (Gem, Q Mastercard or a bank app) is a "statement" with appScreen true: balance is what is owed now (the current balance, not the last statement\'s), available is the available credit, statementDate is null unless the screen shows the date the balance is as at, and every purchase it lists goes in purchases (leave out payments, refunds and pending holds). For a statement, appScreen is false and purchases is empty.',
     '- Choose debtId and planId ONLY from the list of debts you are given, or null if none fits. Never make one up. Never choose a debt marked neverAStatement.',
     '- Gem Visa statements list interest-free plans, each with an expiry date. Put each one in plans with the expiry date printed for it in "ends" and its plan balance in "remaining". Give a planId only if the statement names the plan the same way as one in the list; otherwise null (the app matches plans by their expiry dates). An amount that is not on a plan, such as "Standard purchases", is not a plan.',
@@ -98,12 +98,9 @@ export const RESPONSE_SCHEMA = form({
     number: text('The account number as printed, e.g. "06-0115-0123456-00".'),
     closingBalance: amt,
     closingDate: date,
-    rows: list(form({
-      date,
-      description: text(),
-      amount: { type: 'string', description: 'Money out with a minus sign ("-45.20"), money in without ("150.00").' },
-      balance: { type: ['string', 'null'], description: 'The balance printed after it, or null.' },
-    })),
+    // One line per transaction: about a third of the length of a labelled record, so a long
+    // statement comes back three times as fast.
+    rows: list({ type: 'string', description: 'date|description|amount|balance, e.g. "2026-06-10|Pizza Hut Ho|-8.49|342.51".' }),
   }, true),
   afterpay: form({
     orders: list(form({

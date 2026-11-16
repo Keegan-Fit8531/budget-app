@@ -36,7 +36,7 @@ function readingProgress(stage: ReadStage, now: number): { pct: number; slow: bo
     const done = stage.done ?? 0;
     const step = 80 / stage.parts;
     const moving = done < stage.parts ? step * 0.8 * (1 - Math.exp(-t / 8000)) : 0;
-    return { pct: 15 + step * done + moving, slow: t > Math.ceil(stage.parts / 3) * 30_000 };
+    return { pct: 15 + step * done + moving, slow: t > Math.ceil(stage.parts / 8) * 30_000 };
   }
   const expected = 2500 + stage.bytes / 1000; // about 2.5 s to read, and sending at about 1 MB a second
   return { pct: 15 + 80 * (1 - Math.exp(-t / expected)), slow: t > expected * 3 };
@@ -45,8 +45,27 @@ function readingProgress(stage: ReadStage, now: number): { pct: number; slow: bo
 /** A blank form, for typing the figures in. */
 const blank = (kind: DocKind): Extraction => ({ kind });
 
-export function UploadFlow({ job: firstJob, onClose, onPayslip }: { job: ReadJob; onClose: () => void; onPayslip?: (start: ISODate) => void }) {
+/** Several documents chosen at once: all read straight away, then checked one at a time (each for its own account or debt). */
+export function UploadQueue({ jobs, onClose, onPayslip }: { jobs: ReadJob[]; onClose: () => void; onPayslip?: (start: ISODate) => void }) {
+  const [i, setI] = useState(0);
+  if (jobs.length === 1) return <UploadFlow job={jobs[0]} onClose={onClose} onPayslip={onPayslip} />;
+  const stopAll = () => { jobs.slice(i).forEach((j) => j.cancel()); onClose(); };
+  return (
+    <UploadFlow key={`${i}-${jobs[i].file.name}`} job={jobs[i]} onClose={stopAll} onPayslip={onPayslip}
+      queue={{ index: i, total: jobs.length, onNext: () => (i + 1 < jobs.length ? setI(i + 1) : onClose()) }} />
+  );
+}
+
+export function UploadFlow({ job: firstJob, onClose, onPayslip, queue }: {
+  job: ReadJob;
+  /** Close (with several documents, the rest too). */
+  onClose: () => void;
+  onPayslip?: (start: ISODate) => void;
+  /** One of several documents: Confirm and Skip go on to the next. */
+  queue?: { index: number; total: number; onNext: () => void };
+}) {
   const { budget, update } = useBudget();
+  const next = queue?.onNext ?? onClose;
   const [job, setJob] = useState(firstJob);
   const [phase, setPhase] = useState<Phase>({ s: 'reading' });
   const [progress, setProgress] = useState(0);
@@ -68,7 +87,7 @@ export function UploadFlow({ job: firstJob, onClose, onPayslip }: { job: ReadJob
       (e) => {
         if (!live) return;
         const err = e instanceof ReaderError ? e : new ReaderError(job.source === 'device' ? 'bad_file' : 'unusable', { detail: job.source === 'device' ? 'That file couldn’t be read on this device. Type the figures in instead.' : undefined });
-        if (err.kind === 'cancelled') onClose(); else setPhase({ s: 'error', err });
+        if (err.kind === 'cancelled') { if (!queue) onClose(); } else setPhase({ s: 'error', err });
       },
     );
     return () => { live = false; off(); offStage(); };
@@ -96,7 +115,7 @@ export function UploadFlow({ job: firstJob, onClose, onPayslip }: { job: ReadJob
         <div className="between nowrap">
           <div className="min0">
             <h2 id="up-title" className="h2">{title}</h2>
-            <span className="small muted" style={{ overflowWrap: 'anywhere' }}>{file.name}</span>
+            <span className="small muted" style={{ overflowWrap: 'anywhere' }}>{queue ? `${queue.index + 1} of ${queue.total}: ` : ''}{file.name}</span>
           </div>
           <button className="icon-btn plain" aria-label="Close" onClick={close}><Icon name="x" /></button>
         </div>
@@ -117,12 +136,14 @@ export function UploadFlow({ job: firstJob, onClose, onPayslip }: { job: ReadJob
             {job.source === 'gemini' && stage.step === 'reading' && (
               <span className="xs muted">{gp.slow ? `${secs} s: taking longer than usual. You can keep waiting, or cancel and try again.` : secs >= 1 ? `${secs} s` : '\u00a0'}</span>
             )}
-            <div className="row end"><button className="btn" onClick={close}>Cancel</button></div>
+            <div className="row end">
+              {queue ? <button className="btn" onClick={() => { job.cancel(); next(); }}>Skip this one</button> : <button className="btn" onClick={close}>Cancel</button>}
+            </div>
           </div>
         )}
 
         {phase.s === 'error' && (
-          <ErrorView err={phase.err} source={job.source} onClose={onClose}
+          <ErrorView err={phase.err} source={job.source} onClose={next} closeLabel={queue ? 'Skip this one' : 'Close'}
             onDevice={() => setJob(startRead(file, budget, 'device'))}
             onRetry={() => setJob(startRead(file, budget, 'gemini'))}
             onType={() => setPhase({ s: 'review', draft: toDraft(blank(/\.pdf$/i.test(file.name) || file.type === 'application/pdf' ? 'payslip' : 'statement'), budget, 'device', newId) })} />
@@ -131,13 +152,13 @@ export function UploadFlow({ job: firstJob, onClose, onPayslip }: { job: ReadJob
         {phase.s === 'review' && (
           <Rundown draft={phase.draft} sourceLabel={job.source === 'device' ? 'Read on this device' : 'Read by Google’s Gemini'}
             onEdit={(draft) => setPhase({ s: 'review', draft })}
-            onCancel={onClose}
+            onCancel={next} cancelLabel={queue ? 'Skip this one' : 'Cancel'}
             onConfirm={(proposal, pv) => {
               update((b) => applyProposal(b, proposal, todayISO()));
               if (proposal.kind === 'payslip' && pv.payStart) onPayslip?.(pv.payStart);
               const more = pv.lines.length - 1;
-              showToast(`Saved. ${pv.lines[0] ?? ''}${more > 0 ? ` (and ${more} more change${more === 1 ? '' : 's'})` : ''}`);
-              onClose();
+              showToast(`Saved${queue ? ` ${queue.index + 1} of ${queue.total}` : ''}. ${pv.lines[0] ?? ''}${more > 0 ? ` (and ${more} more change${more === 1 ? '' : 's'})` : ''}`);
+              next();
             }} />
         )}
 
@@ -146,7 +167,7 @@ export function UploadFlow({ job: firstJob, onClose, onPayslip }: { job: ReadJob
   );
 }
 
-function ErrorView({ err, source, onClose, onDevice, onRetry, onType }: { err: ReaderError; source: 'gemini' | 'device'; onClose: () => void; onDevice: () => void; onRetry: () => void; onType: () => void }) {
+function ErrorView({ err, source, onClose, closeLabel, onDevice, onRetry, onType }: { err: ReaderError; source: 'gemini' | 'device'; onClose: () => void; closeLabel: string; onDevice: () => void; onRetry: () => void; onType: () => void }) {
   const m = errorMessage(err);
   return (
     <>
@@ -156,7 +177,7 @@ function ErrorView({ err, source, onClose, onDevice, onRetry, onType }: { err: R
       </div>
       {err.detail && err.kind !== 'bad_file' && <p className="xs muted" style={{ overflowWrap: 'anywhere' }}>Google said: {err.detail}</p>}
       <div className="row end wrap">
-        <button className="btn" onClick={onClose}>Close</button>
+        <button className="btn" onClick={onClose}>{closeLabel}</button>
         {(err.kind === 'no_key' || err.kind === 'bad_key' || err.kind === 'model_gone' || err.kind === 'billing_needed') && <a className="btn" href="#/settings" onClick={onClose}>Open Settings</a>}
         <button className="btn" onClick={onType}>Type it in</button>
         {source === 'gemini' && DEVICE_FALLBACK.has(err.kind) && <button className="btn" onClick={onDevice}>Read it on this device instead</button>}
@@ -176,11 +197,12 @@ function Money({ label, fig, onChange, placeholder }: { label: string; fig: Draf
   );
 }
 
-function Rundown({ draft, sourceLabel, onEdit, onCancel, onConfirm }: {
+function Rundown({ draft, sourceLabel, onEdit, onCancel, cancelLabel, onConfirm }: {
   draft: Draft;
   sourceLabel: string;
   onEdit: (d: Draft) => void;
   onCancel: () => void;
+  cancelLabel: string;
   onConfirm: (p: NonNullable<ReturnType<typeof review>['proposal']>, pv: ReturnType<typeof preview>) => void;
 }) {
   const { budget } = useBudget();
@@ -339,7 +361,7 @@ function Rundown({ draft, sourceLabel, onEdit, onCancel, onConfirm }: {
 
       {stale && <p className="small" role="status">Your budget changed while this was open (it synced), so the rundown above has been worked out again. Check it, then confirm.</p>}
       <div className="row end">
-        <button className="btn" onClick={onCancel}>Cancel</button>
+        <button className="btn" onClick={onCancel}>{cancelLabel}</button>
         <button className="btn primary" disabled={!r.proposal || blocks.length > 0} onClick={() => {
           if (!r.proposal || !pv) return;
           if (stale) { setSeen(print); return; } // show what changed first

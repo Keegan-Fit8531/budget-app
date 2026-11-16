@@ -23,7 +23,7 @@ import type { Extraction } from './reader/types';
 import { KEEP_DAYS, localDay, needsCopy, toForget } from './versions';
 import { csvAmount, csvDate, endingOf, fromStatementRows, readTransactionsCsv } from './csv';
 import { layoutPage } from './reader/pdftext';
-import { mergeReads } from './reader/gemini';
+import { mergeReads, splitRow } from './reader/gemini';
 import { categorize, summarize } from './spending';
 
 /** A blank budget paid on the 19th, with automatic balancing off so amounts are exactly as set. */
@@ -1294,5 +1294,26 @@ describe('reading bank account statements', () => {
     expect(targets).not.toContain('account:gem'); // Gem's payment account: choose the card instead
     // Paying a card from the account isn't spending (it's counted on the card).
     expect(categorize('Q Mastercard Payment').category).toBe('transfers');
+  });
+});
+
+describe('reading long bank statements quickly', () => {
+  it('each transaction comes back as one line, split back into its parts', () => {
+    expect(splitRow('2026-06-10|Pizza Hut Ho|-8.49|342.51')).toEqual({ date: '2026-06-10', description: 'Pizza Hut Ho', amount: '-8.49', balance: '342.51' });
+    expect(splitRow('2026-06-10|Pizza Hut Ho|-8.49|')).toEqual({ date: '2026-06-10', description: 'Pizza Hut Ho', amount: '-8.49' });
+    expect(splitRow('2026-06-10|A | B Ltd|-8.49|342.51').description).toBe('A | B Ltd');
+  });
+
+  it('the running balance puts right a sign read the wrong way round, and counts what doesn’t add up', () => {
+    const r = fromStatementRows([
+      { description: 'Opening balance', balance: '100.00' },
+      { date: '2026-06-10', description: 'Pay', amount: '-50.00', balance: '150.00' }, // money in, read as out
+      { date: '2026-06-11', description: 'Kmart', amount: '-20.00', balance: '130.00' },
+      { date: '2026-06-12', description: 'Countdown', amount: '-10.00', balance: '100.00' }, // doesn't add up either way
+    ], { today: '2026-11-16' });
+    expect(r.rows.map((t) => t.amount)).toEqual([5000, -2000, -1000]);
+    expect(r.unsure).toBe(1);
+    const t = checkDoc(debtBudget(), { kind: 'transactions', transactions: r }, '2026-11-16', (d) => { d.transactions.target = 'account:everyday'; });
+    expect(t.issues.map((i) => i.text).join(' ')).toMatch(/One transaction doesn’t add up/);
   });
 });
