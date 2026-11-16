@@ -17,6 +17,8 @@ export interface CsvRead {
   card: boolean;
   /** Rows with no amount or no readable date. */
   skipped: number;
+  /** Statement transactions whose printed balance doesn't add up with the one before (misread, or one missed before it). */
+  unsure?: number;
 }
 
 /** Split CSV text into rows of cells (quotes, commas and line breaks inside quotes handled). */
@@ -154,15 +156,28 @@ export function fromStatementRows(
   opts: { today: ISODate; number?: string; closing?: { amount?: string; date?: string } },
 ): CsvRead {
   let skipped = 0;
+  let unsure = 0;
   const out: CsvRead['rows'] = [];
+  // The balance before each transaction, in the order printed: if a transaction's own balance only adds
+  // up with its amount the other way round, the sign was misread (money in taken for money out).
+  let before: Cents | undefined;
   for (const r of rows) {
     let date = csvDate(r.date ?? '');
-    const amount = csvAmount(r.amount ?? '');
+    let amount = csvAmount(r.amount ?? '');
+    const balance = csvAmount(r.balance ?? '');
     // Balances and totals printed between the transactions aren't transactions (Gemini sometimes lists them).
-    if (/opening balance|closing balance|brought forward|carried forward|totals? (at|for)|^balance$/i.test(r.description ?? '')) { skipped++; continue; }
+    if (/opening balance|closing balance|brought forward|carried forward|totals? (at|for)|^balance$/i.test(r.description ?? '')) {
+      skipped++;
+      before = balance ?? (amount !== undefined ? Math.abs(amount) : before);
+      continue;
+    }
     if (!date || !amount) { skipped++; continue; }
     if (date > opts.today) date = `${Number(date.slice(0, 4)) - 1}${date.slice(4)}`;
-    const balance = csvAmount(r.balance ?? '');
+    if (before !== undefined && balance !== undefined && Math.abs(before + amount - balance) > 1) {
+      if (Math.abs(before - amount - balance) <= 1) amount = -amount;
+      else unsure++;
+    }
+    if (balance !== undefined) before = balance;
     out.push({ date, description: (r.description ?? '').replace(/\s{2,}/g, ' ').trim() || 'Transaction', amount, ...(balance !== undefined ? { balance } : {}) });
   }
   const ordered = out.map((t, i) => ({ t, i })).sort((a, b) => a.t.date.localeCompare(b.t.date) || a.i - b.i).map((x) => x.t);
@@ -171,7 +186,7 @@ export function fromStatementRows(
   const closingDate = csvDate(opts.closing?.date ?? '');
   if (last && last.balance === undefined && closing !== undefined && closingDate && closingDate >= last.date) last.balance = closing;
   const ending = opts.number ? endingOf(opts.number) ?? (opts.number.replace(/\D/g, '').slice(-4) || undefined) : undefined;
-  return { rows: ordered, ...(ending ? { ending } : {}), card: false, skipped };
+  return { rows: ordered, ...(ending ? { ending } : {}), card: false, skipped, ...(unsure ? { unsure } : {}) };
 }
 
 /** Several reads of one long document (a few pages each), as one. */
@@ -181,5 +196,6 @@ export function joinReads(reads: CsvRead[]): CsvRead {
     ...(reads.find((r) => r.ending) ? { ending: reads.find((r) => r.ending)!.ending } : {}),
     card: reads.some((r) => r.card),
     skipped: reads.reduce((t, r) => t + r.skipped, 0),
+    ...(reads.some((r) => r.unsure) ? { unsure: reads.reduce((t, r) => t + (r.unsure ?? 0), 0) } : {}),
   };
 }

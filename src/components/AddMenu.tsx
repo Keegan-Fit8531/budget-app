@@ -10,9 +10,11 @@ import { Icon } from './Icon';
 import { ItemModal } from './ItemModal';
 
 // Loaded only when a document is chosen.
-const UploadFlow = lazy(() => import('./UploadFlow').then((m) => ({ default: m.UploadFlow })));
+const UploadQueue = lazy(() => import('./UploadFlow').then((m) => ({ default: m.UploadQueue })));
 
 type Adding = 'menu' | 'cost' | 'goal' | 'debt' | 'pay';
+/** The most documents read at once. */
+const MAX_FILES = 12;
 
 /**
  * The one "add" button: a cost, a savings goal, a debt, or a document (a payslip, a card or loan
@@ -21,13 +23,13 @@ type Adding = 'menu' | 'cost' | 'goal' | 'debt' | 'pay';
  */
 export function AddMenu({ render }: { render: (open: () => void) => React.ReactNode }) {
   const [adding, setAdding] = useState<Adding | null>(null);
-  const [job, setJob] = useState<ReadJob | null>(null);
+  const [jobs, setJobs] = useState<ReadJob[] | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const close = () => setAdding(null);
   const { budget } = useBudget();
   const owing = (budget.debts ?? []).some((d) => !d.payroll && owed(d) > 0);
   const choices: { id: string; icon: string; title: string; hint: string; go: () => void }[] = [
-    { id: 'doc', icon: 'upload', title: 'Upload a payslip or statement', hint: 'PDF, photo or screenshot (read by Google’s Gemini), or a bank or card export as CSV (read on this device). Shown to you to check.', go: () => fileRef.current?.click() },
+    { id: 'doc', icon: 'upload', title: 'Upload a payslip or statement', hint: 'PDF, photo or screenshot (read by Google’s Gemini), or a bank or card export as CSV (read on this device). Choose several at once if you like: each is shown to you to check.', go: () => fileRef.current?.click() },
     { id: 'cost', icon: 'transfer', title: 'Cost', hint: 'A bill, rent or regular transfer, or money put aside each pay for a WOF or tyres.', go: () => setAdding('cost') },
     { id: 'goal', icon: 'piggy', title: 'Savings goal', hint: 'Something to save towards, with a target and a date.', go: () => setAdding('goal') },
     { id: 'debt', icon: 'card', title: 'Debt', hint: 'A card, Afterpay, a loan or someone you owe.', go: () => setAdding('debt') },
@@ -36,11 +38,12 @@ export function AddMenu({ render }: { render: (open: () => void) => React.ReactN
   return (
     <>
       {render(() => setAdding('menu'))}
-      <input ref={fileRef} type="file" accept="application/pdf,image/*,.csv,text/csv" hidden
+      <input ref={fileRef} type="file" accept="application/pdf,image/*,.csv,text/csv" multiple hidden
         onChange={(e) => {
-          // Reading starts here, once per file chosen (not in an effect, which runs twice in development).
-          const f = e.target.files?.[0];
-          if (f) { setJob(startRead(f, budget)); close(); }
+          // Reading starts here, once per file chosen (not in an effect, which runs twice in development):
+          // all of them at once, so each is ready by the time you've checked the one before.
+          const files = [...(e.target.files ?? [])].slice(0, MAX_FILES);
+          if (files.length) { setJobs(files.map((f) => startRead(f, budget))); close(); }
           e.target.value = '';
         }} />
       {/* On the page itself, not inside the sidebar or bottom bar the button sits in. */}
@@ -70,7 +73,7 @@ export function AddMenu({ render }: { render: (open: () => void) => React.ReactN
       {adding === 'goal' && <GoalModal onClose={close} />}
       {adding === 'debt' && <DebtModal onClose={close} onDelete={close} />}
       {adding === 'pay' && <PayAnyDebt onClose={close} />}
-      {job && <Suspense fallback={null}><UploadFlow key={job.file.name + job.file.lastModified} job={job} onClose={() => setJob(null)} /></Suspense>}
+      {jobs && <Suspense fallback={null}><UploadQueue key={jobs.map((j) => j.file.name + j.file.lastModified).join('|')} jobs={jobs} onClose={() => setJobs(null)} /></Suspense>}
       </>, document.body)}
     </>
   );

@@ -45,11 +45,27 @@ async function call(opts: ProviderOptions, body: unknown, fetchImpl: typeof fetc
 /** The kinds the form can come back as ("account" is a bank account, turned into "transactions"). */
 const KINDS = ['payslip', 'statement', 'account', 'afterpay', 'unknown'];
 
+type RawRow = { date?: string; description?: string; amount?: string; balance?: string };
 interface RawAccount {
   number?: string;
   closingBalance?: { amount?: string };
   closingDate?: string;
-  rows?: { date?: string; description?: string; amount?: string; balance?: string }[];
+  /** One line each, "date|description|amount|balance" (or, from an older form, an object). */
+  rows?: (string | RawRow)[];
+}
+
+/** "2026-06-10|Pizza Hut Ho|-8.49|342.51" → its parts (a "|" in the description is kept). */
+export function splitRow(row: string | RawRow): RawRow {
+  if (typeof row !== 'string') return row;
+  const parts = row.split('|').map((x) => x.trim());
+  if (parts.length < 3) return { description: row };
+  const withBalance = parts.length >= 4;
+  return {
+    date: parts[0],
+    description: parts.slice(1, withBalance ? -2 : -1).join(' | '),
+    amount: parts[parts.length - (withBalance ? 2 : 1)],
+    ...(withBalance && parts[parts.length - 1] ? { balance: parts[parts.length - 1] } : {}),
+  };
 }
 
 /** The form makes every field answered, with null for what isn't shown; drop those so it's the same as a field left out. */
@@ -71,16 +87,21 @@ export function parseReply(r: GenerateResponse, today = todayISO()): Extraction 
   if (!raw || typeof raw !== 'object' || !KINDS.includes(raw.kind)) throw new ReaderError('unusable', { detail: 'No document kind' });
   if (raw.kind === 'account') {
     const a = raw.account ?? {};
-    const transactions = fromStatementRows(a.rows ?? [], { today, number: a.number, closing: { amount: a.closingBalance?.amount, date: a.closingDate } });
+    const transactions = fromStatementRows((a.rows ?? []).map(splitRow), { today, number: a.number, closing: { amount: a.closingBalance?.amount, date: a.closingDate } });
     return { kind: 'transactions', transactions, ...(raw.notes ? { notes: raw.notes } : {}) };
   }
   delete raw.account;
   return raw as Extraction;
 }
 
-/** Pages of a long PDF's text read in one request, and requests sent at once. */
+/** Pages of a long PDF's text read in one request, and requests sent at once (a year of statements in one or two rounds). */
 export const PAGES_AT_ONCE = 4;
-const REQUESTS_AT_ONCE = 3;
+export const REQUESTS_AT_ONCE = 16;
+
+const wait = (ms: number, signal?: AbortSignal) => new Promise<void>((resolve) => {
+  const t = setTimeout(resolve, ms);
+  signal?.addEventListener('abort', () => { clearTimeout(t); resolve(); });
+});
 
 /** The last line with a year in it before some pages (e.g. "Statement period 10 Jun 2026 - 09 Sep 2026"), for dates printed without years. */
 function lastDated(pages: string[]): string | undefined {
@@ -153,9 +174,18 @@ export function geminiProvider(fetchImpl: typeof fetch = (...a) => fetch(...a)):
           const k = next++;
           const p = parts[k];
           const intro = `Pages ${p.from} to ${p.to} of ${pages.length} of a PDF, as its text (the spacing keeps the columns lined up).${p.before ? ` Earlier in the document: “${p.before}”.` : ''}`;
-          try {
-            results[k] = parseReply(await call(opts, request(ctx, [{ text: `${intro}\n\n${p.text}` }]), fetchImpl), ctx.today);
-          } catch (e) { failed = true; throw e; }
+          // So many at once can be more than Google takes in a minute: wait a moment and try that part again.
+          for (let attempt = 1; ; attempt++) {
+            try {
+              results[k] = parseReply(await call(opts, request(ctx, [{ text: `${intro}\n\n${p.text}` }]), fetchImpl), ctx.today);
+              break;
+            } catch (e) {
+              const busy = e instanceof ReaderError && (e.kind === 'too_fast' || e.kind === 'overloaded');
+              if (!busy || attempt >= 4 || failed) { failed = true; throw e; }
+              await wait(1500 * attempt * attempt, opts.signal);
+              if (opts.signal?.aborted) { failed = true; throw new ReaderError('cancelled'); }
+            }
+          }
           onPart?.(++done, parts.length);
         }
       };

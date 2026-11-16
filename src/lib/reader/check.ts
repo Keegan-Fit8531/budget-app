@@ -279,6 +279,7 @@ function reviewTransactions(d: Draft, b: Budget, today: ISODate): Review {
   const dup = rows.length - add.length;
   if (dup) ignored.push(`${dup} transaction${dup === 1 ? '' : 's'} already saved: not added again.`);
   if (t.read.skipped) ignored.push(`${t.read.skipped} row${t.read.skipped === 1 ? '' : 's'} with no amount: left out.`);
+  if (t.read.unsure) note(`${t.read.unsure === 1 ? 'One transaction doesn’t' : `${t.read.unsure} transactions don’t`} add up with the balance printed after ${t.read.unsure === 1 ? 'it' : 'them'}: ${t.read.unsure === 1 ? 'it' : 'they'} may have been misread, or one before ${t.read.unsure === 1 ? 'it' : 'them'} missed. Check against the statement.`);
 
   // What's owed or in the account now: the worked-out amount, or what you typed.
   const suggested = csvBalance(d, b);
