@@ -68,10 +68,18 @@ export function BankCard() {
           <button className="btn primary" disabled={key.trim().length < 12 || busy} onClick={() => { const c = { url: BANK_URL, key: key.trim() }; writeBankConfig(c); setConf(c); setKey(''); void load(c); }}>Connect</button>
         </div>
       ) : (
+        <>
+        <label className="check-row small">
+          <input type="checkbox" checked={budget.bankAuto !== false} onChange={(e) => update((b) => { b.bankAuto = e.target.checked ? undefined : false; return b; })} />
+          <span><b>Update automatically from the bank</b><span className="xs muted block">{budget.bankAuto !== false
+            ? 'Linked accounts’ transactions and balances update by themselves. Turn off to go back to entering balances and uploading statements yourself.'
+            : 'Manual mode: nothing updates by itself and balances are left to you. Sync now still adds transactions.'}</span></span>
+        </label>
         <div className="row wrap gap-8">
           <button className="btn primary" disabled={busy} onClick={() => void load()}>{busy ? 'Checking…' : 'Sync now'}</button>
           <button className="btn" onClick={() => { writeBankConfig(null); setConf(null); setData(null); setMsg({ ok: true, text: 'Disconnected on this device. To stop all access, delete the personal app in Akahu.' }); }}>Disconnect</button>
         </div>
+        </>
       )}
       {data && (
         <div className="stack gap-8">
@@ -103,7 +111,7 @@ export function BankCard() {
 export function BankAutoSync() {
   const { budget, update } = useBudget();
   const running = useRef(false);
-  const hasLinks = !!budget.bankLinks && Object.keys(budget.bankLinks).length > 0;
+  const hasLinks = budget.bankAuto !== false && !!budget.bankLinks && Object.keys(budget.bankLinks).length > 0;
   useEffect(() => {
     if (!hasLinks) return;
     const run = () => {

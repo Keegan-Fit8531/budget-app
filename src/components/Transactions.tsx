@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { fmtShort } from '../lib/dates';
 import { cash } from '../lib/money';
-import { CATEGORY_LABEL, categorize, cleanDescription, type ShopCategories } from '../lib/spending';
+import { CATEGORY_LABEL, categorizeTxn, cleanDescription, type ShopCategories } from '../lib/spending';
 import { useBudget } from '../lib/store';
 import type { Txn } from '../lib/types';
 
@@ -19,7 +19,7 @@ export function TransactionList({ items, card }: { items: Txn[]; card?: boolean 
           <span style={{ flex: '0 0 56px' }} className="muted">{fmtShort(t.date)}</span>
           <span className="grow min0">
             {cleanDescription(t.description)}
-            <span className="xs muted block">{t.amount > 0 ? (card ? 'Payment' : 'Money in') : CATEGORY_LABEL[categorize(t.description, mine).category]}</span>
+            <span className="xs muted block">{t.amount > 0 ? (card ? 'Payment' : 'Money in') : CATEGORY_LABEL[categorizeTxn(t, mine).category]}</span>
           </span>
           <b className="num">{t.amount > 0 ? `+${cash(t.amount)}` : `−${cash(-t.amount)}`}</b>
         </div>

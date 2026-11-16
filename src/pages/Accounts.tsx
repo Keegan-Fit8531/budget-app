@@ -66,13 +66,17 @@ export function Accounts() {
       {others.map((a) => {
         const txns = budget.accountTransactions?.[a.id] ?? [];
         const spent30 = txns.filter((t) => t.amount < 0 && t.date > addDays(today, -30)).reduce((x, t) => x - t.amount, 0);
+        // Linked to the bank (and updating): its balance is the bank's.
+        const fromBank = budget.bankAuto !== false && Object.values(budget.bankLinks ?? {}).includes(`account:${a.id}`);
+        const bal = fromBank ? budget.balances?.[a.id] : undefined;
         return (
           <section key={a.id} className="card stack gap-8">
             <div className="between">
               <h2 className="h2">{a.name}</h2>
-              <span className="pill">Balance not tracked</span>
+              <span className="pill">{fromBank ? 'From your bank' : 'Balance not tracked'}</span>
             </div>
-            <p className="small muted">{a.id === budget.settings.payAccountId ? 'Pay lands here and is spent from here, so its balance isn’t kept: just what went in and out. ' : ''}
+            {bal && <div><b className="fig">{cash(bal.amount)}</b><span className="small muted block">as at {bal.asOf === today ? 'today' : fmtShort(bal.asOf)}, from the bank connection</span></div>}
+            <p className="small muted">{a.id === budget.settings.payAccountId && !bal ? 'Pay lands here and is spent from here, so its balance isn’t kept: just what went in and out. ' : ''}
               {txns.length
                 ? `${txns.length} transactions uploaded, the latest on ${fmtShort(txns[txns.length - 1].date)}${spent30 ? `; ${cash(spent30, { whole: true })} spent in the last 30 days` : ''}.`
                 : 'Upload a statement (PDF) or a CSV export of it from your bank to see its payment history here.'}</p>

@@ -38,6 +38,9 @@ export interface Txn {
   date: ISODate;
   description: string;
   amount: Cents;
+  /** From the bank connection: the shop's name and the bank's category for it, when it gives them. */
+  merchant?: string;
+  category?: string;
 }
 
 /** Something that takes money out of an account on a schedule (a bill, rent, a weekly transfer). */
@@ -293,6 +296,8 @@ export interface Budget {
   accountTransactions?: Record<string, Txn[]>;
   /** Bank connection (Akahu): which of your accounts or cards each bank account's transactions go to ('account:id', 'debt:id', or 'ignore'). */
   bankLinks?: Record<string, string>;
+  /** Bank connection updates (transactions and balances) automatically; false = manual mode. On unless turned off. */
+  bankAuto?: boolean;
   /** Spending categories you've chosen for shops (by shop name in lower case), over the app's own guess. */
   shopCategories?: Record<string, string>;
   /** Account balances you've entered, by account id. */
