@@ -17,7 +17,7 @@ import type { SavingsGoal } from '../lib/types';
 const day = (d: ISODate) => `${fmtShort(d)} ${d.slice(0, 4)}`;
 const signed = (c: number, o?: { whole?: boolean }) => `${c < 0 ? '−' : '+'}${cash(Math.abs(c), o)}`;
 
-export function KiwiSaverCard({ goal, onEdit }: { goal: SavingsGoal; onEdit: () => void }) {
+export function KiwiSaverCard({ goal, onEdit, extra }: { goal: SavingsGoal; onEdit: () => void; extra?: React.ReactNode }) {
   const { budget } = useBudget();
   const [updating, setUpdating] = useState(false);
   const points = useMemo(() => kiwiHistory(budget, goal), [budget, goal]);
@@ -28,13 +28,13 @@ export function KiwiSaverCard({ goal, onEdit }: { goal: SavingsGoal; onEdit: () 
   const total = last.funds.reduce((t, f) => t + f.value, 0);
 
   return (
-    <section className="card stack gap-12">
+    <section className="card stack gap-12" data-flip={goal.id}>
       <div className="between nowrap top">
         <div className="min0">
           <h2 className="h2">{goal.name}</h2>
           <p className="small muted">{[goal.note, 'From your pay, locked in until 65'].filter(Boolean).join(' · ')}</p>
         </div>
-        <button className="btn small" onClick={onEdit}><Icon name="edit" size={16} /> Edit</button>
+        <span className="row nowrap gap-8">{extra}<button className="icon-btn sm has-tip tip-left" data-tip="Edit" aria-label={`Edit ${goal.name}`} onClick={onEdit}><Icon name="edit" size={16} /></button></span>
       </div>
 
       <div className="stack gap-2">

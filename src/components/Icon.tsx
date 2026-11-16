@@ -11,6 +11,11 @@ const PATHS: Record<string, string> = {
   left: 'M15 6l-6 6 6 6',
   right: 'M9 6l6 6-6 6',
   down: 'M6 9l6 6 6-6',
+  up: 'M6 15l6-6 6 6',
+  // Two arrows, up and down: reorder
+  order: 'M8 20V4 M4 8l4-4 4 4 M16 4v16 M12 16l4 4 4-4',
+  // Two curved arrows: synced from the bank
+  sync: 'M20 11a8 8 0 0 0-14.3-4.9L4 8 M4 4v4h4 M4 13a8 8 0 0 0 14.3 4.9L20 16 M20 20v-4h-4',
   plus: 'M12 5v14 M5 12h14',
   alert: 'M12 3a9 9 0 1 0 0 18a9 9 0 1 0 0-18z M12 8v5 M12 16h.01',
   x: 'M6 6l12 12 M18 6L6 18',

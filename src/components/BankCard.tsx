@@ -14,6 +14,8 @@ function said(result: BankResult[]): string {
   const parts = [
     added && `${added} new transaction${added === 1 ? '' : 's'} (${result.filter((r) => r.added).map((r) => `${r.name} ${r.added}`).join(', ')})`,
     ...result.filter((r) => r.balance !== undefined).map((r) => `${r.name} now ${cash(r.balance!, { whole: true })}`),
+    // Payments to Gem Visa, Q Mastercard and other cards seen leaving a bank account.
+    ...result.flatMap((r) => r.cardPayments ?? []).map((p) => `${cash(p.amount)} paid to ${p.debt}`),
   ].filter(Boolean);
   return parts.length ? `Added ${parts.join('; ')}.` : 'Up to date: nothing new.';
 }
@@ -124,7 +126,7 @@ export function BankAutoSync() {
         update((b) => { result = applyBank(b, d, b.bankLinks ?? {}); return b; });
         const now = new Date().toISOString();
         writeBankConfig({ ...conf, lastSync: now, lastRefresh: now });
-        if (result.some((r) => r.added)) showToast(`Bank sync: ${said(result)}`);
+        if (result.some((r) => r.added || r.cardPayments?.length)) showToast(`Bank sync: ${said(result)}`);
       }).catch(() => { /* tried again later; Settings shows the reason */ }).finally(() => { running.current = false; });
     };
     run();

@@ -1,4 +1,6 @@
-import { useEffect, useId, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
+import { fmtShort, todayISO } from '../lib/dates';
 import { PALETTE, PALETTE_LABELS, sameColor, tone } from '../lib/colors';
 import { Icon } from './Icon';
 
@@ -123,7 +125,7 @@ export function Section({ title, summary, children, defaultOpen = false, forceOp
         {action}
         <Chevron />
       </button>
-      {open && <div id={id} className="acc-body">{children}</div>}
+      <Collapse open={open} id={id}><div className="acc-body">{children}</div></Collapse>
     </section>
   );
 }
@@ -157,4 +159,138 @@ export function ColorPicker({ value, onChange, label = 'Colour' }: { value: stri
       )}
     </div>
   );
+}
+
+const reducedMotion = () => { try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch { return false; } };
+
+// Pop-ups open on top of each other (a cost over Deposits): Escape closes the top one only.
+const openModals: symbol[] = [];
+
+/**
+ * A pop-up: the page dims and the panel rises in (from the bottom on a phone), and both go back out
+ * when it closes. Closes on Escape or a tap outside. `children` can be a function given `close`, so
+ * its own buttons close it with the same animation.
+ */
+export function Modal({ title, sub, onClose, children, width = 540, actions, className }: {
+  title: ReactNode; sub?: ReactNode; onClose: () => void; children: ReactNode | ((close: () => void) => ReactNode);
+  width?: number; actions?: ReactNode; className?: string;
+}) {
+  const [closing, setClosing] = useState(false);
+  const id = useId();
+  const done = useRef(onClose);
+  done.current = onClose;
+  const close = useCallback(() => {
+    if (reducedMotion()) { done.current(); return; }
+    setClosing(true);
+    setTimeout(() => done.current(), 180);
+  }, []);
+  useEffect(() => {
+    const me = Symbol('modal');
+    openModals.push(me);
+    const key = (e: KeyboardEvent) => { if (e.key === 'Escape' && openModals[openModals.length - 1] === me) { e.stopPropagation(); close(); } };
+    document.addEventListener('keydown', key);
+    const was = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.removeEventListener('keydown', key);
+      openModals.splice(openModals.indexOf(me), 1);
+      if (!openModals.length) document.body.style.overflow = was;
+    };
+  }, [close]);
+  return createPortal(
+    <div className={`modal-back${closing ? ' closing' : ''}`} onClick={close}>
+      <div className={`modal${className ? ` ${className}` : ''}`} role="dialog" aria-modal="true" aria-labelledby={id} style={{ maxWidth: width }} onClick={(e) => e.stopPropagation()}>
+        <div className="modal-head">
+          <div className="grow min0">
+            <h2 id={id} className="h2">{title}</h2>
+            {sub && <span className="small muted">{sub}</span>}
+          </div>
+          {actions}
+          <button className="icon-btn plain" aria-label="Close" onClick={close}><Icon name="x" /></button>
+        </div>
+        {typeof children === 'function' ? children(close) : children}
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
+/** "3h ago", "yesterday", "14 Nov": how long ago something happened, in a word or two. */
+export function ago(iso: string, now = Date.now()): string {
+  const t = Date.parse(iso);
+  if (Number.isNaN(t)) return '';
+  const mins = Math.round((now - t) / 60000);
+  const day = iso.length <= 10 ? iso : new Date(t).toLocaleDateString('en-CA');
+  const today = todayISO();
+  if (iso.length > 10 && mins < 1) return 'just now';
+  if (iso.length > 10 && mins < 60) return `${mins}m ago`;
+  if (day === today) return iso.length > 10 ? `${Math.round(mins / 60)}h ago` : 'today';
+  const y = new Date(Date.parse(`${today}T12:00:00`) - 86400000).toLocaleDateString('en-CA');
+  if (day === y) return 'yesterday';
+  return fmtShort(day);
+}
+
+/**
+ * Where a balance came from and how fresh it is, as a small pill: "Synced 2h ago" (the bank
+ * connection), "Updated today" (typed in), or "Not tracked". The dot is lit while it's current.
+ */
+export function SyncPill({ source, at }: { source: 'bank' | 'entered' | 'none'; at?: string }) {
+  if (source === 'none' || !at) return <span className="pill sync-pill"><span className="sync-dot" aria-hidden="true" />{source === 'bank' ? 'Synced' : 'Not tracked'}</span>;
+  const days = (Date.now() - Date.parse(at.length <= 10 ? `${at}T12:00:00` : at)) / 86400000;
+  const fresh = source === 'bank' ? days < 1.5 : days < 1;
+  const when = ago(at);
+  const full = at.length > 10 ? new Date(at).toLocaleString('en-NZ', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }) : fmtShort(at);
+  return (
+    <span className={`pill sync-pill${fresh ? ' fresh' : ''}`} title={`${source === 'bank' ? 'Last synced from your bank' : 'Balance last entered'}: ${full}`}>
+      <span className="sync-dot" aria-hidden="true" />
+      {source === 'bank' ? <Icon name="sync" size={12} stroke={2.4} /> : null}
+      {source === 'bank' ? `Synced ${when}` : `Updated ${when}`}
+    </span>
+  );
+}
+
+/** Up and down buttons for moving a card, shown while a page is being reordered. */
+export function MoveButtons({ name, first, last, onMove }: { name: string; first: boolean; last: boolean; onMove: (dir: -1 | 1) => void }) {
+  return (
+    <span className="move-btns" role="group" aria-label={`Move ${name}`}>
+      <button type="button" className="icon-btn mini" aria-label={`Move ${name} up`} disabled={first} onClick={(e) => { e.stopPropagation(); onMove(-1); }}><Icon name="up" size={16} /></button>
+      <button type="button" className="icon-btn mini" aria-label={`Move ${name} down`} disabled={last} onClick={(e) => { e.stopPropagation(); onMove(1); }}><Icon name="down" size={16} /></button>
+    </span>
+  );
+}
+
+/** The page's Reorder / Done button. */
+export function ReorderToggle({ on, onChange }: { on: boolean; onChange: (on: boolean) => void }) {
+  return (
+    <button type="button" className={`btn${on ? ' primary' : ''}`} aria-pressed={on} onClick={() => onChange(!on)}>
+      <Icon name={on ? 'check' : 'order'} size={16} /> {on ? 'Done' : 'Reorder'}
+    </button>
+  );
+}
+
+/**
+ * Cards sliding to their new place when the order changes. Call `capture()` just before changing the
+ * order; once it's drawn, each card (marked with data-flip="its id") glides from where it was.
+ */
+export function useFlip(order: string) {
+  const ref = useRef<HTMLDivElement>(null);
+  const before = useRef<Map<string, DOMRect> | null>(null);
+  const capture = useCallback(() => {
+    const m = new Map<string, DOMRect>();
+    ref.current?.querySelectorAll<HTMLElement>('[data-flip]').forEach((n) => m.set(n.dataset.flip!, n.getBoundingClientRect()));
+    before.current = m;
+  }, []);
+  useLayoutEffect(() => {
+    const prev = before.current;
+    before.current = null;
+    if (!prev || reducedMotion()) return;
+    ref.current?.querySelectorAll<HTMLElement>('[data-flip]').forEach((n) => {
+      const was = prev.get(n.dataset.flip!);
+      if (!was) return;
+      const now = n.getBoundingClientRect();
+      const dx = was.left - now.left, dy = was.top - now.top;
+      if (dx || dy) n.animate([{ transform: `translate(${dx}px, ${dy}px)` }, { transform: 'none' }], { duration: 320, easing: 'cubic-bezier(.22, .8, .24, 1)' });
+    });
+  }, [order]);
+  return { ref, capture };
 }

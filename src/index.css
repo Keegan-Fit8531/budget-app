@@ -308,7 +308,7 @@ h1, h2, h3, p { margin: 0; }
 /* Keep the Pay and Total budgeted amounts level when one label row wraps. */
 .pay-stats .stat > b { margin-top: auto; }
 /* Three figures in a row that never wrap their labels (e.g. in the account / still to come / spare) */
-.trio { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--s-2); }
+.trio { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: var(--s-2); }
 .trio .stat { padding: 10px var(--s-3); }
 .trio .stat > b { font-size: var(--fs-lg); }
 .trio .stat > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -321,6 +321,10 @@ h1, h2, h3, p { margin: 0; }
 .pill.good { color: var(--good); background: var(--good-bg); }
 .pill.bad { color: var(--bad); background: var(--bad-bg); }
 button.pill { cursor: pointer; font-family: inherit; }
+/* Where a balance came from and when: lit while it's current. */
+.sync-pill { display: inline-flex; align-items: center; gap: 5px; font-weight: 600; }
+.sync-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--muted); opacity: .6; flex: 0 0 auto; }
+.sync-pill.fresh .sync-dot { background: var(--good); opacity: 1; box-shadow: 0 0 0 3px color-mix(in srgb, var(--good) 20%, transparent); }
 .conv { display: flex; flex-wrap: wrap; gap: 6px; }
 .conv span { background: var(--soft); border-radius: var(--r-sm); padding: 4px var(--s-2); font-size: var(--fs-xs); color: var(--muted); }
 
@@ -423,6 +427,30 @@ select::-ms-expand { display: none; }
   .modal-back { align-items: flex-end; padding: 0; }
   .modal { border-radius: var(--r-xl) var(--r-xl) 0 0; padding: var(--s-5) var(--s-4) calc(var(--s-5) + env(safe-area-inset-bottom)); }
 }
+/* Opening and closing: the page dims while the panel rises in (up from the bottom on a phone), and back. */
+.modal-head { display: flex; align-items: flex-start; gap: var(--s-2); }
+.modal-head .icon-btn { margin: -6px -8px 0 0; }
+.modal-back { animation: scrim-in .2s ease both; }
+.modal { animation: modal-in .26s var(--ease-out) both; }
+.modal-back.closing { animation: scrim-out .18s ease both; pointer-events: none; }
+.modal-back.closing .modal { animation: modal-out .18s ease-in both; }
+@keyframes scrim-in { from { background-color: transparent; } }
+@keyframes scrim-out { to { background-color: transparent; } }
+@keyframes modal-in { from { opacity: 0; transform: translateY(12px) scale(.98); } }
+@keyframes modal-out { to { opacity: 0; transform: translateY(8px) scale(.98); } }
+@keyframes sheet-in { from { transform: translateY(100%); } }
+@keyframes sheet-out { to { transform: translateY(100%); } }
+@media (max-width: 600px) {
+  .modal { animation-name: sheet-in; animation-duration: .32s; }
+  .modal-back.closing .modal { animation-name: sheet-out; animation-duration: .22s; }
+}
+/* A wide pop-up for lists of accounts (Deposits): the rows inside are outlined, as they sit on a card. */
+.modal.wide { max-width: 760px; }
+.modal .acc-section { border: 1px solid var(--line); }
+.modal .acc-head { padding: var(--s-3) var(--s-4); }
+.modal .acc-body { padding: 0 var(--s-4) var(--s-4); }
+@media (prefers-reduced-motion: reduce) { .modal-back, .modal, .modal-back.closing, .modal-back.closing .modal { animation: none; } }
+
 /* Small floating labels and chart read-outs */
 .pop { background: var(--ink); color: var(--card); border-radius: var(--r-sm); padding: 6px 10px; font-size: var(--fs-xs); line-height: 1.35; box-shadow: var(--shadow-pop); pointer-events: none; }
 .pop-card { background: var(--card); border: 1px solid var(--line); border-radius: var(--r-md); padding: 10px var(--s-3); box-shadow: var(--shadow-pop); font-size: var(--fs-sm); pointer-events: none; display: flex; flex-direction: column; gap: var(--s-1); }
@@ -497,6 +525,42 @@ select::-ms-expand { display: none; }
 /* A payment plan inside a debt: tap to edit */
 .plan-row { text-align: left; border: 1px solid var(--line); border-radius: var(--r-md); padding: var(--s-3); background: none; cursor: pointer; display: flex; flex-direction: column; gap: 6px; width: 100%; }
 .plan-row:hover { border-color: var(--muted); }
+
+/* ---------- Account cards (Accounts) ---------- */
+/* Every account is the same card: icon, name and what payday does; where the balance came from;
+   the balance with its edit and one-off cost buttons; its figures; then the details behind them. */
+.cards-2.even { align-items: stretch; grid-auto-flow: row dense; }
+/* An open card takes the whole row, so the card beside it isn't stretched to match. */
+.cards-2.even > .acct.open { grid-column: 1 / -1; }
+.acct { display: flex; flex-direction: column; gap: var(--s-4); min-width: 0; }
+.acct-head { display: flex; align-items: flex-start; gap: var(--s-3); min-width: 0; }
+.acct-head .h2 { line-height: 1.2; }
+.acct-sub { display: inline-flex; align-items: center; gap: 2px; padding: 0; border: 0; background: none; font: inherit; font-size: var(--fs-sm); color: var(--muted); cursor: pointer; text-align: left; }
+.acct-sub:hover { color: var(--brand-2); }
+.acct-sub svg { opacity: .7; }
+.acct-side { display: flex; align-items: center; gap: var(--s-2); flex: 0 0 auto; margin-left: auto; }
+.acct-fig { display: flex; align-items: center; gap: var(--s-2); flex-wrap: wrap; min-height: 36px; }
+.acct-fig .fig { font-size: 30px; letter-spacing: -0.01em; margin-right: var(--s-1); }
+.acct-fig .icon-btn.mini { color: var(--muted); }
+.acct-fig .icon-btn.mini:hover { color: var(--ink); }
+.acct-fig .note-line { flex-basis: 100%; margin-top: -4px; }
+.acct-foot { margin-top: auto; display: flex; align-items: center; justify-content: space-between; gap: var(--s-3); border-top: 1px solid var(--line); padding-top: var(--s-2); margin-bottom: calc(-1 * var(--s-2)); }
+.acct-body { display: flex; flex-direction: column; gap: var(--s-2); }
+.acct .collapse .disc { border-top: 1px solid var(--line); }
+@media (max-width: 899px) { .acct-fig .fig { font-size: 26px; } .acct { gap: var(--s-3); } }
+/* A phone: the pill stays small so the name keeps its room, and what payday sends stays on one line. */
+@media (max-width: 600px) {
+  .sync-pill { font-size: var(--fs-micro); padding: 2px 8px; }
+  .sync-pill svg { display: none; }
+  .acct-sub { max-width: 100%; }
+  .acct-sub > span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+}
+/* Reordering: each card gets up and down buttons. */
+.move-btns { display: inline-flex; gap: 2px; flex: 0 0 auto; }
+.reordering [data-flip] { box-shadow: 0 0 0 1px var(--line); }
+.reorder-row { display: flex; align-items: center; gap: var(--s-2); padding-right: var(--s-3); }
+.reorder-row > .acc-head { flex: 1 1 auto; min-width: 0; }
+@media (min-width: 900px) { .reorder-row { padding-right: var(--s-5); } }
 
 /* ---------- Planner ---------- */
 .acc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: var(--s-3); }

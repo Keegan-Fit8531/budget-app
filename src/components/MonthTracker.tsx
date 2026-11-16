@@ -44,36 +44,41 @@ export function MonthTracker({ budget, account, today = todayISO(), open }: { bu
         </div>
       )}
 
-      {t.balanceKnown && toCome.length === 0 && (
-        <p className="small muted">
-          {aside && !paysBills ? 'Nothing comes out of this account on a date.' : aside && total === 0 ? 'Nothing comes out of it this pay.' : <>Everything this pay has come out{total > 0 ? ` (${cash(t.paid)})` : ''}.</>}
-          {aside
-            ? t.balanceSource === 'entered'
-              ? ` The ${cash(Math.max(0, t.balance))} in here is put aside for ${asideNames(budget, account.id)}, and next payday (${fmtShort(t.next.period.start)}) adds ${cash(t.next.deposit)}.`
-              : ` Each payday puts money aside here for ${asideNames(budget, account.id)} (${cash(t.next.deposit)} on ${fmtShort(t.next.period.start)}). Enter the balance to see what's built up.`
-            : t.balance > 0 ? (steady ? ` The ${cash(t.balance)} left stays as the buffer for pays with an extra week.` : ` The ${cash(t.balance)} left is spare until next pay.`) : ''}
-        </p>
+      {/* Money put aside (a car fund): nothing comes out on a date, so what matters is what's built up and what's next. */}
+      {t.balanceKnown && aside && !paysBills && (
+        <div className="trio">
+          <div className="stat">
+            <span className="small muted">Put aside</span>
+            <b>{t.balanceSource === 'entered' ? cash(Math.max(0, t.balance)) : '—'}</b>
+            <span className="xs muted">for {asideNames(budget, account.id)}</span>
+          </div>
+          <div className="stat">
+            <span className="small muted">Next pay adds</span>
+            <b>+{cash(t.next.deposit)}</b>
+            <span className="xs muted">on {fmtShort(t.next.period.start)}</span>
+          </div>
+        </div>
       )}
 
-      {t.balanceKnown && toCome.length > 0 && (
+      {t.balanceKnown && !(aside && !paysBills) && (
         <div className="stack gap-8">
           {total > 0 && (
             <div className="parts" role="img" aria-label={`${cash(t.paid)} paid, ${cash(t.toCome)} still to come, ${cash(Math.max(0, t.spare))} ${leftWord}`}>
-              <div title={`Paid ${cash(t.paid)}`} style={{ flex: t.paid, background: 'var(--line)' }} />
+              {t.paid > 0 && <div title={`Paid ${cash(t.paid)}`} style={{ flex: t.paid, background: 'var(--line)' }} />}
               {t.toCome > 0 && <div title={`Still to come ${cash(t.toCome)}`} style={{ flex: t.toCome, background: color }} />}
               {t.spare > 0 && <div title={`${leftLabel} ${cash(t.spare)}`} style={{ flex: t.spare, background: 'var(--good)' }} />}
             </div>
           )}
           <div className="trio">
             <div className="stat">
-              <span className="small muted">In account</span>
-              <b>{cash(t.balance)}</b>
-              <span className="xs muted">{t.balanceSource === 'estimated' ? 'estimated' : 'your balance'}</span>
+              <span className="small muted">Paid</span>
+              <b>{cash(t.paid)}</b>
+              <span className="xs muted">{paid.length} bill{paid.length === 1 ? '' : 's'} this pay</span>
             </div>
             <div className="stat">
-              <span className="small muted">Still to come</span>
+              <span className="small muted">To come</span>
               <b>{cash(t.toCome)}</b>
-              <span className="xs muted">{toCome.length} bill{toCome.length === 1 ? '' : 's'}{toCome[0] ? ` · ${fmtShort(toCome[0].date)}` : ''}</span>
+              <span className="xs muted">{toCome[0] ? `${toCome.length} · next ${fmtShort(toCome[0].date)}` : `before ${fmtShort(t.period.nextPayday)}`}</span>
             </div>
             <div className="stat">
               <span className="small muted">{leftLabel}</span>
@@ -88,16 +93,15 @@ export function MonthTracker({ budget, account, today = todayISO(), open }: { bu
         <div className="stack gap-12">
           {steady && t.balanceKnown && t.spare > 0 && (
             <p className="small muted">
-              The buffer isn't spare: this account gets a steady amount every pay, so pays with fewer payments build it up
               {bufferFor
-                ? ` for the ${fmtShort(bufferFor.period.start)} pay, which needs ${cash(bufferFor.need)} but only gets ${cash(bufferFor.deposit)} (the buffer covers the extra ${cash(bufferFor.need - bufferFor.deposit)}).`
-                : ' for pays with an extra week.'}
+                ? <>The buffer isn't spare: the {fmtShort(bufferFor.period.start)} pay needs {cash(bufferFor.need)} but gets {cash(bufferFor.deposit)}, and it covers the {cash(bufferFor.need - bufferFor.deposit)}.</>
+                : 'The buffer isn’t spare: it covers pays with an extra week.'}
             </p>
           )}
 
           {/* Bills still to come this pay */}
           {toCome.length > 0 && <div>
-            <h3 className="h3">Still to come before {fmtShort(t.period.nextPayday)}</h3>
+            <h3 className="h3">To come before {fmtShort(t.period.nextPayday)}</h3>
             {toCome.map((r, i) => (
               <div className="list-row" key={`${r.name}-${r.date}-${i}`}>
                 <span style={{ flex: '0 0 72px' }}>
@@ -145,7 +149,7 @@ export function MonthTracker({ budget, account, today = todayISO(), open }: { bu
             </Disclosure>
           )}
           {t.balanceSource === 'estimated' && t.balanceKnown && (
-            <p className="small muted">Estimated as this pay's {cash(t.deposit)} deposit minus what's come out. Enter the real balance for an exact figure.</p>
+            <p className="small muted">Estimated: this pay's {cash(t.deposit)} less what's come out.</p>
           )}
         </div>
       </Collapse>

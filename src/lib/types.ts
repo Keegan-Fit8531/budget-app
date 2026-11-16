@@ -175,6 +175,19 @@ export interface Debt {
    * grow, as each of its payments went out.
    */
   paid?: PaidPayment[];
+  /** Payments to it seen leaving a linked bank account on a bank sync (e.g. ANZ → Gem Visa), oldest first. */
+  bankPayments?: BankPayment[];
+}
+
+export interface BankPayment {
+  date: ISODate;
+  amount: Cents;
+  /** The bank account it left. */
+  from: string;
+  /** The part that came off what's owed: what it paid over the planned payments around its date. */
+  counted: Cents;
+  /** The planned payments it stood for (date|amount|plan), so a later transfer doesn't take them too. */
+  planned?: string[];
 }
 
 export interface PaidPayment {
@@ -330,6 +343,8 @@ export interface Budget {
   accountTransactions?: Record<string, Txn[]>;
   /** Bank connection (Akahu): which of your accounts or cards each bank account's transactions go to ('account:id', 'debt:id', or 'ignore'). */
   bankLinks?: Record<string, string>;
+  /** When each linked account, card or goal ('account:id', 'debt:id', 'saving:id') last came through a bank sync (ISO time). */
+  bankSeen?: Record<string, string>;
   /** Bank connection updates (transactions and balances) automatically; false = manual mode. On unless turned off. */
   bankAuto?: boolean;
   /** Spending categories you've chosen for shops (by shop name in lower case), over the app's own guess. */

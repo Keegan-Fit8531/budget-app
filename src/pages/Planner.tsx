@@ -434,7 +434,7 @@ export function Planner() {
       <section className="stack gap-12">
         <div className="card-head">
           <h2 className="h2">Payday split</h2>
-          <a href="#/deposits" className="btn small ghost">Edit accounts</a>
+          <a href="#/accounts/deposits" className="btn small ghost">Edit accounts</a>
         </div>
 
         {cards.length === 0 && <p className="note">Nothing is sent on from your pay yet. Use Add for a cost, a savings goal or a debt, and it shows here.</p>}
@@ -589,7 +589,7 @@ export function Planner() {
                       <span className="small muted">Go to</span>
                       {isDebt && <a className="btn small" href="#/debts"><Icon name="card" size={16} /> Debt and payment plans</a>}
                       {isGoal && <a className="btn small" href="#/savings"><Icon name="piggy" size={16} /> Savings goal</a>}
-                      {!isDebt && !isGoal && <a className="btn small" href={`#/deposits/${a.account.id}`}><Icon name="edit" size={16} /> {isPay ? 'Account and costs' : 'Payday amount and costs'}</a>}
+                      {!isDebt && !isGoal && <a className="btn small" href={`#/accounts/deposits/${a.account.id}`}><Icon name="edit" size={16} /> {isPay ? 'Account and costs' : 'Payday amount and costs'}</a>}
                       {!isDebt && !isGoal && !isPay && a.account.kind === 'bank' && <a className="btn small" href="#/accounts"><Icon name="wallet" size={16} /> {budget.balances?.[a.account.id] ? 'Update balance' : 'Enter balance'}</a>}
                     </div>
                   </div>

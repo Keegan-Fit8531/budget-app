@@ -1,7 +1,9 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { Donut } from '../components/Donut';
 import { Icon } from '../components/Icon';
-import { PageHead } from '../components/ui';
+import { MoveButtons, PageHead, ReorderToggle, SyncPill, useFlip } from '../components/ui';
+import { moveAmong } from '../lib/order';
+import { bankSync } from '../lib/bank';
 import { GoalCosts } from '../components/GoalCosts';
 import { GoalGifts, PeopleChips, savedSlices, tracksPeople } from '../components/GoalGifts';
 import { summariseCosts } from '../lib/goalcosts';
@@ -20,7 +22,7 @@ import { newId, useBudget } from '../lib/store';
 import type { SavingsGoal } from '../lib/types';
 
 export function Savings() {
-  const { budget } = useBudget();
+  const { budget, update } = useBudget();
   const all = budget.savings ?? [];
   // KiwiSaver comes from your salary and is locked in: it has its own card, and isn't in the payday totals or projection.
   const goals = all.filter((g) => !isKiwiSaver(g));
@@ -31,6 +33,21 @@ export function Savings() {
   const plan = useMemo(() => planFor(budget, period), [budget, period]);
 
   const forecasts = goals.map((g) => forecast(budget, g, today));
+  const [reorder, setReorder] = useState(false);
+  const flip = useFlip(all.map((g) => g.id).join());
+  // Goals and KiwiSaver cards are each moved among their own kind (they're shown in two runs).
+  const mover = (g: SavingsGoal, list: SavingsGoal[]) => {
+    if (!reorder || list.length < 2) return null;
+    const order = list.map((x) => x.id);
+    const i = order.indexOf(g.id);
+    return <MoveButtons name={g.name} first={i === 0} last={i === order.length - 1}
+      onMove={(dir) => { flip.capture(); update((b) => { moveAmong(b.savings ?? [], order, g.id, dir); return b; }); }} />;
+  };
+  // Its balance from the bank connection (KiwiSaver, an investment), when it's linked.
+  const pill = (g: SavingsGoal) => {
+    const s1 = bankSync(budget, `saving:${g.id}`), s2 = bankSync(budget, `account:${g.accountId}`);
+    return s1.linked || s2.linked ? <SyncPill source="bank" at={s1.at ?? s2.at ?? g.asOf} /> : null;
+  };
   const saved = goals.reduce((t, g) => t + g.balance, 0);
   const kiwi = kiwiPerPay(budget)?.total ?? 0;
   const kiwiSaved = kiwis.reduce((t, g) => t + g.balance, 0);
@@ -39,7 +56,10 @@ export function Savings() {
     <>
       <PageHead title="Savings" sub="Goals, how they're tracking, and what each payday puts towards them.">
         <PayNav compact />
-        <button className="btn primary" onClick={() => setModal({})}><Icon name="plus" /> Add goal</button>
+        <div className="page-actions">
+          {(goals.length > 1 || kiwis.length > 1) && <ReorderToggle on={reorder} onChange={setReorder} />}
+          <button className="btn primary" onClick={() => setModal({})}><Icon name="plus" /> Add goal</button>
+        </div>
       </PageHead>
 
       <section className="stats">
@@ -58,9 +78,10 @@ export function Savings() {
 
       {all.length === 0 && <p className="muted">Add a goal to start tracking your savings.</p>}
 
-      {forecasts.map((f) => <GoalCard key={f.goal.id} f={f} plan={plan} period={period} onEdit={() => setModal({ goal: f.goal })} />)}
-
-      {kiwis.map((g) => <KiwiSaverCard key={g.id} goal={g} onEdit={() => setModal({ goal: g })} />)}
+      <div ref={flip.ref} className={`stack gap-20${reorder ? ' reordering' : ''}`}>
+        {forecasts.map((f) => <GoalCard key={f.goal.id} f={f} plan={plan} period={period} extra={<>{pill(f.goal)}{mover(f.goal, goals)}</>} onEdit={() => setModal({ goal: f.goal })} />)}
+        {kiwis.map((g) => <KiwiSaverCard key={g.id} goal={g} extra={<>{pill(g)}{mover(g, kiwis)}</>} onEdit={() => setModal({ goal: g })} />)}
+      </div>
 
       {goals.length > 0 && <SavingsChart budget={{ ...budget, savings: goals }} />}
 
@@ -72,7 +93,7 @@ export function Savings() {
 type Tab = 'costs' | 'money' | 'payday';
 
 /** One savings goal: a short summary (pie, saved, one status line), then tabs for costs, money in and out, and payday. */
-function GoalCard({ f, plan, period, onEdit }: { f: ReturnType<typeof forecast>; plan: ReturnType<typeof planFor>; period: ReturnType<typeof useViewPeriod>['period']; onEdit: () => void }) {
+function GoalCard({ f, plan, period, onEdit, extra }: { f: ReturnType<typeof forecast>; plan: ReturnType<typeof planFor>; period: ReturnType<typeof useViewPeriod>['period']; onEdit: () => void; extra?: ReactNode }) {
   const { budget } = useBudget();
   const today = todayISO();
   const g = f.goal;
@@ -120,7 +141,7 @@ function GoalCard({ f, plan, period, onEdit }: { f: ReturnType<typeof forecast>;
   ];
 
   return (
-    <section className="card stack gap-12">
+    <section className="card stack gap-12" data-flip={g.id}>
       <div className="between nowrap top">
         <div className="min0">
           <h2 className="h2">{g.name}</h2>
@@ -129,7 +150,7 @@ function GoalCard({ f, plan, period, onEdit }: { f: ReturnType<typeof forecast>;
             return sub ? <p className="small muted">{sub}</p> : null;
           })()}
         </div>
-        <button className="btn small" onClick={onEdit}><Icon name="edit" size={16} /> Edit</button>
+        <span className="row nowrap gap-8">{extra}<button className="icon-btn sm has-tip tip-left" data-tip="Edit goal" aria-label={`Edit ${g.name}`} onClick={onEdit}><Icon name="edit" size={16} /></button></span>
       </div>
 
       <div className="row nowrap gap-16">
