@@ -8,7 +8,14 @@ import type { PreparedFile } from './types';
 // ---------------------------------------------------------------------------------------------
 
 export const isPdf = (f: Pick<File, 'type' | 'name'>) => f.type === 'application/pdf' || /\.pdf$/i.test(f.name);
-const SENDABLE = ['image/jpeg', 'image/png', 'image/webp'];
+/** Kinds of photo Google reads as they are, for one this browser can't redraw (HEIC outside Safari). */
+const SENDABLE = ['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif'];
+/** Some browsers give a HEIC photo no type, so it's known by its name. */
+function sendableType(f: File): string | undefined {
+  if (SENDABLE.includes(f.type)) return f.type;
+  const ext = /\.(heic|heif)$/i.exec(f.name)?.[1].toLowerCase();
+  return ext ? `image/${ext}` : undefined;
+}
 
 function toBase64(buf: ArrayBuffer): string {
   const bytes = new Uint8Array(buf);
@@ -67,8 +74,9 @@ export async function prepareFile(file: File): Promise<PreparedFile> {
     return { name: file.name, mimeType: 'image/jpeg', base64: toBase64(await blob.arrayBuffer()), bytes: blob.size };
   } catch {
     // Couldn't redraw it: send it as it is if Google takes that kind of file and it isn't huge.
-    if (SENDABLE.includes(file.type) && file.size <= MAX_PDF_BYTES) {
-      return { name: file.name, mimeType: file.type, base64: toBase64(await file.arrayBuffer()), bytes: file.size };
+    const type = sendableType(file);
+    if (type && file.size <= MAX_PDF_BYTES) {
+      return { name: file.name, mimeType: type, base64: toBase64(await file.arrayBuffer()), bytes: file.size };
     }
     throw new ReaderError('bad_file', { detail: 'That photo couldn’t be opened. Try a screenshot, a JPEG photo or the PDF.' });
   }

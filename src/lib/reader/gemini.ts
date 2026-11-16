@@ -42,6 +42,13 @@ async function call(opts: ProviderOptions, body: unknown, fetchImpl: typeof fetc
 
 const KINDS: DocKind[] = ['payslip', 'statement', 'afterpay', 'unknown'];
 
+/** The form makes every field answered, with null for what isn't shown; drop those so it's the same as a field left out. */
+function dropNulls(v: unknown): unknown {
+  if (Array.isArray(v)) return v.filter((x) => x !== null).map(dropNulls);
+  if (v && typeof v === 'object') return Object.fromEntries(Object.entries(v).filter(([, x]) => x !== null).map(([k, x]) => [k, dropNulls(x)]));
+  return v;
+}
+
 /** Turn the model's reply into the form, or say why it can't be used. */
 export function parseReply(r: GenerateResponse): Extraction {
   const blocked = blockedError(r.promptFeedback?.blockReason) ?? blockedError(r.candidates?.[0]?.finishReason);
@@ -50,7 +57,7 @@ export function parseReply(r: GenerateResponse): Extraction {
   if (!text) throw new ReaderError('unusable', { detail: r.candidates?.[0]?.finishReason });
   let out: unknown;
   try { out = JSON.parse(text.replace(/^```(?:json)?\s*|\s*```$/g, '')); } catch { throw new ReaderError('unusable', { detail: 'Not JSON' }); }
-  const ex = out as Extraction;
+  const ex = dropNulls(out) as Extraction;
   if (!ex || typeof ex !== 'object' || !KINDS.includes(ex.kind)) throw new ReaderError('unusable', { detail: 'No document kind' });
   return ex;
 }

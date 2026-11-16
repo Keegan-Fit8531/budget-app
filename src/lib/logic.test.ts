@@ -17,7 +17,8 @@ import { applyProposal, preview, windBack } from './reader/apply';
 import { NEW_DEBT, review, toCents, toDraft, validDate, type Draft } from './reader/check';
 import { classifyHttpError, nextPacificMidnight, nzTime, ReaderError } from './reader/errors';
 import { geminiProvider, parseReply } from './reader/gemini';
-import { buildContext } from './reader/prompt';
+import { prepareFile } from './reader/prepare';
+import { buildContext, RESPONSE_SCHEMA } from './reader/prompt';
 import type { Extraction } from './reader/types';
 import { buildUndo, undoKeeps, undoUpload } from './reader/undo';
 
@@ -752,14 +753,37 @@ describe('reading documents: figures, dates and errors', () => {
     expect(nzTime(nextPacificMidnight(new Date('2026-11-16T03:00:00Z')))).toMatch(/^9:00\spm$/i);
   });
 
+  const reply = (text: string, extra: object = {}) => ({ candidates: [{ finishReason: 'STOP', content: { parts: [{ text: 'thinking…', thought: true }, { text }] } }], ...extra });
+
   it('a reply is used only if it’s the form; a blocked or empty one says why', () => {
-    const reply = (text: string, extra: object = {}) => ({ candidates: [{ finishReason: 'STOP', content: { parts: [{ text: 'thinking…', thought: true }, { text }] } }], ...extra });
     expect(parseReply(reply('{"kind":"payslip","payslip":{"payDay":"2026-11-19"}}')).kind).toBe('payslip');
     expect(() => parseReply(reply('not json'))).toThrow(ReaderError);
     expect(() => parseReply(reply('{"kind":"recipe"}'))).toThrowError(expect.objectContaining({ kind: 'unusable' }));
     expect(() => parseReply({ candidates: [{ finishReason: 'SPII' }] })).toThrowError(expect.objectContaining({ kind: 'refused_personal' }));
     expect(() => parseReply({ promptFeedback: { blockReason: 'SAFETY' } })).toThrowError(expect.objectContaining({ kind: 'refused' }));
     expect(() => parseReply({ candidates: [{ finishReason: 'MAX_TOKENS', content: { parts: [] } }] })).toThrowError(expect.objectContaining({ kind: 'unusable' }));
+  });
+
+  it('the form makes Gemini answer every field (null when not shown), and the nulls are dropped again', () => {
+    // With optional fields the real Gemini sometimes stopped early: a payslip with only its gross pay,
+    // a Gem statement with no balance. Every object in the form must list all its fields as required.
+    const walk = (s: Record<string, unknown>, at: string) => {
+      const props = s.properties as Record<string, Record<string, unknown>> | undefined;
+      if (props) {
+        expect(new Set(s.required as string[]), at).toEqual(new Set(Object.keys(props)));
+        for (const [k, v] of Object.entries(props)) walk(v, `${at}.${k}`);
+      }
+      if (s.items) walk(s.items as Record<string, unknown>, `${at}[]`);
+    };
+    walk(RESPONSE_SCHEMA, 'form');
+    const ex = parseReply(reply(JSON.stringify({
+      kind: 'statement', payslip: null, afterpay: null, notes: null,
+      statement: { debtId: null, balance: { amount: '3,084.17', label: 'Closing balance' }, limit: null, plans: [{ planId: null, remaining: { amount: '870.00', label: 'Plan balance' }, ends: '2027-03-21' }], purchases: [], paymentsShown: [] },
+    })));
+    expect(ex).toEqual({ kind: 'statement', statement: { balance: { amount: '3,084.17', label: 'Closing balance' }, plans: [{ remaining: { amount: '870.00', label: 'Plan balance' }, ends: '2027-03-21' }], purchases: [], paymentsShown: [] } });
+    // And it still checks the same as a reply that left those fields out.
+    const d = toDraft(ex, debtBudget(), 'gemini', seq());
+    expect(d.statement).toMatchObject({ debtId: '', limit: { value: '' }, plans: [{ planId: '', ends: '2027-03-21' }] });
   });
 
   it('sends the key in a header (never in the address) with the document and the list of debts', async () => {
@@ -770,7 +794,11 @@ describe('reading documents: figures, dates and errors', () => {
     }) as unknown as typeof fetch;
     const ctx = buildContext(debtBudget(), '2026-11-16');
     expect(ctx.debts.find((d) => d.id === 'studentloan')).toMatchObject({ neverAStatement: true });
-    expect(ctx.debts.find((d) => d.id === 'gem')!.plans[0]).toMatchObject({ id: 'g1', ends: '2027-01-20' });
+    // A card plan goes by name only: given its expiry and balance, Gemini copied them over the
+    // statement's (or misread the printed date towards them). The app matches plans by expiry itself.
+    expect(ctx.debts.find((d) => d.id === 'gem')!.plans[0]).toEqual({ id: 'g1', name: 'Purchases Jun – Jul 2026', type: 'interest-free' });
+    // Afterpay orders have nothing printed to match on, so they keep their dates and amounts.
+    expect(ctx.debts.find((d) => d.id === 'afterpay')!.plans[1]).toMatchObject({ id: 'ap-2', purchaseDate: '2026-10-08', total: '24.66', nextInstalment: { date: '2026-11-19', amount: '6.17' } });
     await geminiProvider(fake).read({ name: 'a.jpg', mimeType: 'image/jpeg', base64: 'AAAA', bytes: 3 }, ctx, { key: 'k-123', model: 'gemini-3.5-flash-lite' });
     expect(calls[0].url).toBe('https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent');
     expect(calls[0].url).not.toContain('k-123');
@@ -778,9 +806,18 @@ describe('reading documents: figures, dates and errors', () => {
     const body = JSON.parse(String(calls[0].init.body));
     expect(body.contents[0].parts[0]).toEqual({ inlineData: { mimeType: 'image/jpeg', data: 'AAAA' } });
     expect(body.contents[0].parts[1].text).toContain('"g1"');
+    expect(body.generationConfig.responseFormat).toEqual({ text: { mimeType: 'APPLICATION_JSON', schema: RESPONSE_SCHEMA } });
     // A failed call becomes the right error.
     const failing = (async () => new Response(JSON.stringify({ error: { code: 'payment_required' } }), { status: 402 })) as unknown as typeof fetch;
     await expect(geminiProvider(failing).read({ name: 'a.pdf', mimeType: 'application/pdf', base64: 'AA', bytes: 1 }, ctx, { key: 'k', model: 'm' })).rejects.toMatchObject({ kind: 'no_credit' });
+  });
+
+  it('a photo this browser can’t redraw (HEIC outside Safari) is sent as it is, which Google reads', async () => {
+    // There's no canvas here, so every photo takes the "can't redraw" path, as HEIC does in Chrome.
+    const heic = await prepareFile(new File([new Uint8Array([1, 2, 3])], 'IMG_0412.HEIC', { type: '' }));
+    expect(heic).toMatchObject({ mimeType: 'image/heic', base64: 'AQID', bytes: 3 });
+    expect((await prepareFile(new File([new Uint8Array([1])], 'photo.heif', { type: 'image/heif' }))).mimeType).toBe('image/heif');
+    await expect(prepareFile(new File([new Uint8Array([1])], 'scan.tiff', { type: 'image/tiff' }))).rejects.toMatchObject({ kind: 'bad_file' });
   });
 });
 

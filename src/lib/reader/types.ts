@@ -67,7 +67,8 @@ export interface ReadContext {
     kind: string;
     rules?: string;
     neverAStatement?: true;
-    plans: { id: string; name: string; type: string; remaining: string; ends?: ISODate; purchaseDate?: ISODate; total?: string; nextInstalment?: { date: ISODate; amount: string } }[];
+    /** Afterpay orders also carry their amounts and dates; card plans only their name (see buildContext). */
+    plans: { id: string; name: string; type: string; remaining?: string; purchaseDate?: ISODate; total?: string; nextInstalment?: { date: ISODate; amount: string } }[];
   }[];
 }
 
