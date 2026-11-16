@@ -25,7 +25,7 @@ import { addGoalFor, applyBank, fetchBank, suggestLink } from './bank';
 import { csvAmount, csvDate, endingOf, fromStatementRows, readTransactionsCsv } from './csv';
 import { layoutPage } from './reader/pdftext';
 import { mergeReads, splitRow } from './reader/gemini';
-import { categorize, summarize } from './spending';
+import { categorize, categorizeTxn, summarize } from './spending';
 
 /** A blank budget paid on the 19th, with automatic balancing off so amounts are exactly as set. */
 function budget(): Budget {
@@ -1390,4 +1390,25 @@ it('KiwiSaver: a new savings goal for an account, whose balance then follows it'
   const r = applyBank(b, { accounts: [{ ...kiwi, balance: 12400 }], transactions: [] }, { acc_k: link }, '2026-11-17');
   expect(r).toEqual([{ name: 'KiwiSaver', added: 0, balance: 1240000 }]);
   expect(b.savings!.find((g) => g.id === 'g-ks')).toMatchObject({ balance: 1240000, asOf: '2026-11-17' });
+});
+
+describe('bank connection: balances and categories', () => {
+  const acc = (o: object) => ({ id: 'a1', name: 'Go', number: '06-0999-0123456-00', type: 'CHECKING', institution: 'ANZ', balance: 432.1, transactions: true, ...o });
+  it('a linked account’s balance follows the bank, unless updates are turned off', () => {
+    const b = debtBudget();
+    applyBank(b, { accounts: [acc({})], transactions: [] }, { a1: 'account:everyday' }, '2026-11-16');
+    expect(b.balances?.everyday).toEqual({ amount: 43210, asOf: '2026-11-16' });
+    b.bankAuto = false;
+    applyBank(b, { accounts: [acc({ balance: 10 })], transactions: [] }, { a1: 'account:everyday' }, '2026-11-17');
+    expect(b.balances?.everyday).toEqual({ amount: 43210, asOf: '2026-11-16' });
+  });
+  it('a linked card’s owed follows the bank (shown negative there)', () => {
+    const b = debtBudget();
+    applyBank(b, { accounts: [acc({ id: 'c1', type: 'CREDITCARD', balance: -612.48, number: null })], transactions: [] }, { c1: 'debt:qcard' }, '2026-11-16');
+    expect(owed(debt(b, 'qcard'))).toBe(61248);
+  });
+  it('the bank’s shop name and category are used when the description alone doesn’t say', () => {
+    expect(categorizeTxn({ description: 'POS W/D 4829 PAK N SAV', merchant: 'PAK’nSAVE' })).toMatchObject({ category: 'groceries', shop: 'PAK’nSAVE' });
+    expect(categorizeTxn({ description: 'XYZ*12345', category: 'Takeaway & fast food' }).category).toBe('takeaways');
+  });
 });

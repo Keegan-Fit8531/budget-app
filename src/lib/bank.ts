@@ -1,5 +1,6 @@
 import { endingOf } from './csv';
 import { addDays, todayISO, type ISODate } from './dates';
+import { setBalance } from './history';
 import { applyProposal } from './reader/apply';
 import { newTransactions } from './reader/check';
 import type { BankConfig } from './bankConfig';
@@ -19,7 +20,7 @@ export { BANK_URL, readBankConfig, writeBankConfig, type BankConfig } from './ba
 export const AUTO_EVERY_MS = 60 * 60 * 1000;
 
 export interface BankAccount { id: string; name: string; number: string | null; type: string; institution: string | null; balance: number | null; transactions: boolean }
-export interface BankTxn { account: string; id: string; date: ISODate; description: string; amount: number; balance: number | null; merchant: string | null }
+export interface BankTxn { account: string; id: string; date: ISODate; description: string; amount: number; balance: number | null; merchant: string | null; category?: string | null }
 export interface BankData { accounts: BankAccount[]; transactions: BankTxn[] }
 
 export class BankError extends Error {
@@ -92,14 +93,22 @@ export function applyBank(b: Budget, data: BankData, links: Record<string, strin
     if (!target) continue;
     const rows: Txn[] = data.transactions
       .filter((t) => t.account === acc.id && /^\d{4}-\d{2}-\d{2}$/.test(t.date) && t.amount)
-      .map((t) => ({ date: t.date, description: (t.description ?? '').replace(/\s{2,}/g, ' ').trim() || 'Transaction', amount: Math.round(t.amount * 100) }))
+      .map((t) => ({ date: t.date, description: (t.description ?? '').replace(/\s{2,}/g, ' ').trim() || 'Transaction', amount: Math.round(t.amount * 100), ...(t.merchant ? { merchant: t.merchant } : {}), ...(t.category ? { category: t.category } : {}) }))
       .sort((x, y) => x.date.localeCompare(y.date));
     const existing = type === 'debt' ? (target as NonNullable<Budget['debts']>[number]).transactions ?? [] : b.accountTransactions?.[id] ?? [];
     const add = newTransactions(existing, rows);
     const ending = acc.number ? endingOf(acc.number) : undefined;
-    if (add.length || (ending && !target.ending)) {
-      applyProposal(b, { kind: 'transactions', target: { type, id }, ...(ending ? { ending } : {}), add, history: [], eventId: `bank-${acc.id}-${today}` }, today);
+    // Its balance follows the bank's too (what's owed, for a card), unless you've turned updates off.
+    const live = b.bankAuto !== false && acc.balance !== null;
+    const cents = live ? Math.round(acc.balance! * 100) : 0;
+    // Banks show what's owed on a card as a negative balance.
+    const balance = live && type === 'debt' ? { amount: Math.abs(cents), asOf: today } : undefined;
+    if (add.length || (ending && !target.ending) || balance) {
+      applyProposal(b, { kind: 'transactions', target: { type, id }, ...(ending ? { ending } : {}), add, ...(balance ? { balance } : {}), history: [], eventId: `bank-${acc.id}-${today}` }, today);
     }
+    if (live && type === 'account' && b.balances?.[id]?.amount !== cents) setBalance(b, id, cents, today, `bank-${acc.id}-${today}`);
+    // The account behind a savings goal: the goal's balance is the bank's.
+    if (live && type === 'account') for (const g of b.savings ?? []) if (g.accountId === id && g.balance !== cents) { g.balance = cents; g.asOf = today; }
     out.push({ name: target.name, added: add.length });
   }
   return out;

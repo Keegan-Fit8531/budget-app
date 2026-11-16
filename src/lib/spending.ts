@@ -31,7 +31,7 @@ const RULES: [RegExp, SpendCategory, string?][] = [
   [/nando/i, 'takeaways', 'Nando’s'], [/hell pizza/i, 'takeaways', 'Hell Pizza'], [/st pierre/i, 'takeaways', 'St Pierre’s'],
   [/sushi|kebab|noodle|fish ?(&|and|n) ?chips|takeaway|\bpies?\b|carl'?s jr|wendy|taco|popeyes|dumpling/i, 'takeaways'],
   [/caf[eé]|coffee|espresso|restaurant|buffet|bistro|eatery|\bbar\b|brew|pub\b|grill|kitchen|diner|bakery|bubble tea/i, 'eating-out'],
-  [/countdown|woolworths/i, 'groceries', 'Woolworths'], [/pak ?n ?save/i, 'groceries', 'Pak’nSave'], [/new world/i, 'groceries', 'New World'],
+  [/countdown|woolworths/i, 'groceries', 'Woolworths'], [/pak\W*n\W*sav/i, 'groceries', 'Pak’nSave'], [/new world/i, 'groceries', 'New World'],
   [/freshchoice/i, 'groceries', 'FreshChoice'], [/four square/i, 'groceries', 'Four Square'], [/supervalue|super value/i, 'groceries', 'SuperValue'],
   [/supermark|mini ?mart|dairy|butcher|\bmeat\b|fruit|veg|grocer/i, 'groceries'],
   [/z energy|\bmobil\b|\bbp\b|gull|caltex|waitomo|\bnpd\b|fuel/i, 'transport', 'Fuel'],
@@ -68,6 +68,23 @@ export function categorize(description: string, mine?: ShopCategories): { catego
   return chosen ? { ...found, category: chosen } : found;
 }
 
+/**
+ * A transaction's category and shop. From the bank connection there's often a tidy shop name and the
+ * bank's own category: the shop name is used to group it, and the bank's category when the shop's
+ * name alone doesn't say. Your own choice for the shop always wins.
+ */
+export function categorizeTxn(t: Pick<Txn, 'description' | 'merchant' | 'category'>, mine?: ShopCategories): { category: SpendCategory; shop: string } {
+  const own = categorize(t.description, mine);
+  if (!t.merchant && !t.category) return own;
+  const shop = t.merchant?.trim() || own.shop;
+  const chosen = mine?.[shop.toLowerCase()];
+  if (chosen) return { category: chosen, shop };
+  let category = t.merchant ? categorize(t.merchant).category : own.category;
+  if (category === 'other') category = own.category;
+  if (category === 'other' && t.category) category = categorize(t.category).category;
+  return { category, shop };
+}
+
 export interface CategoryTotal { category: SpendCategory; total: Cents; count: number; shops: { shop: string; total: Cents; count: number }[] }
 export interface SpendSummary {
   total: Cents;
@@ -84,7 +101,7 @@ export function summarize(txns: Txn[], from: ISODate, to: ISODate, mine?: ShopCa
   const small = { count: 0, total: 0 };
   for (const t of txns) {
     if (t.amount >= 0 || t.date < from || t.date > to) continue;
-    const { category, shop } = categorize(t.description, mine);
+    const { category, shop } = categorizeTxn(t, mine);
     if (category === 'transfers') continue;
     const spent = -t.amount;
     total += spent; count++;
