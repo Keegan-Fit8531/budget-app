@@ -3,7 +3,7 @@ import { todayISO } from '../dates';
 import { GEMINI_BASE, TIMEOUT_MS } from './config';
 import { blockedError, classifyHttpError, ReaderError } from './errors';
 import { instructions, RESPONSE_SCHEMA } from './prompt';
-import type { Extraction, PreparedFile, Provider, ProviderOptions, RawStatement, ReadContext } from './types';
+import type { Extraction, PreparedFile, Provider, ProviderOptions, RawKiwiSaver, RawStatement, ReadContext } from './types';
 
 // ---------------------------------------------------------------------------------------------
 // Google's Gemini API, called straight from the browser with plain fetch (no SDK). The key is sent
@@ -43,7 +43,7 @@ export async function call(opts: ProviderOptions, body: unknown, fetchImpl: type
 }
 
 /** The kinds the form can come back as ("account" is a bank account, turned into "transactions"). */
-const KINDS = ['payslip', 'statement', 'account', 'afterpay', 'unknown'];
+const KINDS = ['payslip', 'statement', 'account', 'afterpay', 'kiwisaver', 'unknown'];
 
 type RawRow = { date?: string; description?: string; amount?: string; balance?: string };
 interface RawAccount {
@@ -131,6 +131,18 @@ export function mergeReads(list: Extraction[]): Extraction {
   const withNotes = (e: Extraction): Extraction => (notes ? { ...e, notes } : e);
   if (kind === 'transactions') return withNotes({ kind, transactions: joinReads(same.flatMap((x) => (x.transactions ? [x.transactions] : []))) });
   if (kind === 'afterpay') return withNotes({ kind, afterpay: { orders: same.flatMap((x) => x.afterpay?.orders ?? []) } });
+  if (kind === 'kiwisaver') {
+    // The first part to give a figure gives it; funds are listed once each.
+    const k: RawKiwiSaver = {};
+    for (const x of same) {
+      for (const [key, v] of Object.entries(x.kiwisaver ?? {}) as [keyof RawKiwiSaver, unknown][]) {
+        if (key !== 'funds' && k[key] === undefined && v !== undefined) (k as Record<string, unknown>)[key] = v;
+      }
+    }
+    const funds = same.flatMap((x) => x.kiwisaver?.funds ?? []);
+    k.funds = funds.filter((f, i) => funds.findIndex((g) => (g.name ?? '').toLowerCase() === (f.name ?? '').toLowerCase()) === i);
+    return withNotes({ kind, kiwisaver: k });
+  }
   if (kind === 'statement') {
     // A statement's figures are on its first page or two; its plans can run on.
     const s: RawStatement = {};

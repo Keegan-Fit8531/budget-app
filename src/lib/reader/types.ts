@@ -8,7 +8,7 @@ import type { ISODate } from '../dates';
 // ---------------------------------------------------------------------------------------------
 
 /** `transactions` is a bank or card export (CSV), read on this device. */
-export type DocKind = 'payslip' | 'statement' | 'afterpay' | 'transactions' | 'unknown';
+export type DocKind = 'payslip' | 'statement' | 'afterpay' | 'kiwisaver' | 'transactions' | 'unknown';
 
 /** A figure as printed, e.g. { amount: "1240.50", label: "Closing balance" }. */
 export interface Fig { amount: string; label?: string }
@@ -54,11 +54,32 @@ export interface RawAfterpay {
   }[];
 }
 
+/** A KiwiSaver statement, breakdown or app screen. */
+export interface RawKiwiSaver {
+  provider?: string;
+  /** The day the balance is as at (the closing date). */
+  date?: string;
+  /** The start of the period it covers (the opening value's date). */
+  since?: string;
+  balance?: Fig;
+  opening?: Fig;
+  employee?: Fig;
+  employer?: Fig;
+  government?: Fig;
+  voluntary?: Fig;
+  withdrawals?: Fig;
+  earnings?: Fig;
+  tax?: Fig;
+  returns?: Fig;
+  funds?: { name?: string; amount?: Fig }[];
+}
+
 export interface Extraction {
   kind: DocKind;
   payslip?: RawPayslip;
   statement?: RawStatement;
   afterpay?: RawAfterpay;
+  kiwisaver?: RawKiwiSaver;
   transactions?: CsvRead;
   notes?: string;
 }

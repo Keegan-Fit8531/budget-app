@@ -6,6 +6,7 @@ import { paydayFor, planFor, recordPayday } from '../engine';
 import { cash } from '../money';
 import { autoBalance, autoPays } from '../rebalance';
 import { setBalance } from '../history';
+import { recordReading, statementEarned, statementIn } from '../kiwisaver';
 import type { Budget, Cents, Debt, PaidPayment, Txn } from '../types';
 import type { Proposal } from './check';
 
@@ -18,6 +19,7 @@ import type { Proposal } from './check';
 export function applyProposal(b: Budget, p: Proposal, today: ISODate): Budget {
   if (p.kind === 'payslip') { recordPayslip(b, p.slip); return b; }
   if (p.kind === 'transactions') { applyTransactions(b, p, today); return b; }
+  if (p.kind === 'kiwisaver') { applyKiwiSaver(b, p); return b; }
   if (p.kind === 'statement') {
     if (p.newDebt) addDebt(b, p.debtId, p.newDebt.name);
     applyStatement(b, p.debtId, p, today);
@@ -91,6 +93,21 @@ const belongsTo = (x: PaidPayment, plan: { id: string; name: string }) => (x.pla
  * Plans with exact instalments (Afterpay) can't be put back, so their payments are kept as they are,
  * as are payments to plans that have since been paid off and removed.
  */
+/** A KiwiSaver statement: its balances go into the goal's history (a new goal if it's the first). Payday never sends KiwiSaver anything. */
+export function applyKiwiSaver(b: Budget, p: Extract<Proposal, { kind: 'kiwisaver' }>): void {
+  b.savings = b.savings ?? [];
+  let goal = b.savings.find((g) => g.id === p.goalId);
+  if (!goal && p.newGoal) {
+    const groupId = b.groups.find((g) => g.id === 'savings')?.id ?? b.groups.find((g) => g.bucket === 'savings')?.id ?? b.groups[0]?.id ?? '';
+    b.accounts.push({ id: p.newGoal.accountId, name: 'KiwiSaver', kind: 'bank', color: nextColor(b.accounts.map((x) => x.color)), groupId });
+    const first = p.readings[0];
+    goal = { id: p.goalId, name: 'KiwiSaver', accountId: p.newGoal.accountId, balance: first.balance, asOf: first.date, kiwisaver: true, ...(p.newGoal.note ? { note: p.newGoal.note } : {}) };
+    b.savings.push(goal);
+  }
+  if (!goal) return;
+  for (const r of p.readings) recordReading(goal, structuredClone(r));
+}
+
 export function windBack(debt: Debt, asOf: ISODate): void {
   const since = (debt.paid ?? []).filter((x) => x.date >= asOf);
   const wound = debt.plans.filter((p) => !p.instalments?.length);
@@ -175,6 +192,22 @@ export function preview(before: Budget, p: Proposal, today: ISODate): Preview {
     const loanBefore = (before.debts ?? []).find((d) => d.payroll && d.kind === 'loan');
     const loanAfter = loanBefore && debtOf(after, loanBefore.id);
     if (loanBefore && loanAfter && owed(loanBefore) !== owed(loanAfter)) lines.push(`${loanBefore.name}: ${cash(owed(loanBefore))} → ${cash(owed(loanAfter))} owed (the payslip’s ${cash(p.slip.studentLoan ?? 0)} deduction).`);
+  } else if (p.kind === 'kiwisaver') {
+    const was = (before.savings ?? []).find((g) => g.id === p.goalId);
+    const now = (after.savings ?? []).find((g) => g.id === p.goalId)!;
+    const last = p.readings[p.readings.length - 1];
+    if (!was) lines.push('New savings goal: KiwiSaver, paid from your salary (payday sends it nothing).');
+    if (!was || now.balance !== was.balance) lines.push(`${now.name}: balance ${was ? `${cash(was.balance)} → ` : ''}${cash(now.balance)}, as at ${fmtShort(now.asOf)}`);
+    if (last.funds) lines.push(`Funds: ${Object.entries(last.funds).map(([n, v]) => `${n} ${cash(v)}`).join(' · ')}`);
+    const s = last.statement;
+    const put = s && statementIn(s);
+    const earned = s && statementEarned(s);
+    if (s && (put !== undefined || earned !== undefined)) {
+      const parts = [put !== undefined && `${cash(put)} went in`, earned !== undefined && `${earned < 0 ? `lost ${cash(-earned)}` : `earned ${cash(earned)}`}${s.tax ? ' after PIE tax' : ''}`].filter(Boolean);
+      lines.push(`${fmtShort(s.since)} ${s.since.slice(0, 4)} to ${fmtShort(last.date)} ${last.date.slice(0, 4)}: ${parts.join(', ')}.`);
+    }
+    const added = p.readings.filter((r) => !(was?.readings ?? []).some((x) => x.date === r.date)).length;
+    if (added) lines.push(`${added} balance${added === 1 ? '' : 's'} added to its history of gains and losses.`);
   } else if (p.kind === 'statement') {
     const was = debtOf(before, p.debtId);
     const now = debtOf(after, p.debtId)!;

@@ -3,9 +3,10 @@ import { addMonths, fmtShort, fmtSpan, todayISO, type ISODate } from '../lib/dat
 import { owed, planEnds } from '../lib/debts';
 import { cash, centsToInput } from '../lib/money';
 import { applyProposal, fingerprint, preview } from '../lib/reader/apply';
-import { csvBalance, csvTargets, NEW_DEBT, NOT_MINE, purchaseRows, resolvePlanRow, review, toCents, toDraft, type Draft, type DraftFig } from '../lib/reader/check';
+import { csvBalance, csvTargets, NEW_DEBT, NEW_GOAL, NOT_MINE, purchaseRows, resolvePlanRow, review, toCents, toDraft, type Draft, type DraftFig } from '../lib/reader/check';
 import { CATEGORY_LABEL, summarize, type ShopCategories } from '../lib/spending';
 import { DEVICE_FALLBACK, errorMessage, ReaderError } from '../lib/reader/errors';
+import { isKiwiSaver } from '../lib/kiwisaver';
 import { isCsv, startRead, type ReadJob, type ReadStage } from '../lib/reader/job';
 import type { DocKind, Extraction } from '../lib/reader/types';
 import { newId, useBudget } from '../lib/store';
@@ -24,7 +25,7 @@ type Phase =
   | { s: 'error'; err: ReaderError }
   | { s: 'review'; draft: Draft };
 
-const KIND_TITLE: Record<DocKind, string> = { payslip: 'Check this payslip', statement: 'Check this statement', afterpay: 'Check these Afterpay orders', transactions: 'Check these transactions', unknown: 'Check this document' };
+const KIND_TITLE: Record<DocKind, string> = { payslip: 'Check this payslip', statement: 'Check this statement', afterpay: 'Check these Afterpay orders', kiwisaver: 'Check this KiwiSaver statement', transactions: 'Check these transactions', unknown: 'Check this document' };
 const RETRY = new Set(['too_fast', 'overloaded', 'offline', 'unreachable', 'timeout', 'unusable']);
 const titleOf = (d: Draft) => (d.kind === 'statement' && d.statement.appScreen ? 'Check this card screenshot' : KIND_TITLE[d.kind]);
 
@@ -232,8 +233,8 @@ function Rundown({ draft, sourceLabel, onEdit, onCancel, cancelLabel, onConfirm 
       <span className="pill" style={{ alignSelf: 'flex-start' }}>{sourceLabel}</span>
       {draft.kind !== 'transactions' && (
         <div className="seg" role="group" aria-label="What this is" style={{ alignSelf: 'flex-start' }}>
-          {(['payslip', 'statement', 'afterpay'] as const).map((k) => (
-            <button key={k} aria-pressed={draft.kind === k} onClick={() => edit((d) => { d.kind = k; })}>{k === 'payslip' ? 'Payslip' : k === 'statement' ? 'Card or loan' : 'Afterpay'}</button>
+          {(['payslip', 'statement', 'kiwisaver', 'afterpay'] as const).map((k) => (
+            <button key={k} aria-pressed={draft.kind === k} onClick={() => edit((d) => { d.kind = k; })}>{k === 'payslip' ? 'Payslip' : k === 'statement' ? 'Card or loan' : k === 'kiwisaver' ? 'KiwiSaver' : 'Afterpay'}</button>
           ))}
         </div>
       )}
@@ -317,6 +318,8 @@ function Rundown({ draft, sourceLabel, onEdit, onCancel, cancelLabel, onConfirm 
         </>
       )}
 
+      {draft.kind === 'kiwisaver' && <KiwiSaverCheck draft={draft} edit={edit} />}
+
       {draft.kind === 'afterpay' && ap && draft.afterpay.orders.map((o, i) => (
         <div key={o.newId} className="inset stack gap-8" style={{ padding: 'var(--s-3)' }}>
           <span className="small"><b>{o.merchant || 'Order'}</b>{o.purchaseDate ? `, bought ${fmtShort(o.purchaseDate)}` : ''}{toCents(o.total.value) ? `, ${cash(toCents(o.total.value)!.cents)} total` : ''}</span>
@@ -370,6 +373,62 @@ function Rundown({ draft, sourceLabel, onEdit, onCancel, cancelLabel, onConfirm 
           onConfirm(r.proposal, pv);
         }}>Confirm</button>
       </div>
+    </>
+  );
+}
+
+/** A KiwiSaver statement or screen: which goal, the balance and its date, each fund, and what went in and was earned. */
+function KiwiSaverCheck({ draft, edit }: { draft: Draft; edit: (fn: (d: Draft) => void) => void }) {
+  const { budget } = useBudget();
+  const k = draft.kiwisaver;
+  const goals = (budget.savings ?? []).filter(isKiwiSaver);
+  const others = (budget.savings ?? []).filter((g) => !isKiwiSaver(g));
+  const set = (key: 'balance' | 'opening' | 'employee' | 'employer' | 'government' | 'voluntary' | 'withdrawals' | 'earnings' | 'tax' | 'returns') => (v: string) => edit((d) => { d.kiwisaver[key].value = v; });
+  return (
+    <>
+      <label className="field">Which KiwiSaver it’s for
+        <select value={k.goalId} onChange={(e) => edit((d) => { d.kiwisaver.goalId = e.target.value; })}>
+          {goals.map((g) => <option key={g.id} value={g.id}>{g.name} (now {cash(g.balance)})</option>)}
+          {others.length > 0 && <optgroup label="Other savings goals">{others.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}</optgroup>}
+          <option value={NEW_GOAL}>+ A new KiwiSaver goal</option>
+        </select>
+        {k.provider && <span className="xs muted">On the document: “{k.provider}”</span>}
+      </label>
+      <div className="form-grid">
+        <Money label="Balance (closing value)" fig={k.balance} placeholder="31,614.19" onChange={set('balance')} />
+        <label className="field">As at
+          <input type="date" value={k.date} onChange={(e) => edit((d) => { d.kiwisaver.date = e.target.value; })} />
+        </label>
+      </div>
+      <div className="stack gap-8">
+        <b className="small">Funds</b>
+        {k.funds.map((f, i) => (
+          <div key={i} className="row nowrap gap-8">
+            <input aria-label="Fund" value={f.name} placeholder="High Growth" onChange={(e) => edit((d) => { d.kiwisaver.funds[i].name = e.target.value; })} />
+            <input aria-label={`${f.name || 'Fund'} value`} inputMode="decimal" value={f.value} placeholder="0.00" onChange={(e) => edit((d) => { d.kiwisaver.funds[i].value = e.target.value; })} />
+            <button className="icon-btn plain" aria-label={`Remove ${f.name || 'fund'}`} onClick={() => edit((d) => { d.kiwisaver.funds.splice(i, 1); })}><Icon name="x" size={16} /></button>
+          </div>
+        ))}
+        <button className="btn small" style={{ alignSelf: 'flex-start' }} onClick={() => edit((d) => { d.kiwisaver.funds.push({ name: '', value: '' }); })}><Icon name="plus" size={16} /> Add a fund</button>
+      </div>
+      <details className="small" open={!!(k.since || k.opening.value || k.earnings.value || k.returns.value)}>
+        <summary>Contributions and returns</summary>
+        <div className="form-grid" style={{ marginTop: 'var(--s-2)' }}>
+          <label className="field">From
+            <input type="date" value={k.since} onChange={(e) => edit((d) => { d.kiwisaver.since = e.target.value; })} />
+            <span className="xs muted">The opening value’s date.</span>
+          </label>
+          <Money label="Opening value" fig={k.opening} onChange={set('opening')} />
+          <Money label="Your contributions" fig={k.employee} onChange={set('employee')} />
+          <Money label="Employer contributions" fig={k.employer} onChange={set('employer')} />
+          <Money label="Government contribution" fig={k.government} onChange={set('government')} />
+          <Money label="Voluntary contributions" fig={k.voluntary} onChange={set('voluntary')} />
+          <Money label="Withdrawals" fig={k.withdrawals} onChange={set('withdrawals')} />
+          <Money label="Investment earnings (before tax)" fig={k.earnings} placeholder="A loss: -500.00" onChange={set('earnings')} />
+          <Money label="PIE tax" fig={k.tax} onChange={set('tax')} />
+          <Money label="Returns (if that’s all it shows)" fig={k.returns} onChange={set('returns')} />
+        </div>
+      </details>
     </>
   );
 }
