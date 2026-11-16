@@ -4,7 +4,7 @@ import { TransactionList } from '../components/Transactions';
 import { DayPicker, useDayView } from '../components/DayPicker';
 import { Icon } from '../components/Icon';
 import { MonthTracker, PayProjectionView } from '../components/MonthTracker';
-import { fmtDay, fmtShort, monthName, todayISO } from '../lib/dates';
+import { addDays, fmtDay, fmtShort, monthName, todayISO } from '../lib/dates';
 import { accountMode, balanceOn, balanceToday, depositFor, forecastBalances, outflows, smoothAmount } from '../lib/balances';
 import { periodContaining, type Period } from '../lib/engine';
 import { cash, centsToInput, parseMoney } from '../lib/money';
@@ -21,9 +21,9 @@ export function Accounts() {
   useEffect(() => { const t = setInterval(() => setDay(todayISO()), 60000); return () => clearInterval(t); }, []);
   const managed = new Set((budget.savings ?? []).map((g) => g.accountId));
   // The pay account (e.g. Weekly allowance) only passes pay on to the others on payday, so it isn't tracked here.
-  const payAcc = budget.accounts.find((a) => a.id === budget.settings.payAccountId);
   const accounts = budget.accounts.filter((a) => a.kind === 'bank' && !a.archived && !managed.has(a.id) && a.id !== budget.settings.payAccountId);
-  const others = budget.accounts.filter((a) => !accounts.includes(a) && budget.accountTransactions?.[a.id]?.length);
+  // Accounts whose balance isn't tracked here: the one pay lands in (always), and any other with uploaded transactions.
+  const others = budget.accounts.filter((a) => !accounts.includes(a) && !a.archived && (a.id === budget.settings.payAccountId || budget.accountTransactions?.[a.id]?.length));
   const today = todayISO();
   const period = periodContaining(today, budget.settings);
   // Which pay and day to look at: today in the pay you're in now, by default.
@@ -62,22 +62,28 @@ export function Accounts() {
         {accounts.map((a) => <BalanceCard key={a.id} account={a} view={live ? undefined : view} day={day} onPick={(i) => { goPay(i); window.scrollTo({ top: 0, behavior: 'smooth' }); }} />)}
       </div>
 
-      {/* Statements or exports uploaded for accounts that aren't shown above (the pay account, one at another bank). */}
-      {others.length > 0 && (
-        <section className="card stack gap-8">
-          <h2 className="h2">Uploaded transactions</h2>
-          {others.map((a) => (
-            <div key={a.id} className="stack gap-2">
-              <b className="small">{a.name}</b>
-              <TransactionList items={budget.accountTransactions![a.id]} />
+      {/* Accounts whose balance changes all the time (the one pay lands in): just their payment history. */}
+      {others.map((a) => {
+        const txns = budget.accountTransactions?.[a.id] ?? [];
+        const spent30 = txns.filter((t) => t.amount < 0 && t.date > addDays(today, -30)).reduce((x, t) => x - t.amount, 0);
+        return (
+          <section key={a.id} className="card stack gap-8">
+            <div className="between">
+              <h2 className="h2">{a.name}</h2>
+              <span className="pill">Balance not tracked</span>
             </div>
-          ))}
-          <p className="xs muted">See where it went in <a href="#/insights">Insights</a>.</p>
-        </section>
-      )}
+            <p className="small muted">{a.id === budget.settings.payAccountId ? 'Pay lands here and is spent from here, so its balance isn’t kept: just what went in and out. ' : ''}
+              {txns.length
+                ? `${txns.length} transactions uploaded, the latest on ${fmtShort(txns[txns.length - 1].date)}${spent30 ? `; ${cash(spent30, { whole: true })} spent in the last 30 days` : ''}.`
+                : 'Upload a statement (PDF) or a CSV export of it from your bank to see its payment history here.'}</p>
+            <TransactionList items={txns} />
+            {txns.length > 0 && <p className="xs muted">See where it went in <a href="#/insights">Insights</a>. Add the next statement or export whenever you like: only new transactions are added.</p>}
+          </section>
+        );
+      })}
 
       <p className="note">
-        {payAcc ? `${payAcc.name} isn't shown: pay lands there and is sent on to these accounts on payday. ` : ''}Savings balances are kept with their goals in <a href="#/savings">Savings</a>. What payday sends to each account is set in <a href="#/deposits">Deposits</a>.
+        Savings balances are kept with their goals in <a href="#/savings">Savings</a>. What payday sends to each account is set in <a href="#/deposits">Deposits</a>.
       </p>
     </>
   );
