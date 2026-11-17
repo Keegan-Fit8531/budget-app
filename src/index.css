@@ -605,10 +605,8 @@ select.select-sm { min-height: 30px; padding-left: 10px; padding-right: 28px !im
 .acct-body.sections > * + * { border-top: 1px solid var(--line); padding-top: var(--s-3); }
 .acct-body.sections > .disc + .disc { padding-top: 0; }
 @media (max-width: 899px) { .acct-fig .fig { font-size: 26px; } .acct { gap: var(--s-3); } }
-/* A phone: the pill and the card's buttons go on their own row under the name, so the name keeps its room. */
+/* A phone: the pill and the card's buttons stay top right, as on a wider screen; the name is cut short if it must be. */
 @media (max-width: 600px) {
-  .acct-head { flex-wrap: wrap; row-gap: var(--s-2); }
-  .acct-side { order: 3; flex-basis: 100%; margin-left: 0; }
   .acct-sub { max-width: 100%; }
   .acct-sub > span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 }
