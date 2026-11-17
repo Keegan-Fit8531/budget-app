@@ -95,6 +95,8 @@ export interface ReadContext {
     kind: string;
     rules?: string;
     neverAStatement?: true;
+    /** The student loan: IRD's loan balance is its statement. */
+    studentLoan?: true;
     /** Afterpay orders also carry their amounts and dates; card plans only their name (see buildContext). */
     plans: { id: string; name: string; type: string; remaining?: string; purchaseDate?: ISODate; total?: string; nextInstalment?: { date: ISODate; amount: string } }[];
   }[];

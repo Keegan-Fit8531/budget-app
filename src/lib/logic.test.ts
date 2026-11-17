@@ -802,7 +802,7 @@ describe('reading documents: figures, dates and errors', () => {
       return Response.json({ candidates: [{ content: { parts: [{ text: '{"kind":"unknown"}' }] } }] });
     }) as unknown as typeof fetch;
     const ctx = buildContext(debtBudget(), '2026-11-16');
-    expect(ctx.debts.find((d) => d.id === 'studentloan')).toMatchObject({ neverAStatement: true });
+    expect(ctx.debts.find((d) => d.id === 'studentloan')).toMatchObject({ studentLoan: true });
     // A card plan goes by name only: given its expiry and balance, Gemini copied them over the
     // statement's (or misread the printed date towards them). The app matches plans by expiry itself.
     expect(ctx.debts.find((d) => d.id === 'gem')!.plans[0]).toEqual({ id: 'g1', name: 'Purchases Jun – Jul 2026', type: 'interest-free' });
@@ -879,15 +879,26 @@ const gemStatement = (date: string, plans: { planId?: string | null; remaining: 
 const debt = (b: Budget, id: string) => b.debts!.find((d) => d.id === id)!;
 
 describe('reading documents: statements', () => {
-  it('asks first when the debt isn’t one of yours, is the student loan, or is Afterpay', () => {
+  it('asks first when the debt isn’t one of yours, or is Afterpay', () => {
     const b = debtBudget();
     const blocks = (debtId: string) => checkDoc(b, { kind: 'statement', statement: { debtId, balance: { amount: '100.00' }, statementDate: '2026-11-10' } }, '2026-11-16').issues.filter((i) => i.level === 'block').map((i) => i.text).join(' ');
-    expect(blocks('studentloan')).toMatch(/Choose which debt/);
     expect(blocks('made-up')).toMatch(/Choose which debt/);
     expect(blocks('afterpay')).toMatch(/worked out from its orders/);
     expect(blocks('qcard')).toBe('');
     // A missing date or a silly amount is never saved.
     expect(checkDoc(b, { kind: 'statement', statement: { debtId: 'qcard', balance: { amount: 'lots' } } }, '2026-11-16').proposal).toBeNull();
+  });
+
+  it('an IRD myIR loan breakdown updates the student loan', () => {
+    const b = debtBudget();
+    const ird: Extraction = { kind: 'statement', statement: { debtId: null, nameOnDocument: 'myIR Loan breakdown', balance: { amount: '13158.52', label: 'Total loan balance' }, statementDate: '2026-11-16' } };
+    const r = checkDoc(b, ird, '2026-11-16');
+    expect(r.issues.filter((i) => i.level === 'block')).toEqual([]);
+    expect(r.proposal).toMatchObject({ kind: 'statement', debtId: 'studentloan', balance: 1315852 });
+    upload(b, ird, '2026-11-16');
+    expect(owed(debt(b, 'studentloan'))).toBe(1315852);
+    // Later payslip deductions still come off it.
+    expect(debt(b, 'studentloan').payroll).toBeTruthy();
   });
 
   it('matches Gem plans by their expiry date, not by name or a wrong id', () => {
