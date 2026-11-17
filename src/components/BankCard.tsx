@@ -132,10 +132,28 @@ export async function syncBank(update: (f: (b: Budget) => Budget) => void, force
     update((b) => { result = applyBank(b, d, b.bankLinks ?? {}); return b; });
     const now = new Date().toISOString();
     writeBankConfig({ ...conf, lastSync: now, lastRefresh: now });
-    if (force || result.some((r) => r.added || r.cardPayments?.length)) showToast(`Bank sync: ${said(result)}`);
+    if (force && d.refreshed === false) {
+      // Asked the bank, but it hadn't answered by the time we had to reply: look again in a minute.
+      showToast(`Asked ANZ for the latest. It hasn't come through yet, so this checks again in a minute. ${said(result)}`);
+      setTimeout(() => { void syncAgain(update); }, 60_000);
+    } else if (force || result.some((r) => r.added || r.cardPayments?.length)) showToast(`Bank sync: ${said(result)}`);
   } catch (e) {
     if (force) showToast(`Bank sync didn’t work: ${bankMessage(e)}`);
   } finally { setRunning(false); }
+}
+
+/** Read what the bank has now, without asking it to refresh again (it was just asked). */
+async function syncAgain(update: (f: (b: Budget) => Budget) => void): Promise<void> {
+  const conf = readBankConfig();
+  if (!conf || running) return;
+  setRunning(true);
+  try {
+    const d = await fetchBank(conf, sinceFor(conf));
+    let result: BankResult[] = [];
+    update((b) => { result = applyBank(b, d, b.bankLinks ?? {}); return b; });
+    writeBankConfig({ ...conf, lastSync: new Date().toISOString() });
+    showToast(`Bank sync: ${said(result)}`);
+  } catch { /* the hourly sync tries again */ } finally { setRunning(false); }
 }
 
 /**

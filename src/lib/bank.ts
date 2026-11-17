@@ -21,9 +21,15 @@ export { BANK_URL, readBankConfig, writeBankConfig, type BankConfig } from './ba
 /** Synced automatically while the app is open, at most this often. */
 export const AUTO_EVERY_MS = 60 * 60 * 1000;
 
-export interface BankAccount { id: string; name: string; number: string | null; type: string; institution: string | null; balance: number | null; transactions: boolean }
+export interface BankAccount {
+  id: string; name: string; number: string | null; type: string; institution: string | null; balance: number | null; transactions: boolean;
+  /** What can be spent now: the balance less pending payments (today's card purchases). From newer server functions only. */
+  available?: number | null;
+  /** When the bank last sent this account's balance. */
+  updated?: string | null;
+}
 export interface BankTxn { account: string; id: string; date: ISODate; description: string; amount: number; balance: number | null; merchant: string | null; category?: string | null }
-export interface BankData { accounts: BankAccount[]; transactions: BankTxn[] }
+export interface BankData { accounts: BankAccount[]; transactions: BankTxn[]; /** The bank sent newer balances after being asked to refresh. */ refreshed?: boolean }
 
 export class BankError extends Error {
   kind: 'not_allowed' | 'not_set_up' | 'unreachable' | 'failed';
@@ -50,7 +56,7 @@ export async function fetchBank(conf: BankConfig, since?: ISODate, fetchImpl: ty
   if (res.status === 401) throw new BankError('not_allowed');
   if (res.status === 503) throw new BankError('not_set_up');
   if (!res.ok || !Array.isArray(body.accounts) || !Array.isArray(body.transactions)) throw new BankError('failed', body.error);
-  return { accounts: body.accounts, transactions: body.transactions };
+  return { accounts: body.accounts, transactions: body.transactions, ...(typeof (body as { refreshed?: unknown }).refreshed === 'boolean' ? { refreshed: (body as { refreshed: boolean }).refreshed } : {}) };
 }
 
 /** Where a bank account's transactions go: the account or card with its number's ending saved (from an earlier upload), if one has. */
@@ -94,7 +100,8 @@ export function applyBank(b: Budget, data: BankData, links: Record<string, strin
   for (const acc of data.accounts) {
     // Noted for each account that came through, so its card shows when it last synced.
     const link = links[acc.id];
-    if (link && link !== 'ignore' && link.includes(':')) b.bankSeen = { ...(b.bankSeen ?? {}), [link]: now };
+    // That's when the bank last sent its balance, when it says, so a pill never looks fresher than the bank is.
+    if (link && link !== 'ignore' && link.includes(':')) b.bankSeen = { ...(b.bankSeen ?? {}), [link]: acc.updated && Date.parse(acc.updated) ? acc.updated : now };
     const [type, id] = (links[acc.id] ?? '').split(':') as ['account' | 'debt' | 'saving' | '', string?];
     // A savings goal (KiwiSaver, an investment): its balance follows the account's.
     if (type === 'saving' && id) {
@@ -117,18 +124,24 @@ export function applyBank(b: Budget, data: BankData, links: Record<string, strin
     const ending = acc.number ? endingOf(acc.number) : undefined;
     // Its balance follows the bank's too (what's owed, for a card), unless you've turned updates off.
     const live = b.bankAuto !== false && acc.balance !== null;
-    const cents = live ? Math.round(acc.balance! * 100) : 0;
+    // A bank account's balance is what you can spend now (pending card purchases taken off, as your
+    // banking app shows it); a card's is what's owed.
+    const shown = type === 'account' && typeof acc.available === 'number' ? acc.available : acc.balance;
+    const cents = live ? Math.round(shown! * 100) : 0;
     // Banks show what's owed on a card as a negative balance.
     const balance = live && type === 'debt' ? { amount: Math.abs(cents), asOf: today } : undefined;
     if (add.length || (ending && !target.ending) || balance) {
       applyProposal(b, { kind: 'transactions', target: { type, id }, ...(ending ? { ending } : {}), add, ...(balance ? { balance } : {}), history: [], eventId: `bank-${acc.id}-${today}` }, today);
     }
-    if (live && type === 'account' && b.balances?.[id]?.amount !== cents) setBalance(b, id, cents, today, `bank-${acc.id}-${today}`);
+    const changed = live && type === 'account' && b.balances?.[id]?.amount !== cents;
+    if (changed) setBalance(b, id, cents, today, `bank-${acc.id}-${today}`);
+    // The same as before, but checked again today: it's today's balance, not an estimate from an older one.
+    else if (live && type === 'account' && b.balances?.[id] && b.balances[id].asOf < today) b.balances[id] = { ...b.balances[id], asOf: today };
     // Payments from this account to cards that can't be linked themselves (Gem Visa, Q Mastercard).
     const cardPayments = type === 'account' ? recordCardPayments(b, id, add, today) : [];
     // The account behind a savings goal: the goal's balance is the bank's.
     if (live && type === 'account') for (const g of b.savings ?? []) if (g.accountId === id && g.balance !== cents) setGoalBalance(g, cents, today);
-    out.push({ name: target.name, added: add.length, ...(cardPayments.length ? { cardPayments } : {}) });
+    out.push({ name: target.name, added: add.length, ...(changed ? { balance: cents } : {}), ...(cardPayments.length ? { cardPayments } : {}) });
   }
   return out;
 }
