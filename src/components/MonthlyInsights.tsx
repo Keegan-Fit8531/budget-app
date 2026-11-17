@@ -152,7 +152,7 @@ export function MonthlyInsights() {
   const spent = r ? Math.max(1, r.spent) : 1;
   const top = r ? Math.max(1, ...r.categories.map((c) => c.total)) : 1;
   return (
-    <section className="card stack gap-16">
+    <section className="card stack gap-12">
       <button type="button" className="disc-head wide" style={{ minHeight: 0 }} aria-expanded={!r || open} disabled={!r} onClick={() => setOpen(!open)}>
         <span className="disc-title min0">
           <span className="h2 block">Cycle review</span>
@@ -163,7 +163,7 @@ export function MonthlyInsights() {
         </span>
         {r && <Chevron />}
       </button>
-      <Collapse open={!r || open}><div className="stack gap-20">
+      <Collapse open={!r || open} stacked><div className="stack gap-20" style={{ paddingTop: 4 }}>
       {!r && (
         <div className="rv-empty">
           <span className="rv-badge lg" aria-hidden="true"><Icon name="bulb" size={18} /></span>
