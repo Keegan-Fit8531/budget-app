@@ -25,11 +25,14 @@ export function AccountEditModal({ account: a, tab: first = 'balance', onClose }
     { id: 'payday', label: 'Payday and costs' },
   ];
   return (
-    <Modal title={a.name} width={tab === 'payday' ? 720 : 480} onClose={onClose}>
+    // One size for every tab, and pinned to the top, so switching tabs doesn't move or resize the pop-up.
+    <Modal title={a.name} width={680} className="pinned" onClose={onClose}>
       {(close) => (
         <>
-          <div className="seg fill modal-tabs" role="tablist" aria-label={`${a.name}: what to change`}>
-            {tabs.map((t) => <button key={t.id} role="tab" aria-selected={tab === t.id} onClick={() => setTab(t.id)}>{t.label}</button>)}
+          <div className="modal-tabs">
+            <div className="seg fill" role="tablist" aria-label={`${a.name}: what to change`}>
+              {tabs.map((t) => <button key={t.id} role="tab" aria-selected={tab === t.id} onClick={() => setTab(t.id)}>{t.label}</button>)}
+            </div>
           </div>
           <div role="tabpanel" className="stack gap-16">
             {tab === 'balance' && <BalanceForm account={a} onDone={close} />}

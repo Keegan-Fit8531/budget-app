@@ -90,7 +90,7 @@ export function ReviewAutoRun() {
       running.current = true;
       generateReview(b, c).then((r) => {
         update((x) => { saveReview(x, r); return x; });
-        showToast(`This month’s insights are ready: Insights → ${fmtSpan(r.from, r.to)}.`, 7000);
+        showToast(`Your review of ${fmtSpan(r.from, r.to)} is ready in Insights.`, 7000);
       }).catch(() => { /* tried again later */ }).finally(() => { running.current = false; });
     };
     const t0 = setTimeout(run, 20_000); // after the bank's sync on opening
@@ -101,17 +101,24 @@ export function ReviewAutoRun() {
   return null;
 }
 
-function List({ title, items, icon, tone }: { title: string; items: string[]; icon: string; tone?: string }) {
+const made = (iso: string) => new Date(iso).toLocaleString('en-NZ', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
+
+/** One of the review's three lists: a small tinted badge and its points. */
+function Points({ title, items, icon, tone }: { title: string; items: string[]; icon: string; tone: 'good' | 'bad' | 'tips' }) {
   if (!items.length) return null;
   return (
-    <div className="stack gap-4">
-      <b className={tone}>{title}</b>
-      {items.map((t) => <div className="list-row top small" key={t}><span className={tone ?? 'muted'} style={{ display: 'grid', marginTop: 2 }}><Icon name={icon} size={16} /></span><span>{t}</span></div>)}
-    </div>
+    <section className={`rv-points ${tone}`}>
+      <h3 className="rv-sub">{title}</h3>
+      <ul>
+        {items.map((t) => (
+          <li key={t}><span className="rv-badge" aria-hidden="true"><Icon name={icon} size={14} /></span><span>{t}</span></li>
+        ))}
+      </ul>
+    </section>
   );
 }
 
-/** Insights → This month's insights: the latest review, past ones, and a button for the cycle so far. */
+/** Insights → Cycle review: the latest review, past ones, and a button for the cycle so far. */
 export function MonthlyInsights() {
   const { budget, update } = useBudget();
   const reviews = Object.values(budget.reviews ?? {}).sort((a, b) => (a.from < b.from ? 1 : -1));
@@ -129,9 +136,9 @@ export function MonthlyInsights() {
   async function make(c: Period & { partial?: boolean }) {
     setBusy(true); setErr(null);
     try {
-      const made = await generateReview(budget, c);
-      update((b) => { saveReview(b, made); return b; });
-      setPick(made.from);
+      const got = await generateReview(budget, c);
+      update((b) => { saveReview(b, got); return b; });
+      setPick(got.from);
       setOpen(true);
     } catch (e) {
       const m = e instanceof ReaderError ? errorMessage(e) : { title: 'Something went wrong.', body: 'Try again.' };
@@ -141,72 +148,96 @@ export function MonthlyInsights() {
 
   const soFar = cycleSoFar(budget, today);
   const soFarCount = cycleTransactions(budget, soFar).length;
+  const hasSoFar = reviews.some((x) => x.from === soFar.start);
+  const spent = r ? Math.max(1, r.spent) : 1;
   const top = r ? Math.max(1, ...r.categories.map((c) => c.total)) : 1;
   return (
     <section className="card stack gap-16">
       <button type="button" className="disc-head wide" style={{ minHeight: 0 }} aria-expanded={!r || open} disabled={!r} onClick={() => setOpen(!open)}>
         <span className="disc-title min0">
-          <span className="h2 block">Insights</span>
-          {r && <span className="small muted block" style={{ fontWeight: 500 }}>{fmtSpan(r.from, r.to)}{r.partial ? ' · so far' : ''} · made {new Date(r.made).toLocaleString('en-NZ', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}</span>}
+          <span className="h2 block">Cycle review</span>
+          <span className="small muted block" style={{ fontWeight: 500 }}>
+            {r ? <>{fmtSpan(r.from, r.to)}{r.partial && <> · <span className="pill rv-pill">In progress</span></>}</>
+              : 'A summary of each pay cycle’s spending, written on payday'}
+          </span>
         </span>
         {r && <Chevron />}
       </button>
-      <Collapse open={!r || open}><div className="stack gap-16">
-      {reviews.length > 1 && (
-        <label className="field small">Past insights
-          <select aria-label="Past insights" value={r?.from} onChange={(e) => setPick(e.target.value)}>
-            {reviews.map((x) => <option key={x.from} value={x.from}>{fmtSpan(x.from, x.to)}{x.partial ? ' (so far)' : ''}</option>)}
-          </select>
-        </label>
-      )}
-
+      <Collapse open={!r || open}><div className="stack gap-20">
       {!r && (
-        <p className="note">
-          Each payday, the pay cycle that just ended (every transaction from your bank connection and uploads, and your payslip) is sent to Google’s Gemini with your key, and what went well, what didn’t and tips come back here. It happens by itself in the background while the app is open.
-          {!hasKey && ' Add your Google key in Settings → Reading documents first.'}
-        </p>
+        <div className="rv-empty">
+          <span className="rv-badge lg" aria-hidden="true"><Icon name="bulb" size={18} /></span>
+          <div className="stack gap-4">
+            <b>No reviews yet</b>
+            <p className="small muted">
+              On payday, the cycle that just ended is summarised for you: where your money went, what went well, what to watch and what to try next.
+              It runs in the background while the app is open, using your transactions and payslip.
+            </p>
+            {!hasKey && <p className="small muted">To turn it on, add your Google API key in <a href="#/settings">Settings → Reading documents</a>.</p>}
+          </div>
+        </div>
       )}
 
       {r && (
         <>
-          <div className="row wrap gap-16">
-            {r.pay !== undefined && <div><span className="xs muted block">Pay</span><b className="fig-sm">{cash(r.pay, { whole: true })}</b></div>}
-            <div><span className="xs muted block">Spent</span><b className="fig-sm">{cash(r.spent, { whole: true })}</b></div>
-            <div><span className="xs muted block">Purchases</span><b className="fig-sm">{r.count}</b></div>
-          </div>
-          <div>
-            <b className="block">{r.headline}</b>
-            {r.summary && <p className="small muted" style={{ marginTop: 4 }}>{r.summary}</p>}
-          </div>
-          {r.categories.length > 0 && (
-            <div className="stack gap-4">
-              {r.categories.map((c) => (
-                <div key={c.label} className="small">
-                  <div className="between"><span>{c.label} <span className="muted">×{c.count}</span></span><b className="num">{cash(c.total, { whole: true })}</b></div>
-                  <div className="bar" style={{ height: 6 }}><div style={{ width: `${(c.total / top) * 100}%` }} /></div>
-                </div>
-              ))}
-            </div>
+          {reviews.length > 1 && (
+            <label className="field small rv-pick">Pay cycle
+              <select aria-label="Pay cycle" value={r.from} onChange={(e) => setPick(e.target.value)}>
+                {reviews.map((x) => <option key={x.from} value={x.from}>{fmtSpan(x.from, x.to)}{x.partial ? ' (in progress)' : ''}</option>)}
+              </select>
+            </label>
           )}
-          <List title="Went well" items={r.good} icon="check" tone="pos" />
-          <List title="Could be better" items={r.bad} icon="alert" tone="neg" />
-          <List title="Tips for next cycle" items={r.tips} icon="bulb" />
-          <p className="xs muted">From {r.sources.join(', ') || 'your transactions'}. Totals are worked out by the app; the words are Gemini’s.</p>
+
+          <div className="rv-stats">
+            {r.pay !== undefined && <div className="stat tight"><span className="xs muted">Net pay</span><b className="num">{cash(r.pay, { whole: true })}</b></div>}
+            <div className="stat tight"><span className="xs muted">Spent</span><b className="num">{cash(r.spent, { whole: true })}</b></div>
+            <div className="stat tight"><span className="xs muted">Purchases</span><b className="num">{r.count}</b></div>
+          </div>
+
+          <div className="rv-lead">
+            <p className="rv-headline">{r.headline}</p>
+            {r.summary && <p className="small muted">{r.summary}</p>}
+          </div>
+
+          {r.categories.length > 0 && (
+            <section className="stack gap-8">
+              <h3 className="rv-sub">Where it went</h3>
+              <div className="bar-list">
+                {r.categories.map((c) => (
+                  <div key={c.label} className="bar-list-row">
+                    <span className="clip">{c.label} <span className="xs muted">· {c.count} {c.count === 1 ? 'purchase' : 'purchases'}</span></span>
+                    <b className="num">{cash(c.total, { whole: true })}</b>
+                    <span className="xs muted num right">{Math.round((c.total / spent) * 100)}%</span>
+                    <div className="track"><div style={{ width: `${(c.total / top) * 100}%`, background: 'var(--brand-2)' }} /></div>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
+
+          <div className="rv-grid">
+            <Points title="What went well" items={r.good} icon="check" tone="good" />
+            <Points title="What to watch" items={r.bad} icon="alert" tone="bad" />
+            <Points title="Try next cycle" items={r.tips} icon="bulb" tone="tips" />
+          </div>
         </>
       )}
 
-      <div className="row wrap gap-8">
-        <button className="btn primary wrap-text" disabled={busy || !hasKey || !soFarCount} onClick={() => void make(soFar)}>
-          {busy ? 'Working it out…'
-            // One for this cycle already: it's brought up to date with what's come in since.
-            : reviews.some((x) => x.from === soFar.start) ? <><Icon name="sync" size={16} /> Update with the latest spending</>
-            : `Insights so far this cycle (${fmtShort(soFar.start)} to today)`}
-        </button>
-        {due && <button className="btn wrap-text" disabled={busy || !hasKey} onClick={() => void make(due)}>Make {fmtSpan(due.start, due.end)} now</button>}
+      <div className="rv-foot">
+        <div className="row wrap gap-8">
+          <button className="btn primary wrap-text" disabled={busy || !hasKey || !soFarCount} onClick={() => void make(soFar)}>
+            {busy ? 'Analysing…'
+              // One for this cycle already: it's brought up to date with what's come in since.
+              : hasSoFar ? <><Icon name="sync" size={16} /> Refresh this cycle</>
+              : 'Review this cycle so far'}
+          </button>
+          {due && <button className="btn wrap-text" disabled={busy || !hasKey} onClick={() => void make(due)}>Review {fmtSpan(due.start, due.end)}</button>}
+        </div>
+        {err && <p className="small error" role="status">{err}</p>}
+        {!soFarCount && <p className="xs muted">No transactions since {fmtShort(soFar.start)} yet. Connect your bank or upload a statement to add them.</p>}
+        {!hasKey && r && <p className="xs muted">Add your Google API key in <a href="#/settings">Settings → Reading documents</a> to create new reviews.</p>}
+        {r && <p className="xs muted">Updated {made(r.made)} · Totals from {r.sources.join(', ') || 'your transactions'} · Commentary by Gemini</p>}
       </div>
-      {!soFarCount && <p className="small muted">No transactions since payday yet: they come from the bank connection, or upload a statement or export.</p>}
-      {!hasKey && r && <p className="small muted">Add your Google key in Settings → Reading documents to make new ones.</p>}
-      {err && <p className="small error" role="status">{err}</p>}
       </div></Collapse>
     </section>
   );

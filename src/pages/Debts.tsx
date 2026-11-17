@@ -815,11 +815,13 @@ function DebtEditModal({ debt: d, tab: first = 'balance', onClose, onDelete }: {
     { id: 'details', label: 'Details' },
   ];
   return (
-    <Modal title={d.name} width={560} onClose={onClose}>
+    <Modal title={d.name} width={560} className="pinned" onClose={onClose}>
       {(close) => (
         <>
-          <div className="seg fill modal-tabs" role="tablist" aria-label={`${d.name}: what to change`}>
-            {tabs.map((t) => <button key={t.id} role="tab" aria-selected={tab === t.id} onClick={() => setTab(t.id)}>{t.label}</button>)}
+          <div className="modal-tabs">
+            <div className="seg fill" role="tablist" aria-label={`${d.name}: what to change`}>
+              {tabs.map((t) => <button key={t.id} role="tab" aria-selected={tab === t.id} onClick={() => setTab(t.id)}>{t.label}</button>)}
+            </div>
           </div>
           <div role="tabpanel" className="stack gap-16">
             {tab === 'balance' && <BalanceEditor debt={d} used={used} editing onDone={close} onAddPlan={() => setTab('purchase')} />}

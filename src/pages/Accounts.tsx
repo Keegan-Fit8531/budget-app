@@ -217,8 +217,7 @@ function BalanceCard({ account: a, view, day, mover, onPick }: {
 function BankOnlyCard({ account: a, mover }: { account: Account; mover: React.ReactNode }) {
   const { budget } = useBudget();
   const today = todayISO();
-  // Its transactions are all there is to see, so they show from the start; they can be put away.
-  const [open, setOpen] = useState(true);
+  const [open, setOpen] = useState(false); // every card starts closed
   const txns = budget.accountTransactions?.[a.id] ?? [];
   const isPay = a.id === budget.settings.payAccountId;
   const goal = (budget.savings ?? []).find((g) => g.accountId === a.id);
