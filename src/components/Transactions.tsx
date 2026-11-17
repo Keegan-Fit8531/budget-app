@@ -7,20 +7,26 @@ import type { Txn } from '../lib/types';
 import { Disclosure } from './ui';
 
 /** Transactions from bank or card exports, latest first, each with the category it's counted in. */
-export function TransactionList({ items, card }: { items: Txn[]; card?: boolean }) {
+export function TransactionList({ items, card, pending = [], first = 8 }: {
+  items: Txn[]; card?: boolean;
+  /** Not settled yet (today's card purchases): shown first, marked as pending. */
+  pending?: Txn[];
+  /** How many show before "Show more". */
+  first?: number;
+}) {
   const mine = useBudget().budget.shopCategories as ShopCategories | undefined;
-  const [shown, setShown] = useState(8);
-  if (!items.length) return null;
-  const latest = items.slice().reverse();
+  const [shown, setShown] = useState(first);
+  if (!items.length && !pending.length) return null;
+  const latest = [...pending.slice().reverse().map((t) => ({ ...t, pending: true })), ...items.slice().reverse().map((t) => ({ ...t, pending: false }))];
   return (
-    <Disclosure title="Transactions" meta={items.length}>
+    <Disclosure title="Transactions" meta={items.length + pending.length}>
       <div>
       {latest.slice(0, shown).map((t, i) => (
-        <div key={`${t.date}-${i}`} className="list-row small">
+        <div key={`${t.date}-${i}`} className={`list-row small${t.pending ? ' pending' : ''}`}>
           <span style={{ flex: '0 0 56px' }} className="muted">{fmtShort(t.date)}</span>
           <span className="grow min0">
             {cleanDescription(t.description)}
-            <span className="xs muted block">{t.amount > 0 ? (card ? 'Payment' : 'Money in') : CATEGORY_LABEL[categorizeTxn(t, mine).category]}</span>
+            <span className="xs muted block">{t.pending ? 'Pending' : t.amount > 0 ? (card ? 'Payment' : 'Money in') : CATEGORY_LABEL[categorizeTxn(t, mine).category]}</span>
           </span>
           <b className="num">{t.amount > 0 ? `+${cash(t.amount)}` : `−${cash(-t.amount)}`}</b>
         </div>

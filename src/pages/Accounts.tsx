@@ -10,7 +10,7 @@ import { balanceOn, balanceToday, depositFor, forecastBalances, outflows } from 
 import { periodContaining, shiftPeriod, type Period } from '../lib/engine';
 import { cash, centsToInput, parseMoney } from '../lib/money';
 import { moveAmong } from '../lib/order';
-import { AccIcon, CardColumns, Collapse, DetailsToggle, Disclosure, MoveButtons, PageHead, ReorderToggle, useFlip } from '../components/ui';
+import { AccIcon, CardColumns, Collapse, DetailsToggle, Disclosure, MoveButtons, ReorderToggle, useFlip, FlatDetails } from '../components/ui';
 import { bankSync } from '../lib/bank';
 import { setBalance } from '../lib/history';
 import { newId, useBudget } from '../lib/store';
@@ -59,14 +59,12 @@ export function Accounts({ deposits }: { deposits?: string }) {
 
   return (
     <>
-      <PageHead title="Accounts" sub={`What's in each account, up to next pay on ${fmtDay(period.nextPayday)}.`}>
+      <DayPicker dv={dv} title="Accounts">
         <div className="page-actions">
           <ReorderToggle on={reorder} onChange={setReorder} />
           <button className="btn primary" onClick={() => setDepOpen('')}><Icon name="transfer" size={16} /> Deposits</button>
         </div>
-      </PageHead>
-
-      <DayPicker dv={dv} />
+      </DayPicker>
 
       {known.length > 0 && (
         <section className="stats">
@@ -157,7 +155,11 @@ function BalanceCard({ account: a, view, day, mover, onDeposits, onPick }: {
         </div>
         <div className="acct-side">
           {entry && <SyncPill source={sync.linked ? 'bank' : 'entered'} at={sync.at ?? entry.asOf} />}
-          {mover ?? <button className="icon-btn mini has-tip tip-left" data-tip="Deposits and costs" aria-label={`${a.name}: what payday sends and its costs`} onClick={onDeposits}><Icon name="settings" size={16} /></button>}
+          {!mover && entry && <>
+            <button className="icon-btn mini has-tip" data-tip="Update balance" aria-label={`Update ${a.name} balance`} onClick={() => setEditing(true)}><Icon name="edit" size={14} /></button>
+            <button className="icon-btn mini has-tip" data-tip="One-off cost" aria-label={`Record a one-off cost from ${a.name}`} onClick={() => setCosting(true)}><Icon name="plus" size={14} /></button>
+          </>}
+          {mover ?? <button className="icon-btn mini has-tip tip-left" data-tip="Deposits and costs" aria-label={`${a.name}: what payday sends and its costs`} onClick={onDeposits}><Icon name="settings" size={14} /></button>}
         </div>
       </div>
 
@@ -167,8 +169,6 @@ function BalanceCard({ account: a, view, day, mover, onDeposits, onPick }: {
       ) : (
         <div className="acct-fig">
           <b className={`fig ${shown !== undefined && shown < 0 ? 'neg' : ''}`}>{shown !== undefined ? cash(shown) : '—'}</b>
-          <button className="icon-btn mini has-tip" data-tip="Update balance" aria-label={`Update ${a.name} balance`} onClick={() => setEditing(true)}><Icon name="edit" size={16} /></button>
-          <button className="icon-btn mini has-tip" data-tip="One-off cost" aria-label={`Record a one-off cost from ${a.name}`} onClick={() => setCosting(true)}><Icon name="plus" size={16} /></button>
           {(view || estimated) && (
             <span className="xs muted note-line">
               {view ? `${day > today ? 'Estimated' : 'On'} ${fmtShort(day)}` : `Estimated from ${fmtShort(entry.asOf)}${dueToday ? ", before today's bills" : ''}`}
@@ -181,7 +181,7 @@ function BalanceCard({ account: a, view, day, mover, onDeposits, onPick }: {
         ? <PayProjectionView budget={budget} account={a} period={view} day={day} today={today} open={open} />
         : <MonthTracker budget={budget} account={a} today={today} open={open} />)}
 
-      <Collapse open={open} stacked>
+      <Collapse open={open} stacked><FlatDetails.Provider value>
         <div className="acct-body">
           {forecast.length > 0 && (
             <Disclosure title="Next 6 pays" meta={lowest !== undefined ? `lowest ${cash(lowest, { whole: true })}` : undefined}>
@@ -205,9 +205,9 @@ function BalanceCard({ account: a, view, day, mover, onDeposits, onPick }: {
             </Disclosure>
           )}
           <AccountHistoryList account={a} />
-          <TransactionList items={txns} />
+          <TransactionList items={txns} pending={budget.pendingTransactions?.[a.id]} />
         </div>
-      </Collapse>
+      </FlatDetails.Provider></Collapse>
 
       {entry && hasDetails && <DetailsToggle open={open} onChange={setOpen} />}
       {costing && <OneOffCostModal account={a} onClose={() => setCosting(false)} />}
@@ -222,7 +222,6 @@ function BalanceCard({ account: a, view, day, mover, onDeposits, onPick }: {
 function BankOnlyCard({ account: a, mover }: { account: Account; mover: React.ReactNode }) {
   const { budget } = useBudget();
   const today = todayISO();
-  const [open, setOpen] = useState(false); // every card starts closed
   const txns = budget.accountTransactions?.[a.id] ?? [];
   const isPay = a.id === budget.settings.payAccountId;
   const goal = (budget.savings ?? []).find((g) => g.accountId === a.id);
@@ -235,7 +234,7 @@ function BankOnlyCard({ account: a, mover }: { account: Account; mover: React.Re
   const latest = txns[txns.length - 1];
 
   return (
-    <section className={`card acct${open ? ' open' : ''}`} data-flip={a.id}>
+    <section className="card acct" data-flip={a.id}>
       <div className="acct-head">
         <AccIcon color={a.color} name={isPay ? 'wallet' : goal ? 'piggy' : 'bank'} />
         <div className="grow min0">
@@ -247,8 +246,8 @@ function BankOnlyCard({ account: a, mover }: { account: Account; mover: React.Re
         <div className="acct-side">
           <SyncPill source={sync.linked || goalSync.linked ? 'bank' : bal ? 'entered' : 'none'} at={sync.at ?? goalSync.at ?? bal?.asOf} />
           {mover ?? (goal
-            ? <a className="icon-btn mini has-tip tip-left" data-tip="Open in Savings" aria-label={`Open ${goal.name} in Savings`} href="#/savings"><Icon name="right" size={16} /></a>
-            : <a className="icon-btn mini has-tip tip-left" data-tip="Spending in Insights" aria-label="Spending in Insights" href="#/insights"><Icon name="pie" size={16} /></a>)}
+            ? <a className="icon-btn mini has-tip tip-left" data-tip="Open in Savings" aria-label={`Open ${goal.name} in Savings`} href="#/savings"><Icon name="right" size={14} /></a>
+            : <a className="icon-btn mini has-tip tip-left" data-tip="Spending in Insights" aria-label="Spending in Insights" href="#/insights"><Icon name="pie" size={14} /></a>)}
         </div>
       </div>
 
@@ -265,13 +264,12 @@ function BankOnlyCard({ account: a, mover }: { account: Account; mover: React.Re
         </div>
       ) : <p className="small muted">Upload a statement or CSV export to see what goes in and out.</p>}
 
-      <Collapse open={open} stacked>
+      {/* Its transactions are all there is to see, so they're shown straight away: the latest few, and more on a tap. */}
+      <FlatDetails.Provider value>
         <div className="acct-body">
-          <TransactionList items={txns} />
+          <TransactionList items={txns} pending={budget.pendingTransactions?.[a.id]} first={5} />
         </div>
-      </Collapse>
-
-      {txns.length > 0 && <DetailsToggle open={open} onChange={setOpen} />}
+      </FlatDetails.Provider>
     </section>
   );
 }

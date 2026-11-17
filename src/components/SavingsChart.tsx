@@ -76,7 +76,7 @@ export function SavingsChart({ budget }: { budget: Budget }) {
   }, [budget, chosen, pays, today, one?.targetDate]);
 
   const start = chosen.reduce((t, g) => t + g.balance, 0);
-  const padL = 56, padR = 12, topH = 190, barH = 80, gap = 34, axisH = 22;
+  const padL = 56, padR = 12, topH = 190, barH = 80, gap = 72, axisH = 22;
   const innerW = Math.max(120, width - padL - padR);
   const step = innerW / Math.max(1, points.length - 1);
   const x = (i: number) => padL + i * step;
@@ -145,7 +145,8 @@ export function SavingsChart({ budget }: { budget: Budget }) {
               <text x={padL - 8} y={yA(maxAdd * t) + 4} textAnchor="end" fontSize="11" fill="var(--muted)">{axisMoney(maxAdd * t)}</text>
             </g>
           ))}
-          <text x={padL} y={barTop - 10} fontSize="12" fill="var(--muted)">Added each pay</text>
+          <line x1={0} x2={width} y1={topH + 14} y2={topH + 14} stroke="var(--line)" strokeWidth="1" />
+          <text x={0} y={barTop - 14} fontSize="13" fontWeight="700" fill="var(--ink)">Added each pay</text>
 
           {target !== undefined && (
             <g>
@@ -155,7 +156,7 @@ export function SavingsChart({ budget }: { budget: Budget }) {
           )}
           {dateI >= 0 && (
             <g>
-              <line x1={x(dateI)} x2={x(dateI)} y1={6} y2={barTop + barH} stroke="var(--muted)" strokeWidth="1" opacity="0.6" />
+              <line x1={x(dateI)} x2={x(dateI)} y1={6} y2={topH} stroke="var(--muted)" strokeWidth="1" opacity="0.6" />
               <text x={x(dateI) + 5} y={14} fontSize="11" fill="var(--muted)">Target date</text>
             </g>
           )}
@@ -175,7 +176,7 @@ export function SavingsChart({ budget }: { budget: Budget }) {
           {points.map((p, i) => (i % labelEvery === 0 ? (
             <text key={`x${i}`} x={x(i)} y={H - 6} textAnchor="middle" fontSize="11" fill="var(--muted)">{p.label}</text>
           ) : null))}
-          {hover !== null && <line x1={x(hover)} x2={x(hover)} y1={6} y2={barTop + barH} stroke="var(--ink)" strokeWidth="1" opacity="0.35" />}
+          {hover !== null && <><line x1={x(hover)} x2={x(hover)} y1={6} y2={topH} stroke="var(--ink)" strokeWidth="1" opacity="0.35" /><line x1={x(hover)} x2={x(hover)} y1={barTop} y2={barTop + barH} stroke="var(--ink)" strokeWidth="1" opacity="0.35" /></>}
         </svg>
 
         {h && (
@@ -216,7 +217,6 @@ export function SavingsChart({ budget }: { budget: Budget }) {
           </table>
         </div>
       </Disclosure>
-      <p className="small muted">Projection only: uses what each payday sends (including any one-pay adjustments) and adds no fund returns.</p>
     </section>
   );
 }

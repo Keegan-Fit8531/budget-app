@@ -1411,6 +1411,11 @@ describe('bank connection: balances and categories', () => {
     applyBank(b, { accounts: [acc({ balance: 49.37, available: 21.05, updated: '2026-11-17T00:30:00.000Z' })], transactions: [] }, { a1: 'account:everyday' }, '2026-11-17', '2026-11-17T00:31:00.000Z');
     expect(b.balances?.everyday).toEqual({ amount: 2105, asOf: '2026-11-17' });
     expect(b.bankSeen?.['account:everyday']).toBe('2026-11-17T00:30:00.000Z');
+    // Pending card purchases are kept apart, and replaced on the next sync.
+    applyBank(b, { accounts: [acc({ balance: 49.37, available: 21.05 })], transactions: [], pending: [{ account: 'a1', date: '2026-11-17', description: 'Tea Talk', amount: -12.81, merchant: null }] }, { a1: 'account:everyday' }, '2026-11-17');
+    expect(b.pendingTransactions?.everyday).toEqual([{ date: '2026-11-17', description: 'Tea Talk', amount: -1281 }]);
+    applyBank(b, { accounts: [acc({ balance: 49.37, available: 21.05 })], transactions: [], pending: [] }, { a1: 'account:everyday' }, '2026-11-17');
+    expect(b.pendingTransactions?.everyday).toBeUndefined();
     // The same balance a day later is still today's balance.
     applyBank(b, { accounts: [acc({ balance: 49.37, available: 21.05 })], transactions: [] }, { a1: 'account:everyday' }, '2026-11-18');
     expect(b.balances?.everyday).toEqual({ amount: 2105, asOf: '2026-11-18' });

@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
+import { Collapse } from './ui';
 import { addDays, fmtDay, fmtShort, monthName, todayISO } from '../lib/dates';
 import { periodContaining, shiftPeriod, type Period } from '../lib/engine';
 import { useBudget } from '../lib/store';
@@ -42,11 +43,11 @@ export function useDayView(key: string): DayView {
 }
 
 /**
- * The pay and day being looked at, on one line: ‹ October pay · this pay ›, Fri 13 Nov · today.
- * Looking at a different day is something done now and then, so the slider for it sits behind
- * the calendar button (and stays open while a day other than today is chosen).
+ * The top of a page that looks at a pay and a day in it, the same way the Planner does: the page's
+ * title with the pay and day under it, and ‹ › to step pays beside it. A different day is picked
+ * now and then, so its slider sits behind the calendar button (and stays open while one is chosen).
  */
-export function DayPicker({ dv }: { dv: DayView }) {
+export function DayPicker({ dv, title, children }: { dv: DayView; title: string; children?: ReactNode }) {
   const { offset, view, day, today, dayIdx, goPay, setDay } = dv;
   const setIdx = (i: number) => setDay(addDays(view.start, Math.max(0, Math.min(view.days - 1, i))));
   const now = today >= view.start && today <= view.end;
@@ -54,27 +55,29 @@ export function DayPicker({ dv }: { dv: DayView }) {
   const [picking, setPicking] = useState(false);
   const open = picking || day !== today;
   return (
-    <div className="card stack gap-8" style={{ padding: 'var(--s-3) var(--s-4)' }}>
-      <div className="between nowrap">
-        <div className="min0">
-          <b className="block">{monthName(view.start)} pay{now ? ' · this pay' : offset === 1 ? ' · next pay' : ''}</b>
-          <span className="small muted block">
-            {day === today ? `Today, ${fmtShort(day)}` : `${fmtDay(day)} · ${day > today ? 'projected' : 'earlier'}`} · day {dayIdx + 1} of {view.days}
-          </span>
-        </div>
-        <div className="row gap-4 day-steps" style={{ flex: '0 0 auto' }}>
+    <>
+      <header className="page-head">
+        <div className="pay-nav grow">
+          <div className="min0">
+            <h1 className="h1">{title}</h1>
+            <p className="small muted">
+              {monthName(view.start)} pay{now ? '' : offset === 1 ? ' (next)' : ''} · {day === today ? `today, ${fmtShort(day)}` : `${fmtDay(day)}, ${day > today ? 'projected' : 'earlier'}`} · day {dayIdx + 1} of {view.days}
+            </p>
+          </div>
+          <div className="pay-nav-steps">
+            <button className="icon-btn plain" aria-label="Previous pay" disabled={offset === 0} onClick={() => goPay(offset - 1)}><Icon name="left" /></button>
+            <button className="icon-btn plain" aria-label="Next pay" onClick={() => goPay(offset + 1)}><Icon name="right" /></button>
+            {day === today && (
+              <button className={`icon-btn plain has-tip${open ? ' on' : ''}`} data-tip="Look at another day" aria-label="Look at another day" aria-expanded={open}
+                onClick={() => setPicking(!open)}><Icon name="calendar" /></button>
+            )}
+          </div>
           {moved && <button className="btn small ghost" onClick={() => { goPay(0); setPicking(false); }}>Today</button>}
-          {/* While another day is chosen the slider stays open, and Today puts it away. */}
-          {day === today && (
-            <button className={`icon-btn plain has-tip${open ? ' on' : ''}`} data-tip="Look at another day" aria-label="Look at another day" aria-expanded={open}
-              onClick={() => setPicking(!open)}><Icon name="calendar" /></button>
-          )}
-          <button className="icon-btn plain" aria-label="Previous pay" disabled={offset === 0} onClick={() => goPay(offset - 1)}><Icon name="left" /></button>
-          <button className="icon-btn plain" aria-label="Next pay" onClick={() => goPay(offset + 1)}><Icon name="right" /></button>
         </div>
-      </div>
-      {open && (
-        <div className="stack gap-4" style={{ borderTop: '1px solid var(--line)', paddingTop: 'var(--s-2)' }}>
+        {children}
+      </header>
+      <Collapse open={open}>
+        <div className="card stack gap-4" style={{ padding: 'var(--s-3) var(--s-4)' }}>
           <div className="row nowrap gap-8">
             <button className="icon-btn plain" aria-label="Previous day" onClick={() => setIdx(dayIdx - 1)} disabled={dayIdx === 0}><Icon name="left" /></button>
             <input type="range" min={0} max={view.days - 1} value={dayIdx} onChange={(e) => setIdx(Number(e.target.value))}
@@ -89,7 +92,7 @@ export function DayPicker({ dv }: { dv: DayView }) {
             </span>
           </div>
         </div>
-      )}
-    </div>
+      </Collapse>
+    </>
   );
 }
