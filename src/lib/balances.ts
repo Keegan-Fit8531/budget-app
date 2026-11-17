@@ -257,7 +257,8 @@ export function depositFor(b: Budget, accountId: string, p: Period, today: ISODa
     const since = (debt.paid ?? []).reduce((t, x) => t + (x.date >= p.start ? x.amount : 0), 0);
     return Math.min(amount, Math.max(0, projectedOwed(debt, b.settings, addDays(p.start, -1), debtPerPay(b, debt)) + since));
   }
-  return amount;
+  // A cost put aside here (moved to a savings account, say) is always sent, even with a fixed amount below it.
+  return Math.max(amount, setAsideOn(b, accountId, p.start));
 }
 
 /** Estimated balance at the end of `date`, from the last balance you entered. Undefined if unknown. */
