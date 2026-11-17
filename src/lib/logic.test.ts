@@ -1368,7 +1368,7 @@ describe('bank connection (Akahu)', () => {
   it('adds a linked account’s new transactions once, and remembers its number', () => {
     const b = debtBudget();
     const links = { acc_1: 'account:everyday', acc_2: 'ignore' };
-    expect(applyBank(b, data, links, '2026-11-16')).toEqual([{ name: 'Everyday', added: 2 }]);
+    expect(applyBank(b, data, links, '2026-11-16')).toEqual([{ name: 'Everyday', added: 2, balance: 10000 }]);
     expect(b.accountTransactions?.everyday?.map((t) => t.amount)).toEqual([-4520, 90000]);
     expect(b.accounts.find((a) => a.id === 'everyday')!.ending).toBe('3456');
     expect(applyBank(b, data, links, '2026-11-17')).toEqual([{ name: 'Everyday', added: 0 }]);
@@ -1405,6 +1405,15 @@ describe('bank connection: balances and categories', () => {
     b.bankAuto = false;
     applyBank(b, { accounts: [acc({ balance: 10 })], transactions: [] }, { a1: 'account:everyday' }, '2026-11-17');
     expect(b.balances?.everyday).toEqual({ amount: 43210, asOf: '2026-11-16' });
+  });
+  it('a bank account shows what can be spent now (pending card purchases off), and when the bank sent it', () => {
+    const b = debtBudget();
+    applyBank(b, { accounts: [acc({ balance: 49.37, available: 21.05, updated: '2026-11-17T00:30:00.000Z' })], transactions: [] }, { a1: 'account:everyday' }, '2026-11-17', '2026-11-17T00:31:00.000Z');
+    expect(b.balances?.everyday).toEqual({ amount: 2105, asOf: '2026-11-17' });
+    expect(b.bankSeen?.['account:everyday']).toBe('2026-11-17T00:30:00.000Z');
+    // The same balance a day later is still today's balance.
+    applyBank(b, { accounts: [acc({ balance: 49.37, available: 21.05 })], transactions: [] }, { a1: 'account:everyday' }, '2026-11-18');
+    expect(b.balances?.everyday).toEqual({ amount: 2105, asOf: '2026-11-18' });
   });
   it('a linked card’s owed follows the bank (shown negative there)', () => {
     const b = debtBudget();
