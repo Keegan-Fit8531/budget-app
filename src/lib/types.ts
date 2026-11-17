@@ -31,6 +31,8 @@ export interface Account {
   round?: Cents;
   /** The end of its account number, as in its CSV exports, so an export is matched to it. */
   ending?: string;
+  /** Its full account number (from the bank connection), so a transfer to or from it can be named. */
+  number?: string;
 }
 
 /** A transaction from a bank or card export (CSV). + is money in (or paid off a card), − is money out (spent). */
@@ -175,6 +177,8 @@ export interface Debt {
    * grow, as each of its payments went out.
    */
   paid?: PaidPayment[];
+  /** The last day a document (statement, screenshot, export) brought it up to date. */
+  checkedOn?: ISODate;
   /** Payments to it seen leaving a linked bank account on a bank sync (e.g. ANZ → Gem Visa), oldest first. */
   bankPayments?: BankPayment[];
 }

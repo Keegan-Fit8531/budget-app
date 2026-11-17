@@ -11,7 +11,7 @@ import { ago } from './ui';
 export function SyncPill({ source, at }: { source: 'bank' | 'entered' | 'none'; at?: string }) {
   const { update } = useBudget();
   const syncing = useBankSyncing();
-  if (source === 'none' || (!at && source !== 'bank')) return <span className="sync-pill stale">Not tracked</span>;
+  if (source === 'none' || (!at && source !== 'bank')) return <span className="sync-pill stale">Not updated yet</span>;
   const days = at ? (Date.now() - Date.parse(at.length <= 10 ? `${at}T12:00:00` : at)) / 86400000 : Infinity;
   // Current, getting old, or old: the whole pill shows which.
   const state = days < 1.5 ? 'fresh' : days < 4 ? 'aging' : 'stale';
@@ -19,7 +19,7 @@ export function SyncPill({ source, at }: { source: 'bank' | 'entered' | 'none'; 
   if (source === 'entered') {
     return (
       <span className={`sync-pill ${state}`} title={`Balance you entered: ${full}`}>
-        <Icon name="edit" size={12} stroke={2.2} />{ago(at!)}
+        {ago(at!)}
       </span>
     );
   }

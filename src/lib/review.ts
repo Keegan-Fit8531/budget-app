@@ -108,13 +108,22 @@ export function reviewInput(b: Budget, c: Period & { partial?: boolean }): strin
     lines.push('', `The whole cycle before (${prev.start} to ${prev.end}): $${d(before.total)} over ${before.count} purchases.`);
     for (const k of before.categories) lines.push(`- ${CATEGORY_LABEL[k.category]}: $${d(k.total)}`);
   }
-  // Every transaction, capped so a very busy month still fits.
-  const txns = cycleTransactions(b, c).sort((x, y) => (x.t.date < y.t.date ? -1 : 1)).slice(-1500);
-  lines.push('', 'Every transaction this cycle (date|card or account|description|amount, − is money out|category):');
-  for (const { source, t } of txns) {
-    const cat = t.amount > 0 ? 'money in' : CATEGORY_LABEL[categorizeTxn(t, mine).category];
-    lines.push(`${t.date}|${source}|${cleanDescription(t.merchant || t.description).replace(/\|/g, ' ')}|${t.amount < 0 ? '-' : ''}${d(Math.abs(t.amount))}|${cat}`);
+  // The purchases themselves, to name shops and habits: not transfers, card repayments or money in
+  // (the totals above already cover those), the same shop on the same day once, and at most 300 of
+  // the biggest, so a busy month stays small to send.
+  const seen = new Map<string, { date: string; source: string; shop: string; amount: Cents; cat: string; n: number }>();
+  for (const { source, t } of cycleTransactions(b, c)) {
+    if (t.amount >= 0) continue;
+    const k = categorizeTxn(t, mine);
+    if (k.category === 'transfers') continue;
+    const shop = cleanDescription(t.merchant || t.description).replace(/\|/g, ' ').slice(0, 40);
+    const key = `${t.date}|${shop}`;
+    const was = seen.get(key);
+    if (was) { was.amount += -t.amount; was.n++; } else seen.set(key, { date: t.date, source, shop, amount: -t.amount, cat: CATEGORY_LABEL[k.category], n: 1 });
   }
+  const rows = [...seen.values()].sort((x, y) => y.amount - x.amount).slice(0, 300).sort((x, y) => (x.date < y.date ? -1 : 1));
+  lines.push('', 'Purchases this cycle (date|shop|amount out|category; ×n = that many that day):');
+  for (const r of rows) lines.push(`${r.date.slice(5)}|${r.shop}|${d(r.amount)}${r.n > 1 ? ` ×${r.n}` : ''}|${r.cat}`);
   return lines.join('\n');
 }
 

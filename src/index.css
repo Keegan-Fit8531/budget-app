@@ -459,6 +459,16 @@ select::-ms-expand { display: none; }
 /* A wide pop-up for lists of accounts (Deposits): the rows inside are outlined, as they sit on a card. */
 .modal.wide { max-width: 760px; }
 .modal .acc-section { border: 1px solid var(--line); }
+.acc-section.bare, .modal .acc-section.bare { border: 0; background: none; }
+.acc-section.bare > .acc-head { display: none; }
+.acc-section.bare .acc-body, .modal .acc-section.bare .acc-body { padding: 0; }
+/* A pop-up's form shown inside another pop-up's tab: just the form, no second panel or heading. */
+.modal-back.inline { position: static; inset: auto; background: none; padding: 0; z-index: auto; display: block; animation: none; }
+.modal-back.inline > .modal { box-shadow: none; padding: 0; max-width: none !important; max-height: none; overflow: visible; animation: none; border-radius: 0; background: none; }
+.modal-back.inline > .modal > :first-child { display: none; }
+/* Tabs at the top of a pop-up: each one a part of what's being edited. */
+.modal-tabs { position: sticky; top: calc(-1 * var(--s-6)); z-index: 2; background: var(--card); padding: var(--s-1) 0; }
+@media (max-width: 600px) { .modal-tabs { top: calc(-1 * var(--s-5)); } }
 .modal .acc-head { padding: var(--s-3) var(--s-4); }
 .modal .acc-body { padding: 0 var(--s-4) var(--s-4); }
 @media (prefers-reduced-motion: reduce) { .modal-back, .modal, .modal-back.closing, .modal-back.closing .modal { animation: none; } }

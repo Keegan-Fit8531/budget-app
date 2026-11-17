@@ -12,6 +12,16 @@ import { Disclosure, Modal } from './ui';
 
 /** Record money spent from an account outside its plan (a tyre puncture): it comes off what's in the account. */
 export function OneOffCostModal({ account: a, onClose }: { account: Account; onClose: () => void }) {
+  return (
+    <Modal title="One-off cost" sub={`Paid from ${a.name}`} width={460} onClose={onClose}>
+      {(close) => <OneOffCostForm account={a} onDone={close} />}
+    </Modal>
+  );
+}
+
+/** The one-off cost form itself, for a pop-up of its own or a tab in the account's pop-up. */
+export function OneOffCostForm({ account: a, onDone }: { account: Account; onDone: () => void }) {
+  const onClose = onDone;
   const { budget, update } = useBudget();
   const today = todayISO();
   const [note, setNote] = useState('');
@@ -40,9 +50,9 @@ export function OneOffCostModal({ account: a, onClose }: { account: Account; onC
     close();
   }
 
+  const close = onDone;
   return (
-    <Modal title="One-off cost" sub={`Paid from ${a.name}`} width={460} onClose={onClose}>
-      {(close) => (<>
+      <>
         <label className="field">What was it
           <input autoFocus value={note} placeholder="Tyre puncture" onChange={(e) => { setNote(e.target.value); setErr(''); }}
             onKeyDown={(e) => e.key === 'Enter' && save()} />
@@ -74,8 +84,7 @@ export function OneOffCostModal({ account: a, onClose }: { account: Account; onC
           <button className="btn" onClick={close}>Cancel</button>
           <button className="btn primary" onClick={() => save(close)}>Record cost</button>
         </div>
-      </>)}
-    </Modal>
+      </>
   );
 }
 
@@ -87,7 +96,7 @@ export function AccountHistoryList({ account: a }: { account: Account }) {
   const [removing, setRemoving] = useState<AccountEvent | null>(null);
   const entry = budget.balances?.[a.id];
   if (!list.length) return null;
-  const shown = all ? list : list.slice(0, 6);
+  const shown = all ? list : list.slice(0, 5);
 
   function remove(putBack: boolean) {
     if (!removing) return;
@@ -113,7 +122,7 @@ export function AccountHistoryList({ account: a }: { account: Account }) {
         </div>
       ))}
       </div>
-      {list.length > shown.length && <button className="btn small ghost" style={{ alignSelf: 'flex-start' }} onClick={() => setAll(true)}>Show all {list.length}</button>}
+      {list.length > shown.length && <button className="btn small ghost" style={{ alignSelf: 'flex-start' }} onClick={() => setAll(true)}>Show {list.length - shown.length} more</button>}
 
       {removing && (
         <Modal title={`Remove ${removing.note || 'this cost'} (${cash(removing.amount)})?`} width={460} onClose={() => setRemoving(null)}>

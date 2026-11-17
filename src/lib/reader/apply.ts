@@ -17,6 +17,18 @@ import type { Proposal } from './check';
 // ---------------------------------------------------------------------------------------------
 
 export function applyProposal(b: Budget, p: Proposal, today: ISODate): Budget {
+  // A document about a card or Afterpay: note the day, so its card shows when it was last brought up to date.
+  const debtId = p.kind === 'statement' || p.kind === 'afterpay' ? p.debtId : p.kind === 'transactions' && p.target.type === 'debt' ? p.target.id : undefined;
+  if (debtId) {
+    const run = applyProposalInner(b, p, today);
+    const d = (run.debts ?? []).find((x) => x.id === debtId);
+    if (d) d.checkedOn = today;
+    return run;
+  }
+  return applyProposalInner(b, p, today);
+}
+
+function applyProposalInner(b: Budget, p: Proposal, today: ISODate): Budget {
   if (p.kind === 'payslip') { recordPayslip(b, p.slip); return b; }
   if (p.kind === 'transactions') { applyTransactions(b, p, today); return b; }
   if (p.kind === 'kiwisaver') { applyKiwiSaver(b, p); return b; }
