@@ -1,7 +1,7 @@
 import { addDays, diffDays, type ISODate } from './dates';
 import { periodContaining, planFor, shiftPeriod, type Period } from './engine';
 import { owed } from './debts';
-import { CATEGORY_LABEL, categorizeTxn, cleanDescription, summarize, type ShopCategories } from './spending';
+import { CATEGORY_LABEL, categorizeTxn, cleanDescription, shopMap, summarize } from './spending';
 import type { Budget, Cents, Txn } from './types';
 
 // ---------------------------------------------------------------------------------------------
@@ -73,7 +73,7 @@ export function reviewDue(b: Budget, today: ISODate): Period | null {
 
 /** The numbers worked out here: what was spent and on what, against the cycle before. */
 export function cycleNumbers(b: Budget, c: Period) {
-  const mine = b.shopCategories as ShopCategories | undefined;
+  const mine = shopMap(b);
   const all = sources(b).flatMap((s) => s.txns);
   const now = summarize(all, c.start, c.end, mine);
   const prev = shiftPeriod(c, -1, b.settings);
@@ -83,7 +83,7 @@ export function cycleNumbers(b: Budget, c: Period) {
 
 /** Everything about the cycle, as text for Gemini: your accounts' and goals' names and what was spent, but no account numbers. */
 export function reviewInput(b: Budget, c: Period & { partial?: boolean }): string {
-  const mine = b.shopCategories as ShopCategories | undefined;
+  const mine = shopMap(b);
   const { now, before, prev } = cycleNumbers(b, c);
   const plan = planFor(b, c);
   const slip = b.payslips?.[c.start];

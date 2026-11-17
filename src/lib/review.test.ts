@@ -69,3 +69,28 @@ describe("this month's insights", () => {
     expect(parseReview(JSON.stringify({ ...words, good: ['a', 7, ''] }))?.good).toEqual(['a']);
   });
 });
+
+describe('sorting shops out of Other', () => {
+  it('only unknown shops are sent, with no amounts; guesses fill in, your own choices still win', async () => {
+    const { otherShops, shopMap, categorizeTxn } = await import('./spending');
+    const { sortInput, parseSorted } = await import('./reader/sortShops');
+    const txns = [
+      { date: '2026-11-01', description: 'Tea Talk Syl Card number: 4835', amount: -1281 },
+      { date: '2026-11-02', description: 'Tea Talk Syl Card number: 4835', amount: -1230 },
+      { date: '2026-11-02', description: 'Maki Mono Sy', amount: -1056 },
+      { date: '2026-11-03', description: 'COUNTDOWN HENDERSON', amount: -4520 },
+    ];
+    const b: { shopCategories?: Record<string, string>; shopGuesses?: Record<string, string> } = {};
+    const shops = otherShops(txns, b);
+    expect(shops.map((s) => [s.shop, s.count])).toEqual([['Tea Talk', 2], ['Maki Mono', 1]]);
+    const sent = sortInput(shops);
+    expect(sent).not.toMatch(/12\.81|2026/);
+    const got = parseSorted(JSON.stringify({ shops: [{ shop: 'Tea Talk', category: 'eating-out' }, { shop: 'Made up', category: 'shopping' }, { shop: 'Maki Mono', category: 'nonsense' }] }), shops);
+    expect(got).toEqual({ 'tea talk': 'eating-out' });
+    b.shopGuesses = { ...got, 'maki mono': 'other' };
+    expect(categorizeTxn(txns[0], shopMap(b)).category).toBe('eating-out');
+    expect(otherShops(txns, b)).toEqual([]); // nothing asked twice
+    b.shopCategories = { 'tea talk': 'takeaways' };
+    expect(categorizeTxn(txns[0], shopMap(b)).category).toBe('takeaways');
+  });
+});

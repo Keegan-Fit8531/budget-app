@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { fmtShort } from '../lib/dates';
 import { cash } from '../lib/money';
-import { CATEGORY_LABEL, categorizeTxn, cleanDescription, type ShopCategories } from '../lib/spending';
+import { CATEGORY_LABEL, categorizeTxn, cleanDescription, shopMap } from '../lib/spending';
 import { useBudget } from '../lib/store';
 import type { Txn } from '../lib/types';
 import { Disclosure } from './ui';
@@ -16,7 +16,7 @@ export function TransactionList({ items, card, pending = [], first = 8 }: {
   first?: number;
 }) {
   const { budget } = useBudget();
-  const mine = budget.shopCategories as ShopCategories | undefined;
+  const mine = shopMap(budget);
   const [shown, setShown] = useState(first);
   if (!items.length && !pending.length) return null;
   const latest = [...pending.slice().reverse().map((t) => ({ ...t, pending: true })), ...items.slice().reverse().map((t) => ({ ...t, pending: false }))];

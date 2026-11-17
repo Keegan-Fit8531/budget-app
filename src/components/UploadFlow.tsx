@@ -4,7 +4,7 @@ import { owed, planEnds } from '../lib/debts';
 import { cash, centsToInput } from '../lib/money';
 import { applyProposal, fingerprint, preview } from '../lib/reader/apply';
 import { csvBalance, csvTargets, NEW_DEBT, NEW_GOAL, NOT_MINE, purchaseRows, resolvePlanRow, review, toCents, toDraft, type Draft, type DraftFig } from '../lib/reader/check';
-import { CATEGORY_LABEL, summarize, type ShopCategories } from '../lib/spending';
+import { CATEGORY_LABEL, shopMap, summarize } from '../lib/spending';
 import { DEVICE_FALLBACK, errorMessage, ReaderError } from '../lib/reader/errors';
 import { isKiwiSaver } from '../lib/kiwisaver';
 import { isCsv, startRead, type ReadJob, type ReadStage } from '../lib/reader/job';
@@ -448,7 +448,7 @@ function TransactionsCheck({ draft, edit }: { draft: Draft; edit: (fn: (d: Draft
   const inn = rows.filter((x) => x.amount > 0).reduce((a, x) => a + x.amount, 0);
   const matched = t.matchedBy ? targets.find((x) => x.value === t.target) : undefined;
   const shown = t.amount ?? (suggested ? centsToInput(isDebt ? Math.max(0, suggested.amount) : suggested.amount) : '');
-  const top = rows.length ? summarize(rows, rows[0].date, rows[rows.length - 1].date, budget.shopCategories as ShopCategories | undefined).categories.filter((c) => c.category !== 'other').slice(0, 3) : [];
+  const top = rows.length ? summarize(rows, rows[0].date, rows[rows.length - 1].date, shopMap(budget)).categories.filter((c) => c.category !== 'other').slice(0, 3) : [];
   return (
     <>
       {rows.length > 0 && (
