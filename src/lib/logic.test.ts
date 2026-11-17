@@ -897,6 +897,12 @@ describe('reading documents: statements', () => {
     expect(r.proposal).toMatchObject({ kind: 'statement', debtId: 'studentloan', balance: 1315852 });
     upload(b, ird, '2026-11-16');
     expect(owed(debt(b, 'studentloan'))).toBe(1315852);
+    // Read into another field, or with the breakdown's lines as plans, it's still the total that counts.
+    const odd: Extraction = { kind: 'statement', statement: { debtId: 'studentloan', appScreen: true, available: { amount: '13158.52', label: 'Total loan balance' },
+      plans: [{ description: 'Compulsory fees', remaining: { amount: '22981.00' } }, { description: 'Total loan balance', remaining: { amount: '13158.52' } }] } };
+    expect(checkDoc(b, odd, '2026-11-16').proposal).toMatchObject({ debtId: 'studentloan', balance: 1315852, date: '2026-11-16', plans: [], newPlans: [] });
+    const blank = checkDoc(b, { kind: 'statement', statement: { debtId: 'studentloan' } }, '2026-11-16');
+    expect(blank.issues.map((i) => i.text).join(' ')).toMatch(/Total loan balance/);
     // Later payslip deductions still come off it.
     expect(debt(b, 'studentloan').payroll).toBeTruthy();
   });
