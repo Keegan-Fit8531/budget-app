@@ -6,7 +6,7 @@ import type { Payslip } from '../payslip';
 import type { CsvRead } from '../csv';
 import { isKiwiSaver, statementEarned, statementIn } from '../kiwisaver';
 import type { BalanceEntry, Budget, Cents, Debt, DebtPlan, KiwiReading, KiwiStatement, Txn } from '../types';
-import type { DocKind, Extraction, Fig, ReaderSource } from './types';
+import type { DocKind, Extraction, Fig, RawStatement, ReaderSource } from './types';
 
 // ---------------------------------------------------------------------------------------------
 // Checking what was read. The reader's answer becomes a draft you can correct in the rundown; every
@@ -177,10 +177,26 @@ export function guessDebt(debts: Debt[], text: string): string | undefined {
   return byName.length === 1 ? byName[0].id : undefined;
 }
 
+/**
+ * IRD's myIR "Loan breakdown" for the student loan: the reader sometimes puts the "Total loan balance"
+ * somewhere other than balance (as available, or as a plan line), and the fees, costs and deductions
+ * listed above it aren't plans or purchases. Keeps only what's owed.
+ */
+function studentLoanStatement(s: RawStatement): RawStatement {
+  const owing = /total|balance|owing|owed/i;
+  const lines: (Fig | undefined)[] = [s.balance, s.available, s.limit, s.minimum, ...(s.plans ?? []).map((r) => r.remaining && { ...r.remaining, label: r.remaining.label ?? r.description })];
+  const found = lines.filter((f): f is Fig => !!f?.amount?.trim());
+  const balance = s.balance?.amount?.trim() ? s.balance : found.find((f) => owing.test(f.label ?? '')) ?? (s.available?.amount?.trim() ? s.available : undefined);
+  return { ...s, balance, available: undefined, limit: undefined, minimum: undefined, plans: [], purchases: [] };
+}
+
 export function toDraft(ex: Extraction, b: Budget, source: ReaderSource, makeId: () => string, today: ISODate = todayISO()): Draft {
   const p = ex.payslip ?? {};
-  const s = ex.statement ?? {};
   const debtIds = new Set(statementDebts(b).map((d) => d.id));
+  const read = ex.statement ?? {};
+  const readDebt = read.debtId && debtIds.has(read.debtId) ? read.debtId : guessDebt(statementDebts(b), `${read.nameOnDocument ?? ''} ${ex.notes ?? ''}`) ?? '';
+  const loan = (b.debts ?? []).find((d) => d.id === readDebt && isStudentLoan(d));
+  const s = loan ? studentLoanStatement(read) : read;
   const ap = afterpayDebt(b, undefined);
   return {
     kind: ex.kind,
@@ -192,7 +208,7 @@ export function toDraft(ex: Extraction, b: Budget, source: ReaderSource, makeId:
     },
     statement: {
       // Only an id from the list (the student loan included); anything else is asked about.
-      debtId: s.debtId && debtIds.has(s.debtId) ? s.debtId : guessDebt(statementDebts(b), `${s.nameOnDocument ?? ''} ${ex.notes ?? ''}`) ?? '',
+      debtId: readDebt,
       newName: s.nameOnDocument ?? '',
       newDebtId: makeId(),
       nameOnDocument: s.nameOnDocument ?? '',
@@ -201,7 +217,7 @@ export function toDraft(ex: Extraction, b: Budget, source: ReaderSource, makeId:
       available: fig(s.available),
       inCredit: !!s.inCredit,
       // An app screen shows what's owed now, so with no date on it, it's today's.
-      date: s.statementDate ?? (s.appScreen ? today : ''),
+      date: s.statementDate ?? (s.appScreen || loan ? today : ''),
       limit: fig(s.limit),
       minimum: fig(s.minimum),
       plans: (s.plans ?? []).map((r) => ({ planId: r.planId ?? '', description: r.description ?? '', remaining: fig(r.remaining), ends: r.ends ?? '', addAsNew: false, newId: makeId() })),
@@ -590,7 +606,7 @@ function reviewStatement(d: Draft, b: Budget, today: ISODate): Review {
       note(`Only what’s available (${cash(av.cents)}) is shown, so what’s owed is the ${cash(lim)} limit less that: ${cash(lim - av.cents)}.`);
     }
   }
-  if (bal === undefined) block('Enter what’s owed.');
+  if (bal === undefined) block(debt && isStudentLoan(debt) ? 'The loan balance wasn’t found on this screenshot. Type in the “Total loan balance” from myIR’s Loan breakdown.' : 'Enter what’s owed.');
   else if (bal === null) block('Check what’s owed: it should look like 1,240.50.');
   const credit = !!bal && (bal.credit || s.inCredit);
   const balance = bal ? (credit ? 0 : bal.cents) : undefined;
