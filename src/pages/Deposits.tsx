@@ -50,7 +50,8 @@ export function DepositsModal({ openId, onClose }: { openId?: string; onClose: (
 
   // Debts and savings goals are managed in their own tabs.
   const managed = new Set([...(budget.debts ?? []).map((d) => d.accountId), ...(budget.savings ?? []).map((g) => g.accountId)]);
-  const shown = budget.accounts.filter((a) => !managed.has(a.id) && (showArchived || !a.archived));
+  // A goal's account that costs have been moved to is listed too, so they can be changed or moved back.
+  const shown = budget.accounts.filter((a) => (!managed.has(a.id) || budget.items.some((i) => i.accountId === a.id)) && (showArchived || !a.archived));
   const total = shown.filter((a) => !a.archived && a.id !== budget.settings.payAccountId)
     .reduce((t, a) => t + (plan.accounts.find((p) => p.account.id === a.id)?.funded ?? 0), 0);
 

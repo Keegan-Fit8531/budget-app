@@ -589,7 +589,7 @@ export function Planner() {
                       <span className="small muted">Go to</span>
                       {isDebt && <a className="btn small" href="#/debts"><Icon name="card" size={16} /> Debt and payment plans</a>}
                       {isGoal && <a className="btn small" href="#/savings"><Icon name="piggy" size={16} /> Savings goal</a>}
-                      {!isDebt && !isGoal && <a className="btn small" href={`#/accounts/deposits/${a.account.id}`}><Icon name="edit" size={16} /> {isPay ? 'Account and costs' : 'Payday amount and costs'}</a>}
+                      {(!isDebt && !isGoal || budget.items.some((i) => i.accountId === a.account.id)) && <a className="btn small" href={`#/accounts/deposits/${a.account.id}`}><Icon name="edit" size={16} /> {isPay ? 'Account and costs' : 'Payday amount and costs'}</a>}
                       {!isDebt && !isGoal && !isPay && a.account.kind === 'bank' && <a className="btn small" href="#/accounts"><Icon name="wallet" size={16} /> {budget.balances?.[a.account.id] ? 'Update balance' : 'Enter balance'}</a>}
                     </div>
                   </div>

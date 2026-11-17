@@ -511,6 +511,16 @@ describe('money put aside (a car fund)', () => {
     expect([depositFor(b, 'car', pay(b), today), depositFor(b, 'car', pay(b, 1), today)]).toEqual([20000, 22000]);
   });
 
+  it('moved to an account with a fixed amount (a savings account sending $0), it is still sent', () => {
+    const b = car();
+    b.split.find((l) => l.accountId === 'car')!.mode = 'fixed';
+    expect(depositFor(b, 'car', pay(b), today)).toBe(20000);
+    expect(planFor(b, pay(b), today).accounts.find((a) => a.account.id === 'car')!.funded).toBe(20000);
+    // A fixed amount above it is kept as it is.
+    b.split.find((l) => l.accountId === 'car')!.amount = 50000;
+    expect(depositFor(b, 'car', pay(b), today)).toBe(50000);
+  });
+
   it('with bills in the same account: the bills are paid as usual, and what has built up is never spent on them', () => {
     const b = car();
     b.items.push({ id: 'ins', name: 'Car insurance', amount: 6000, frequency: 'monthly', start: '2026-11-25', accountId: 'car' });
