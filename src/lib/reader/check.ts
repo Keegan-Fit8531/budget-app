@@ -140,7 +140,10 @@ const sameName = (a: string, b: string) => {
   return !!x && !!y && (x.includes(y) || y.includes(x));
 };
 
-const statementDebts = (b: Budget) => (b.debts ?? []).filter((d) => !d.payroll);
+/** Debts a statement can update: every card and loan, and the student loan (its IRD / myIR balance). */
+const statementDebts = (b: Budget) => (b.debts ?? []).filter((d) => !d.payroll || d.kind === 'loan');
+/** The student loan: taken from pay, its balance checked against IRD's. */
+const isStudentLoan = (d: Debt) => !!d.payroll && d.kind === 'loan';
 const afterpayDebt = (b: Budget, id?: string): Debt | undefined =>
   (b.debts ?? []).find((d) => d.id === id && (d.rules === 'afterpay' || d.kind === 'bnpl'))
   ?? (b.debts ?? []).find((d) => d.rules === 'afterpay' || d.kind === 'bnpl');
@@ -162,6 +165,8 @@ export function guessDebt(debts: Debt[], text: string): string | undefined {
     [/ gem( visa)? /, (d) => d.rules === 'gem' || /\bgem\b/i.test(d.name)],
     [/ q ?(mastercard|card|mc) /, (d) => /^q\b/i.test(d.name) || (d.rules === 'mastercard' && /\bq\b/i.test(d.name))],
     [/ afterpay /, (d) => d.rules === 'afterpay' || /afterpay/i.test(d.name)],
+    // IRD's myIR "Loan breakdown" (or anything saying student loan) is the student loan's balance.
+    [/ (myir|ird|inland revenue|student loan|loan breakdown) /, isStudentLoan],
   ];
   for (const [re, is] of tests) {
     if (!re.test(t)) continue;
@@ -186,7 +191,7 @@ export function toDraft(ex: Extraction, b: Budget, source: ReaderSource, makeId:
       studentLoan: fig(p.studentLoan), kiwisaver: fig(p.kiwisaver), employerKiwisaver: fig(p.employerKiwisaver),
     },
     statement: {
-      // Only an id from the list, and never the student loan; anything else is asked about.
+      // Only an id from the list (the student loan included); anything else is asked about.
       debtId: s.debtId && debtIds.has(s.debtId) ? s.debtId : guessDebt(statementDebts(b), `${s.nameOnDocument ?? ''} ${ex.notes ?? ''}`) ?? '',
       newName: s.nameOnDocument ?? '',
       newDebtId: makeId(),
@@ -571,7 +576,8 @@ function reviewStatement(d: Draft, b: Budget, today: ISODate): Review {
 
   if (isNew) { if (!s.newName.trim()) block('Give the new debt a name.'); }
   else if (!debt) block(s.nameOnDocument ? `Choose which debt this statement is for (it says “${s.nameOnDocument}”).` : 'Choose which debt this statement is for.');
-  else if (debt.payroll) block(`${debt.name} comes out of your pay, so it isn’t updated from a statement. Choose the card or loan this is for.`);
+  else if (debt.payroll && !isStudentLoan(debt)) block(`${debt.name} comes out of your pay, so it isn’t updated from a statement. Choose the card or loan this is for.`);
+  else if (debt.payroll) note(`IRD can take a few weeks to count what your employer deducts, so a deduction from a recent payslip may not be in IRD’s balance yet. Upload the loan balance again now and then to keep ${debt.name} matching IRD.`);
   else if (ordersOnly(debt)) block(`${debt.name} is worked out from its orders, not a balance. Upload a screenshot of your Afterpay orders instead.`);
 
   let bal = toCents(s.balance.value);
@@ -601,7 +607,7 @@ function reviewStatement(d: Draft, b: Budget, today: ISODate): Review {
 
   const plans: PlanUpdate[] = [];
   const newPlans: DebtPlan[] = [];
-  if (debt && !debt.payroll && !ordersOnly(debt) && balance !== undefined) {
+  if (debt && !ordersOnly(debt) && balance !== undefined) {
     const max = limit ?? debt.limit;
     if (max && balance > max) note(`What’s owed (${cash(balance)}) is more than the credit limit (${cash(max)}). Check the figures.`);
     const now = owed(debt);

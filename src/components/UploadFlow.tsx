@@ -221,7 +221,7 @@ function Rundown({ draft, sourceLabel, onEdit, onCancel, cancelLabel, onConfirm 
   const edit = (fn: (d: Draft) => void) => { const d = structuredClone(draft); fn(d); onEdit(d); };
   const blocks = r.issues.filter((i) => i.level === 'block');
   const notes = r.issues.filter((i) => i.level === 'note');
-  const debts = (budget.debts ?? []).filter((d) => !d.payroll);
+  const debts = (budget.debts ?? []).filter((d) => !d.payroll || d.kind === 'loan');
   const s = draft.statement;
   const debt = debts.find((d) => d.id === s.debtId);
   // Purchases on a card app screen that its rules make plans of their own (Gem: $250 or more).
@@ -270,7 +270,7 @@ function Rundown({ draft, sourceLabel, onEdit, onCancel, cancelLabel, onConfirm 
             <label className="field">{s.appScreen ? 'As at' : 'As at (statement date)'}
               <input type="date" value={s.date} max={today} onChange={(e) => edit((d) => { d.statement.date = e.target.value; })} />
             </label>
-            <Money label="Credit limit (optional)" fig={s.limit} onChange={(v) => edit((d) => { d.statement.limit.value = v; })} />
+            {!debt?.payroll && <Money label="Credit limit (optional)" fig={s.limit} onChange={(v) => edit((d) => { d.statement.limit.value = v; })} />}
           </div>
           {toCents(s.minimum.value)?.cents !== undefined && <p className="small muted">The {s.appScreen ? 'last statement’s' : 'statement’s'} minimum payment is {cash(toCents(s.minimum.value)!.cents)}.</p>}
           {buys.length > 0 && (
