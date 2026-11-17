@@ -2,7 +2,7 @@ import { SyncPill } from '../components/SyncPill';
 import { useMemo, useState, type ReactNode } from 'react';
 import { Donut } from '../components/Donut';
 import { Icon } from '../components/Icon';
-import { AccIcon, Modal, MoveButtons, PageHead, ReorderToggle, useFlip } from '../components/ui';
+import { AccIcon, Modal, MoveButtons, ReorderToggle, useFlip } from '../components/ui';
 import { moveAmong } from '../lib/order';
 import { bankSync } from '../lib/bank';
 import { GoalCosts } from '../components/GoalCosts';
@@ -55,13 +55,13 @@ export function Savings() {
 
   return (
     <>
-      <PageHead title="Savings" sub="Goals, how they're tracking, and what each payday puts towards them.">
-        <PayNav compact />
+      <header className="page-head">
+        <PayNav title="Savings" />
         <div className="page-actions">
           {(goals.length > 1 || kiwis.length > 1) && <ReorderToggle on={reorder} onChange={setReorder} />}
           <button className="btn primary" onClick={() => setModal({})}><Icon name="plus" /> Add goal</button>
         </div>
-      </PageHead>
+      </header>
 
       <section className="stats">
         <div className="stat"><span className="small muted">Saved so far</span><b>{cash(saved)}</b></div>
@@ -142,8 +142,8 @@ function GoalCard({ f, plan, period, onEdit, extra }: { f: ReturnType<typeof for
         </div>
         <div className="acct-side">
           {extra}
-          <button className="icon-btn mini has-tip tip-left" data-tip="Money and payday" aria-label={`${g.name}: money in and out, and payday`} onClick={() => setSettings(true)}><Icon name="settings" size={16} /></button>
-          <button className="icon-btn mini has-tip tip-left" data-tip="Edit goal" aria-label={`Edit ${g.name}`} onClick={onEdit}><Icon name="edit" size={16} /></button>
+          <button className="icon-btn mini has-tip tip-left" data-tip="Money and payday" aria-label={`${g.name}: money in and out, and payday`} onClick={() => setSettings(true)}><Icon name="settings" size={14} /></button>
+          <button className="icon-btn mini has-tip tip-left" data-tip="Edit goal" aria-label={`Edit ${g.name}`} onClick={onEdit}><Icon name="edit" size={14} /></button>
         </div>
       </div>
 

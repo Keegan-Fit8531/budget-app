@@ -86,7 +86,7 @@ export function DebtChart({ budget }: { budget: Budget }) {
   }, [budget, chosen, ahead, s, today]);
 
   // Layout
-  const padL = 52, padR = 12, topH = 190, barH = 90, gap = 34, axisH = 22;
+  const padL = 52, padR = 12, topH = 190, barH = 80, gap = 72, axisH = 22;
   const innerW = Math.max(120, width - padL - padR);
   const step = innerW / Math.max(1, points.length - 1);
   const x = (i: number) => padL + (points.length === 1 ? innerW / 2 : i * step);
@@ -146,11 +146,6 @@ export function DebtChart({ budget }: { budget: Budget }) {
         </div>
       </div>
 
-      <div className="key" aria-hidden="true">
-        <span><svg width="18" height="4"><line x1="0" y1="2" x2="18" y2="2" stroke={color} strokeWidth="2" strokeLinecap="round" /></svg>Owed (recorded)</span>
-        <span><svg width="18" height="4"><line x1="0" y1="2" x2="18" y2="2" stroke={color} strokeWidth="2" strokeDasharray="4 3" strokeLinecap="round" /></svg>Owed (forecast)</span>
-        <span><svg width="10" height="10"><rect width="10" height="10" rx="2" fill={color} opacity="0.55" /></svg>Payments each pay</span>
-      </div>
 
       <div ref={wrapRef} style={{ position: 'relative', width: '100%' }}>
         <svg width={width} height={H} role="img" aria-label={`${summary} Use the left and right arrow keys to read each month.`}
@@ -170,12 +165,14 @@ export function DebtChart({ budget }: { budget: Budget }) {
               <text x={padL - 8} y={yP(maxPay * t) + 4} textAnchor="end" fontSize="11" fill="var(--muted)">{axisMoney(maxPay * t)}</text>
             </g>
           ))}
-          <text x={padL} y={barTop - 10} fontSize="12" fill="var(--muted)">Payments each pay</text>
+          {/* The two charts kept apart: a rule, then the second one's own heading. */}
+          <line x1={0} x2={width} y1={topH + 14} y2={topH + 14} stroke="var(--line)" strokeWidth="1" />
+          <text x={0} y={barTop - 14} fontSize="13" fontWeight="700" fill="var(--ink)">Payments each pay</text>
 
           {/* Today marker */}
           {nowI >= 0 && (
             <g>
-              <line x1={x(nowI)} x2={x(nowI)} y1={6} y2={barTop + barH} stroke="var(--muted)" strokeWidth="1" opacity="0.6" />
+              <line x1={x(nowI)} x2={x(nowI)} y1={6} y2={topH} stroke="var(--muted)" strokeWidth="1" opacity="0.6" />
               <text x={x(nowI) + 5} y={14} fontSize="11" fill="var(--muted)">Today</text>
             </g>
           )}
@@ -209,7 +206,7 @@ export function DebtChart({ budget }: { budget: Budget }) {
           ) : null)}
 
           {/* Crosshair */}
-          {hover !== null && <line x1={x(hover)} x2={x(hover)} y1={6} y2={barTop + barH} stroke="var(--ink)" strokeWidth="1" opacity="0.35" />}
+          {hover !== null && <><line x1={x(hover)} x2={x(hover)} y1={6} y2={topH} stroke="var(--ink)" strokeWidth="1" opacity="0.35" /><line x1={x(hover)} x2={x(hover)} y1={barTop} y2={barTop + barH} stroke="var(--ink)" strokeWidth="1" opacity="0.35" /></>}
         </svg>
 
         {h && (

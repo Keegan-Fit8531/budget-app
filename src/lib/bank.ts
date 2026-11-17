@@ -29,7 +29,8 @@ export interface BankAccount {
   updated?: string | null;
 }
 export interface BankTxn { account: string; id: string; date: ISODate; description: string; amount: number; balance: number | null; merchant: string | null; category?: string | null }
-export interface BankData { accounts: BankAccount[]; transactions: BankTxn[]; /** The bank sent newer balances after being asked to refresh. */ refreshed?: boolean }
+export interface BankPending { account: string; date: ISODate; description: string; amount: number; merchant: string | null }
+export interface BankData { accounts: BankAccount[]; transactions: BankTxn[]; /** Not settled yet. */ pending?: BankPending[]; /** The bank sent newer balances after being asked to refresh. */ refreshed?: boolean }
 
 export class BankError extends Error {
   kind: 'not_allowed' | 'not_set_up' | 'unreachable' | 'failed';
@@ -56,7 +57,7 @@ export async function fetchBank(conf: BankConfig, since?: ISODate, fetchImpl: ty
   if (res.status === 401) throw new BankError('not_allowed');
   if (res.status === 503) throw new BankError('not_set_up');
   if (!res.ok || !Array.isArray(body.accounts) || !Array.isArray(body.transactions)) throw new BankError('failed', body.error);
-  return { accounts: body.accounts, transactions: body.transactions, ...(typeof (body as { refreshed?: unknown }).refreshed === 'boolean' ? { refreshed: (body as { refreshed: boolean }).refreshed } : {}) };
+  return { accounts: body.accounts, transactions: body.transactions, ...(Array.isArray((body as { pending?: unknown }).pending) ? { pending: (body as { pending: BankPending[] }).pending } : {}), ...(typeof (body as { refreshed?: unknown }).refreshed === 'boolean' ? { refreshed: (body as { refreshed: boolean }).refreshed } : {}) };
 }
 
 /** Where a bank account's transactions go: the account or card with its number's ending saved (from an earlier upload), if one has. */
@@ -137,6 +138,14 @@ export function applyBank(b: Budget, data: BankData, links: Record<string, strin
     if (changed) setBalance(b, id, cents, today, `bank-${acc.id}-${today}`);
     // The same as before, but checked again today: it's today's balance, not an estimate from an older one.
     else if (live && type === 'account' && b.balances?.[id] && b.balances[id].asOf < today) b.balances[id] = { ...b.balances[id], asOf: today };
+    // What hasn't settled yet replaces what was pending last time (once settled, it's in the transactions).
+    if (type === 'account' && data.pending) {
+      const pend: Txn[] = data.pending.filter((t) => t.account === acc.id && t.amount)
+        .map((t) => ({ date: t.date, description: (t.description ?? '').replace(/\s{2,}/g, ' ').trim() || 'Pending', amount: Math.round(t.amount * 100), ...(t.merchant ? { merchant: t.merchant } : {}) }));
+      const all = { ...(b.pendingTransactions ?? {}) };
+      if (pend.length) all[id] = pend; else delete all[id];
+      b.pendingTransactions = all;
+    }
     // Payments from this account to cards that can't be linked themselves (Gem Visa, Q Mastercard).
     const cardPayments = type === 'account' ? recordCardPayments(b, id, add, today) : [];
     // The account behind a savings goal: the goal's balance is the bank's.

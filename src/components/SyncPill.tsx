@@ -11,24 +11,24 @@ import { ago } from './ui';
 export function SyncPill({ source, at }: { source: 'bank' | 'entered' | 'none'; at?: string }) {
   const { update } = useBudget();
   const syncing = useBankSyncing();
-  if (source === 'none' || (!at && source !== 'bank')) return <span className="sync-pill"><span className="sync-dot" aria-hidden="true" />Not tracked</span>;
+  if (source === 'none' || (!at && source !== 'bank')) return <span className="sync-pill stale">Not tracked</span>;
   const days = at ? (Date.now() - Date.parse(at.length <= 10 ? `${at}T12:00:00` : at)) / 86400000 : Infinity;
-  const fresh = source === 'bank' ? days < 1.5 : days < 1;
+  // Current, getting old, or old: the whole pill shows which.
+  const state = days < 1.5 ? 'fresh' : days < 4 ? 'aging' : 'stale';
   const full = !at ? '' : at.length > 10 ? new Date(at).toLocaleString('en-NZ', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }) : fmtShort(at);
   if (source === 'entered') {
     return (
-      <span className={`sync-pill${fresh ? ' fresh' : ''}`} title={`Balance last entered: ${full}`}>
-        <span className="sync-dot" aria-hidden="true" />Updated {ago(at!)}
+      <span className={`sync-pill ${state}`} title={`Balance you entered: ${full}`}>
+        <Icon name="edit" size={12} stroke={2.2} />{ago(at!)}
       </span>
     );
   }
   return (
-    <button type="button" className={`sync-pill bank${fresh ? ' fresh' : ''}${syncing ? ' busy' : ''}`} disabled={syncing}
-      title={`Last synced from your bank${full ? `: ${full}` : ''}. Tap to check again now.`} aria-label={syncing ? 'Syncing with your bank' : `Synced ${at ? ago(at) : ''}. Sync again now`}
+    <button type="button" className={`sync-pill ${syncing ? 'busy' : state}`} disabled={syncing}
+      title={`From your bank${full ? `, ${full}` : ''}. Tap to check again now.`} aria-label={syncing ? 'Syncing with your bank' : `From your bank ${at ? ago(at) : ''}. Sync again now`}
       onClick={(e) => { e.stopPropagation(); void syncBank(update, true); }}>
-      <span className="sync-dot" aria-hidden="true" />
-      <span>{syncing ? 'Syncing…' : `Synced ${at ? ago(at) : ''}`}</span>
       <span className="sync-icon" aria-hidden="true"><Icon name="sync" size={13} stroke={2.2} /></span>
+      <span>{syncing ? 'Syncing' : at ? ago(at) : 'Sync'}</span>
     </button>
   );
 }

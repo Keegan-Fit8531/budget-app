@@ -2,7 +2,7 @@ import { SyncPill } from '../components/SyncPill';
 import { useEffect, useMemo, useState } from 'react';
 import { DebtChart } from '../components/DebtChart';
 import { Icon } from '../components/Icon';
-import { AccIcon, CardColumns, Collapse, DetailsToggle, Disclosure, MoveButtons, PageHead, ReorderToggle, useFlip } from '../components/ui';
+import { AccIcon, CardColumns, Collapse, DetailsToggle, Disclosure, MoveButtons, ReorderToggle, useFlip, FlatDetails } from '../components/ui';
 import { moveAmong } from '../lib/order';
 import { bankSync } from '../lib/bank';
 import { PaydayControl } from '../components/PaydayControl';
@@ -87,13 +87,12 @@ export function Debts() {
 
   return (
     <>
-      <PageHead title="Debts" sub="Cards, Afterpay and people you owe.">
+      <DayPicker dv={dv} title="Debts">
         <div className="page-actions">
           {debts.length > 1 && <ReorderToggle on={reorder} onChange={setReorder} />}
           <button className="btn primary" onClick={() => setDebtModal({})}><Icon name="plus" /> Add debt</button>
         </div>
-      </PageHead>
-      <DayPicker dv={dv} />
+      </DayPicker>
 
       <section className="stats">
         <div className="stat">
@@ -152,9 +151,14 @@ export function Debts() {
               </div>
               <div className="acct-side">
                 {sourcePill(d)}
+                {!reorder && <>
+                  <button className="icon-btn mini has-tip" data-tip="Update balance" aria-label={`Update what's owed on ${d.name}`} onClick={() => setEditBal(d.id)}><Icon name="edit" size={14} /></button>
+                  {!d.payroll && <button className="icon-btn mini has-tip" data-tip={isPerson ? 'Add amount owed' : 'Add purchase'} aria-label={isPerson ? 'Add amount owed' : `Add a purchase on ${d.name}`} onClick={() => setPlanModal({ debt: d })}><Icon name="plus" size={14} /></button>}
+                  {o > 0 && !d.payroll && <button className="icon-btn mini has-tip" data-tip="Record a payment" aria-label={`Record a payment to ${d.name}`} onClick={() => setPayModal(d)}><Icon name="check" size={14} /></button>}
+                </>}
                 {reorder
                   ? <MoveButtons name={d.name} first={i === 0} last={i === debts.length - 1} onMove={(dir) => move(d.id, dir)} />
-                  : <button className="icon-btn mini has-tip tip-left" data-tip="Edit debt" aria-label={`Edit ${d.name}`} onClick={() => setDebtModal({ debt: d })}><Icon name="settings" size={16} /></button>}
+                  : <button className="icon-btn mini has-tip tip-left" data-tip="Edit debt" aria-label={`Edit ${d.name}`} onClick={() => setDebtModal({ debt: d })}><Icon name="settings" size={14} /></button>}
               </div>
             </div>
 
@@ -163,9 +167,6 @@ export function Debts() {
               : (
                 <div className="acct-fig">
                   <b className="fig">{cash(day === today ? o : oDay ?? o)}</b>
-                  <button className="icon-btn mini has-tip" data-tip="Update balance" aria-label={`Update what's owed on ${d.name}`} onClick={() => setEditBal(d.id)}><Icon name="edit" size={16} /></button>
-                  {!d.payroll && <button className="icon-btn mini has-tip" data-tip={isPerson ? 'Add amount owed' : 'Add purchase'} aria-label={isPerson ? 'Add amount owed' : `Add a purchase on ${d.name}`} onClick={() => setPlanModal({ debt: d })}><Icon name="plus" size={16} /></button>}
-                  {o > 0 && !d.payroll && <button className="icon-btn mini has-tip" data-tip="Record a payment" aria-label={`Record a payment to ${d.name}`} onClick={() => setPayModal(d)}><Icon name="check" size={16} /></button>}
                   {day !== today && (
                     <span className="xs muted note-line">{oDay !== undefined ? `${day > today ? 'Projected' : 'Owed'} ${fmtShort(day)} · ${cash(o)} today` : `No record for ${fmtShort(day)} · ${cash(o)} today`}</span>
                   )}
@@ -198,7 +199,7 @@ export function Debts() {
               )}
             </div>
 
-            <Collapse open={isOpen} stacked>
+            <Collapse open={isOpen} stacked><FlatDetails.Provider value>
             <div className="acct-body sections">
             {d.payroll && <p className="small muted">Taken from your salary: about {cash(d.payroll.perPay)} each payday, before pay reaches you. Not part of the payday split.</p>}
             {adv && (
@@ -277,7 +278,7 @@ export function Debts() {
               )}
             </div>}
             </div>
-            </Collapse>
+            </FlatDetails.Provider></Collapse>
             <DetailsToggle open={isOpen} onChange={() => toggle(d.id)} />
           </section>
         );

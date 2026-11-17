@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent } from 'react';
-import { AccIcon, Disclosure } from './ui';
+import { AccIcon } from './ui';
 import { Donut } from './Donut';
 import { Icon } from './Icon';
 import { tone } from '../lib/colors';
 import { diffDays, fmtShort, todayISO, addMonths, type ISODate } from '../lib/dates';
-import { kiwiHistory, kiwiMonths, kiwiPerPay, recordReading, type KiwiMonth, type KiwiPoint } from '../lib/kiwisaver';
+import { kiwiHistory, kiwiMonths, kiwiPerPay, recordReading, type KiwiMonth } from '../lib/kiwisaver';
 import { cash, centsToInput, parseMoney } from '../lib/money';
 import { useBudget } from '../lib/store';
 import type { SavingsGoal } from '../lib/types';
@@ -41,13 +41,13 @@ export function KiwiSaverCard({ goal, onEdit, extra }: { goal: SavingsGoal; onEd
         </div>
         <div className="acct-side">
           {extra}
-          <button className="icon-btn mini has-tip tip-left" data-tip="Edit" aria-label={`Edit ${goal.name}`} onClick={onEdit}><Icon name="settings" size={16} /></button>
+          <button className="icon-btn mini has-tip" data-tip="Add a balance" aria-label={`Add a ${goal.name} balance`} onClick={() => setUpdating(true)}><Icon name="plus" size={14} /></button>
+          <button className="icon-btn mini has-tip tip-left" data-tip="Edit" aria-label={`Edit ${goal.name}`} onClick={onEdit}><Icon name="settings" size={14} /></button>
         </div>
       </div>
 
       <div className="acct-fig">
         <b className="fig">{cash(goal.balance)}</b>
-        <button className="icon-btn mini has-tip" data-tip="Add a balance" aria-label={`Add a ${goal.name} balance`} onClick={() => setUpdating(true)}><Icon name="plus" size={16} /></button>
         <span className="xs muted note-line">As at {day(goal.asOf)}</span>
       </div>
 
@@ -89,7 +89,7 @@ export function KiwiSaverCard({ goal, onEdit, extra }: { goal: SavingsGoal; onEd
         </div>
       )}
 
-      <KiwiChart goal={goal} points={points} months={months} color={tone(acc?.color)} />
+      <KiwiChart goal={goal} months={months} color={tone(acc?.color)} />
 
       {updating && <KiwiBalanceModal goal={goal} onClose={() => setUpdating(false)} />}
     </section>
@@ -201,8 +201,7 @@ const monthYear = (d: ISODate) => `${fmtShort(d).replace(/^\d+\s/, '')} ${d.slic
  * went in), what's gone in (dashed), and below, what went in each month. The gap between the two
  * lines is the returns.
  */
-function KiwiChart({ goal, points, months: all, color }: { goal: SavingsGoal; points: KiwiPoint[]; months: KiwiMonth[]; color: string }) {
-  const { update } = useBudget();
+function KiwiChart({ goal, months: all, color }: { goal: SavingsGoal; months: KiwiMonth[]; color: string }) {
   const today = todayISO();
   const [range, setRange] = useState(0);
   const [hovered, setHover] = useState<number | null>(null);
@@ -220,7 +219,7 @@ function KiwiChart({ goal, points, months: all, color }: { goal: SavingsGoal; po
   const startI = from ? Math.max(0, all.findIndex((p) => p.date >= from) - 1) : 0;
   const months = from && all.some((p) => p.date >= from) ? all.slice(startI) : all;
 
-  const padL = 56, padR = 12, topH = 200, barH = 64, gap = 30, axisH = 22;
+  const padL = 56, padR = 64, topH = 200, barH = 64, gap = 64, axisH = 22;
   const innerW = Math.max(120, width - padL - padR);
   const t0 = months[0].date, span = Math.max(1, diffDays(t0, months[months.length - 1].date));
   const x = (d: ISODate) => padL + (diffDays(t0, d) / span) * innerW;
@@ -254,27 +253,21 @@ function KiwiChart({ goal, points, months: all, color }: { goal: SavingsGoal; po
     if (e.key === 'ArrowLeft') { setHover((h) => Math.max(0, (h ?? 1) - 1)); e.preventDefault(); }
   }
   const h = hovered !== null && hovered < months.length ? months[hovered] : null;
+  // One label a month at most, never closer than 64px (the last one always shows, the one before it gives way).
   const labels = (() => {
-    const n = Math.max(2, Math.min(months.length, Math.floor(innerW / 80)));
-    return Array.from({ length: n }, (_, i) => months[Math.round(((months.length - 1) * i) / (n - 1))].date);
+    const out: ISODate[] = [];
+    const pts = months.filter((p, i) => i === months.length - 1 || months[i + 1].date.slice(0, 7) !== p.date.slice(0, 7));
+    for (const p of pts) if (!out.length || x(p.date) - x(out[out.length - 1]) >= 64) out.push(p.date);
+    const lastDate = months[months.length - 1].date;
+    if (out[out.length - 1] !== lastDate) { if (x(lastDate) - x(out[out.length - 1]) < 64) out.pop(); out.push(lastDate); }
+    return out;
   })();
-  const remove = (date: ISODate) => {
-    if (!confirm(`Take the ${day(date)} balance out of the history?`)) return;
-    update((b) => {
-      const g = (b.savings ?? []).find((x) => x.id === goal.id);
-      if (g) g.readings = (g.readings ?? []).filter((r) => r.date !== date);
-      return b;
-    });
-  };
+
 
   return (
     <div className="stack gap-12">
       <div className="row wrap gap-8 between">
-        <div className="row wrap gap-12 small muted" aria-label="Legend">
-          <span className="row gap-6"><span className="dot" style={{ background: color }} />Worth</span>
-          <span className="row gap-6"><svg width="16" height="10" aria-hidden="true"><line x1="0" y1="5" x2="16" y2="5" stroke="var(--ink)" strokeWidth="2" strokeDasharray="4 3" /></svg>What went in</span>
-          <span className="row gap-6"><svg width="10" height="10" aria-hidden="true"><circle cx="5" cy="5" r="4" fill="var(--card)" stroke={color} strokeWidth="2" /></svg>A real balance</span>
-        </div>
+        <b className="h3">Value over time</b>
         <div className="seg" role="group" aria-label="How far back">
           {RANGES.map((r) => <button key={r.label} aria-pressed={range === r.months} onClick={() => { setRange(r.months); setHover(null); }}>{r.label}</button>)}
         </div>
@@ -296,9 +289,12 @@ function KiwiChart({ goal, points, months: all, color }: { goal: SavingsGoal; po
           <path d={area} fill={color} opacity="0.14" />
           <path d={line} fill="none" stroke={color} strokeWidth="2.5" strokeLinejoin="round" />
           <path d={putIn} fill="none" stroke="var(--ink)" strokeWidth="1.5" strokeDasharray="5 4" opacity="0.6" />
-          {months.map((p) => p.actual && <circle key={`r${p.date}`} cx={x(p.date)} cy={yB(p.balance)} r="4" fill="var(--card)" stroke={color} strokeWidth="2" />)}
+          {/* The two lines named where they end, instead of a key. */}
+          <text x={x(last.date) + 8} y={yB(last.balance) + 4} fontSize="11" fontWeight="700" fill={color}>{axisMoney(last.balance)}</text>
+          <text x={x(last.date) + 8} y={yB(last.putIn) + 4} fontSize="11" fill="var(--muted)">put in</text>
 
-          <text x={padL} y={barTop - 10} fontSize="12" fill="var(--muted)">Went in each month</text>
+          <line x1={0} x2={width} y1={topH + axisH + 8} y2={topH + axisH + 8} stroke="var(--line)" strokeWidth="1" />
+          <text x={0} y={barTop - 12} fontSize="13" fontWeight="700" fill="var(--ink)">Went in each month</text>
           <line x1={padL} x2={padL + innerW} y1={barTop + barH} y2={barTop + barH} stroke="var(--line)" strokeWidth="1" />
           <text x={padL - 8} y={yA(maxAdd / 1.1) + 4} textAnchor="end" fontSize="11" fill="var(--muted)">{axisMoney(maxAdd / 1.1)}</text>
           <line x1={padL} x2={padL + innerW} y1={yA(maxAdd / 1.1)} y2={yA(maxAdd / 1.1)} stroke="var(--line)" strokeWidth="1" strokeDasharray="2 3" />
@@ -310,14 +306,15 @@ function KiwiChart({ goal, points, months: all, color }: { goal: SavingsGoal; po
               fill={color} opacity={h && !active ? 0.35 : 0.85} />;
           })}
 
-          {labels.map((d, i) => (
-            <text key={d} x={x(d)} y={H - 6} textAnchor={i === 0 ? 'start' : i === labels.length - 1 ? 'end' : 'middle'} fontSize="11" fill="var(--muted)">
+          {labels.map((d, i) => [topH + 16, H - 6].map((y) => (
+            <text key={`${d}${y}`} x={x(d)} y={y} textAnchor={i === 0 ? 'start' : 'middle'} fontSize="11" fill="var(--muted)">
               {fmtShort(d).replace(/^\d+\s/, '')} {d.slice(2, 4)}
             </text>
-          ))}
+          )))}
           {h && (
             <g>
-              <line x1={x(h.date)} x2={x(h.date)} y1={6} y2={barTop + barH} stroke="var(--ink)" strokeWidth="1" opacity="0.35" />
+              <line x1={x(h.date)} x2={x(h.date)} y1={6} y2={topH} stroke="var(--ink)" strokeWidth="1" opacity="0.35" />
+              <line x1={x(h.date)} x2={x(h.date)} y1={barTop} y2={barTop + barH} stroke="var(--ink)" strokeWidth="1" opacity="0.35" />
               <circle cx={x(h.date)} cy={yB(h.balance)} r="4.5" fill="var(--card)" stroke="var(--ink)" strokeWidth="2" />
             </g>
           )}
@@ -333,30 +330,6 @@ function KiwiChart({ goal, points, months: all, color }: { goal: SavingsGoal; po
           </div>
         )}
       </div>
-      <p className="xs muted">{summary} Dots are real balances; between them it’s worked out from what went in.</p>
-
-      <Disclosure title="Balances" meta={points.length}>
-        <div className="table-scroll">
-          <table className="table">
-            <thead>
-              <tr><th>Date</th><th>Balance</th><th>What went in</th><th>Gain or loss</th><th><span className="sr-only">Remove</span></th></tr>
-            </thead>
-            <tbody>
-              {[...points].reverse().map((p, i) => (
-                <tr key={p.date}>
-                  <td>{day(p.date)}</td>
-                  <td>{cash(p.balance)}</td>
-                  <td>{cash(p.putIn)}</td>
-                  <td className={p.gain < 0 ? 'neg' : p.gain > 0 ? 'pos' : ''}>{i === points.length - 1 ? '' : signed(p.gain)}</td>
-                  <td>{(goal.readings ?? []).some((r) => r.date === p.date) && (
-                    <button className="icon-btn mini plain" aria-label={`Remove the ${day(p.date)} balance`} onClick={() => remove(p.date)}><Icon name="x" size={14} /></button>
-                  )}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </Disclosure>
     </div>
   );
 }

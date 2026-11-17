@@ -6,7 +6,7 @@ import { tone } from '../lib/colors';
 import { cash } from '../lib/money';
 import type { Account, Budget } from '../lib/types';
 import { Icon } from './Icon';
-import { Collapse, Disclosure } from './ui';
+import { Collapse, Disclosure, FlatDetails } from './ui';
 
 const when = (days: number) => (days === 0 ? 'today' : days === 1 ? 'tomorrow' : days > 0 ? `in ${days} days` : days === -1 ? 'yesterday' : `${-days} days ago`);
 
@@ -89,7 +89,7 @@ export function MonthTracker({ budget, account, today = todayISO(), open }: { bu
         </div>
       )}
 
-      <Collapse open={open} stacked>
+      <Collapse open={open} stacked><FlatDetails.Provider value>
         <div className="stack gap-12">
           {steady && t.balanceKnown && t.spare > 0 && (
             <p className="small muted">
@@ -152,7 +152,7 @@ export function MonthTracker({ budget, account, today = todayISO(), open }: { bu
             <p className="small muted">Estimated: this pay's {cash(t.deposit)} less what's come out.</p>
           )}
         </div>
-      </Collapse>
+      </FlatDetails.Provider></Collapse>
     </>
   );
 }
@@ -209,7 +209,7 @@ export function PayProjectionView({ budget, account, period, day, today = todayI
         <div className="alert small" role="status"><Icon name="alert" /><span>Projected to be <b>{cash(-pr.lowest.amount)} short</b> on {fmtDay(pr.lowest.date)}.</span></div>
       )}
 
-      <Collapse open={open} stacked>
+      <Collapse open={open} stacked><FlatDetails.Provider value>
         <div className="stack gap-8">
           <div>
             <div className="list-row small muted" style={{ paddingTop: 0 }}>
@@ -245,7 +245,7 @@ export function PayProjectionView({ budget, account, period, day, today = todayI
             {pr.startFrom === 'unknown' ? ' Enter this account’s balance to see a balance for each day.' : ''}
           </p>
         </div>
-      </Collapse>
+      </FlatDetails.Provider></Collapse>
     </>
   );
 }

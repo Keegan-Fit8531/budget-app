@@ -321,19 +321,20 @@ h1, h2, h3, p { margin: 0; }
 .pill.good { color: var(--good); background: var(--good-bg); }
 .pill.bad { color: var(--bad); background: var(--bad-bg); }
 button.pill { cursor: pointer; font-family: inherit; }
-/* Where a balance came from and when: lit while it's current. From the bank it's a button that syncs again. */
-.sync-pill { display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 10px; border-radius: var(--r-pill);
-  border: 1px solid var(--line); background: var(--card); color: var(--muted); font: inherit; font-size: var(--fs-xs); font-weight: 600; white-space: nowrap; flex: 0 0 auto; }
-.sync-pill.fresh { color: var(--ink); }
-.sync-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--line); flex: 0 0 auto; }
-.sync-pill.fresh .sync-dot { background: var(--good); box-shadow: 0 0 0 3px var(--good-bg); }
-button.sync-pill { cursor: pointer; padding-right: 8px; transition: border-color .15s, background-color .15s; }
-button.sync-pill:hover { border-color: var(--muted); background: var(--soft); }
+/* Where a balance came from and when. The whole pill shows how current it is: green while it's
+   today's, plain once it's a few days old. From the bank it's a button that syncs again. */
+.sync-pill { display: inline-flex; align-items: center; gap: 5px; height: 28px; padding: 0 10px; border-radius: var(--r-pill);
+  border: 1px solid transparent; background: var(--soft); color: var(--muted); font: inherit; font-size: var(--fs-xs); font-weight: 600;
+  white-space: nowrap; flex: 0 0 auto; transition: background-color .2s, color .2s, border-color .2s; }
+.sync-pill.fresh { background: var(--good-bg); color: var(--good); }
+.sync-pill.aging { background: color-mix(in srgb, var(--accent) 18%, var(--card)); color: var(--ink); }
+.sync-pill.stale { background: var(--soft); color: var(--muted); }
+.sync-pill.busy { background: color-mix(in srgb, var(--brand-2) 14%, var(--card)); color: var(--brand-2); }
+.sync-icon { display: grid; }
+button.sync-pill { cursor: pointer; }
+button.sync-pill:hover { border-color: currentColor; }
 button.sync-pill:disabled { cursor: default; }
-.sync-icon { display: grid; color: var(--muted); }
-button.sync-pill:hover .sync-icon { color: var(--brand-2); }
-.sync-pill.busy .sync-icon { animation: spin .9s linear infinite; color: var(--brand-2); }
-.sync-pill.busy .sync-dot { background: var(--brand-2); box-shadow: none; }
+.sync-pill.busy .sync-icon { animation: spin .9s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .sync-pill.busy .sync-icon { animation: none; } }
 .conv { display: flex; flex-wrap: wrap; gap: 6px; }
@@ -551,7 +552,10 @@ select::-ms-expand { display: none; }
 .acct-sub { display: inline-flex; align-items: center; gap: 2px; padding: 0; border: 0; background: none; font: inherit; font-size: var(--fs-sm); color: var(--muted); cursor: pointer; text-align: left; }
 .acct-sub:hover { color: var(--brand-2); }
 .acct-sub svg { opacity: .7; }
-.acct-side { display: flex; align-items: center; gap: var(--s-2); flex: 0 0 auto; margin-left: auto; }
+.acct-side { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; margin-left: auto; }
+/* The card's actions sit with its pill: the same height, in a row. */
+.acct-side .icon-btn.mini, .acct-side .move-btns .icon-btn { width: 28px; height: 28px; border-radius: var(--r-sm); color: var(--muted); }
+.acct-side .icon-btn.mini:hover { color: var(--ink); }
 .acct-fig { display: flex; align-items: center; gap: var(--s-2); flex-wrap: wrap; min-height: 36px; }
 .acct-fig .fig { font-size: 30px; letter-spacing: -0.01em; margin-right: var(--s-1); }
 .acct-fig .icon-btn.mini { color: var(--muted); }
@@ -559,26 +563,31 @@ select::-ms-expand { display: none; }
 .acct-fig .note-line { flex-basis: 100%; margin-top: -4px; }
 .acct-foot { display: flex; align-items: center; justify-content: space-between; gap: var(--s-3); border-top: 1px solid var(--line); padding-top: var(--s-2); margin-bottom: calc(-1 * var(--s-2)); }
 .acct-body { display: flex; flex-direction: column; gap: var(--s-2); }
-/* The details: a plain list of rows, each opening the same way, with its figure on the right. */
+/* A card's details: each section under a small heading with its figure on the right, then its rows.
+   Sections are spaced apart and ruled off, rows inside are tight, so it reads as a list of lists. */
 .acct-body { gap: 0; }
-.acct-body > p, .acct-body > .stack > p { margin: var(--s-1) 0 var(--s-2); }
-.acct .collapse .disc { border-top: 1px solid var(--line); }
-.acct .collapse .disc:first-child { border-top: 0; }
-.acct .collapse .disc > .disc-head { display: flex; width: 100%; min-height: 48px; gap: var(--s-2); }
-.acct .collapse .disc > .disc-head > .disc-title { flex: 1 1 auto; min-width: 0; }
-.acct .collapse .disc > .disc-head > .disc-meta { font-weight: 600; color: var(--muted); white-space: nowrap; }
-.acct .collapse .disc > .disc-head > .disc-meta::before { content: none; }
-.acct .collapse .disc-body { padding-bottom: var(--s-3); }
+.detail-sec { padding: var(--s-4) 0 var(--s-2); border-top: 1px solid var(--line); }
+.acct-body > .detail-sec:first-child, .collapse-pad > .stack > .detail-sec:first-child { border-top: 0; padding-top: var(--s-1); }
+.detail-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--s-3); margin: 0 0 var(--s-1);
+  font-size: var(--fs-xs); font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); }
+.detail-meta { font-size: var(--fs-sm); font-weight: 600; letter-spacing: 0; text-transform: none; color: var(--ink); font-variant-numeric: tabular-nums; }
+.detail-body { display: flex; flex-direction: column; gap: var(--s-2); }
+.detail-body .list-row { padding: 9px 0; }
+.detail-body .list-row:last-child { border-bottom: 0; }
+.detail-body > .btn { align-self: flex-start; }
+.list-row.pending > .grow, .list-row.pending > .num { opacity: .65; font-style: italic; }
 .acct .collapse-pad > .stack { gap: 0; }
-.acct .collapse-pad > .stack > p { margin-bottom: var(--s-2); }
+.acct .collapse-pad > .stack > p { margin: var(--s-1) 0 var(--s-3); }
+.acct .collapse-pad > .stack > div > .h3 { font-size: var(--fs-xs); font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); margin-bottom: var(--s-1); }
 /* A debt's details: its sections one under another, each ruled off. */
 .acct-body.sections { gap: var(--s-3); }
 .acct-body.sections > * + * { border-top: 1px solid var(--line); padding-top: var(--s-3); }
 .acct-body.sections > .disc + .disc { padding-top: 0; }
 @media (max-width: 899px) { .acct-fig .fig { font-size: 26px; } .acct { gap: var(--s-3); } }
-/* A phone: the pill stays small so the name keeps its room, and what payday sends stays on one line. */
+/* A phone: the pill and the card's buttons go on their own row under the name, so the name keeps its room. */
 @media (max-width: 600px) {
-  .sync-pill { font-size: var(--fs-micro); height: 24px; padding: 0 8px; gap: 5px; }
+  .acct-head { flex-wrap: wrap; row-gap: var(--s-2); }
+  .acct-side { order: 3; flex-basis: 100%; margin-left: 0; }
   .acct-sub { max-width: 100%; }
   .acct-sub > span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 }

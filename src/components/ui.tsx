@@ -1,4 +1,4 @@
-import { Children, useCallback, useEffect, useSyncExternalStore, useId, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { Children, createContext, useCallback, useContext, useEffect, useSyncExternalStore, useId, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { fmtShort, todayISO } from '../lib/dates';
 import { PALETTE, PALETTE_LABELS, sameColor, tone } from '../lib/colors';
@@ -83,6 +83,12 @@ function useOpen(storageKey: string | undefined, initial: boolean): [boolean, (v
 }
 
 /**
+ * Inside something already opened (a card's details), sections show straight away under a heading
+ * rather than each opening again: one click to see everything, nothing nested.
+ */
+export const FlatDetails = createContext(false);
+
+/**
  * Details kept behind a click: a title (with an optional note beside it) and a chevron.
  * `wide` puts the chevron at the far right, for a row that fills its card.
  */
@@ -97,6 +103,18 @@ export function Disclosure({ title, meta, children, defaultOpen = false, forceOp
   const [chosen, setChosen] = useOpen(storageKey, defaultOpen);
   const open = forceOpen || chosen;
   const id = useId();
+  const flat = useContext(FlatDetails);
+  if (flat) {
+    return (
+      <section className={`detail-sec${className ? ` ${className}` : ''}`}>
+        <h3 className="detail-head">
+          <span className="disc-title">{title}</span>
+          {meta !== undefined && meta !== null && meta !== false && <span className="detail-meta">{meta}</span>}
+        </h3>
+        <div className="detail-body">{children}</div>
+      </section>
+    );
+  }
   return (
     <div className={`disc${ruled ? ' ruled' : ''}${className ? ` ${className}` : ''}`}>
       <button type="button" className={`disc-head${wide ? ' wide' : ''}`} aria-expanded={open} aria-controls={id} onClick={() => setChosen(!open)}>
