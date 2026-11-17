@@ -223,7 +223,8 @@ h1, h2, h3, p { margin: 0; }
   .page-sub { display: none; }                 /* what a page is for doesn't need saying on a phone */
   /* Title and its button share the first row; the view switch and pay stepper get a row of their own. */
   .page-head { gap: var(--s-3); }
-  .page-head > .grow { flex: 1 1 0; }
+  /* ...unless it would be squeezed below a readable width: then the buttons drop to a row of their own. */
+  .page-head > .grow { flex: 1 1 0; min-width: min(260px, 100%); }
   .page-head > .btn { min-height: 36px; padding: 0 var(--s-3); font-size: var(--fs-sm); }
   .page-head > .seg, .page-head > .pay-nav.compact { width: 100%; order: 3; }
   .page-head .pay-nav.compact { justify-content: space-between; }
