@@ -145,7 +145,7 @@ function AccountSection({ account: a, open, onToggle, periodNeed, periodSends, p
         {!isPay && (
           <span className="right">
             <b className="num">{cash(periodSends)}</b>
-            {mode !== 'fixed' && <span className="small muted block">{mode === 'smooth' ? 'steady' : 'exact'}</span>}
+            <span className="small muted block">a pay</span>
           </span>
         )}
         <Chevron />
@@ -176,13 +176,13 @@ function AccountSection({ account: a, open, onToggle, periodNeed, periodSends, p
               <span className="small muted">Each payday, send</span>
               <div className="seg" role="group" aria-label="Payday amount" style={{ alignSelf: 'flex-start' }}>
                 {!balanced && <button aria-pressed={mode === 'fixed'} onClick={() => setMode('fixed')}>Fixed amount</button>}
-                {bills.length > 0 && <button aria-pressed={mode === 'smooth'} onClick={() => setMode('smooth')}>Steady</button>}
-                {items.length > 0 && balanced !== 'smooth' && <button aria-pressed={mode === 'exact'} onClick={() => setMode('exact')}>Exact each pay</button>}
+                {bills.length > 0 && <button aria-pressed={mode === 'smooth'} onClick={() => setMode('smooth')}>Same each pay</button>}
+                {items.length > 0 && balanced !== 'smooth' && <button aria-pressed={mode === 'exact'} onClick={() => setMode('exact')}>Just what's due</button>}
               </div>
               {balanced && (
                 <p className="small muted">
                   {balanced === 'smooth'
-                    ? 'Every cost here is weekly, so it gets a steady amount: the same most pays, with 4-week pays covering the 5th week.'
+                    ? 'Every cost here is weekly, so it gets the same amount each pay, with 4-week pays covering the 5th week.'
                     : bills.length === 0
                       ? 'Each payday sends what\u2019s put aside here, so it follows the amounts below rather than a fixed amount.'
                       : 'This account has bills on set dates, so each pay is worked out from them rather than a fixed amount.'}
@@ -211,9 +211,9 @@ function AccountSection({ account: a, open, onToggle, periodNeed, periodSends, p
                     <div className="tip wrap" style={{ alignItems: 'center' }}>
                       <Icon name="bulb" />
                       <span style={{ flex: '1 1 220px' }}>
-                        A fixed amount goes short in 5-week pays and builds up in 4-week ones. <b>Steady</b> evens it out: about <b>{cash(Math.ceil(avgNeed / 100) * 100)}</b> every pay, with 4-week pays leaving enough over for the 5th week.
+                        A fixed amount goes short in 5-week pays and builds up in 4-week ones. <b>Same each pay</b> evens it out: about <b>{cash(Math.ceil(avgNeed / 100) * 100)}</b> every pay, with 4-week pays leaving enough over for the 5th week.
                       </span>
-                      <button className="btn small primary" onClick={() => setMode('smooth')}>Even it out: use Steady</button>
+                      <button className="btn small primary" onClick={() => setMode('smooth')}>Even it out</button>
                     </div>
                   )}
                 </>

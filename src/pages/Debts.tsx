@@ -1,7 +1,8 @@
+import { SyncPill } from '../components/SyncPill';
 import { useEffect, useMemo, useState } from 'react';
 import { DebtChart } from '../components/DebtChart';
 import { Icon } from '../components/Icon';
-import { AccIcon, Chevron, Collapse, Disclosure, MoveButtons, PageHead, ReorderToggle, SyncPill, useFlip } from '../components/ui';
+import { AccIcon, CardColumns, Collapse, DetailsToggle, Disclosure, MoveButtons, PageHead, ReorderToggle, useFlip } from '../components/ui';
 import { moveAmong } from '../lib/order';
 import { bankSync } from '../lib/bank';
 import { PaydayControl } from '../components/PaydayControl';
@@ -38,12 +39,10 @@ export function Debts() {
   const order = debts.map((d) => d.id);
   const flip = useFlip(order.join());
   const move = (id: string, dir: -1 | 1) => { flip.capture(); update((b) => { moveAmong(b.debts ?? [], order, id, dir); return b; }); };
-  const [open, setOpen] = useState<string[]>(() => { try { return JSON.parse(localStorage.getItem('paydays.debts.open') ?? '[]'); } catch { return []; } });
-  const toggle = (id: string) => setOpen((o) => {
-    const next = o.includes(id) ? o.filter((x) => x !== id) : [...o, id];
-    try { localStorage.setItem('paydays.debts.open', JSON.stringify(next)); } catch { /* ignore */ }
-    return next;
-  });
+  // Every card starts closed.
+  const [open, setOpen] = useState<string[]>([]);
+  const toggle = (id: string) => setOpen((o) => (o.includes(id) ? o.filter((x) => x !== id) : [...o, id]));
+  const [editBal, setEditBal] = useState<string | null>(null);
 
   // Recommended payments are for the next payday.
   // Recommendations are for the pay being viewed (or the next one to come, if that pay has already started).
@@ -126,7 +125,7 @@ export function Debts() {
 
       {debts.length === 0 && <p className="note">No debts yet. Add a card, Afterpay, a loan or someone you owe to plan its payments.</p>}
 
-      <div ref={flip.ref} className={`stack gap-12${reorder ? ' reordering' : ''}`}>
+      <CardColumns innerRef={flip.ref} className={reorder ? 'reordering' : undefined}>
       {debts.map((d, i) => {
         const acc = budget.accounts.find((a) => a.id === d.accountId) ?? (d.color ? { color: d.color } : undefined);
         const schedules = debtSchedules(d, s, debtPerPay(budget, d));
@@ -139,38 +138,68 @@ export function Debts() {
         const adv = advice.find((a) => a.debt.id === d.id);
         const diff = adv ? adv.sending - adv.recommended : 0;
         const upcoming = schedules.flatMap((x) => x.payments).filter((x) => x.date > day).sort((a, b) => a.date.localeCompare(b.date));
-        const nextDue = upcoming[0] ? ` · next ${cash(upcoming.filter((x) => x.date === upcoming[0].date).reduce((t, x) => t + x.amount, 0))} on ${fmtShort(upcoming[0].date)}` : '';
+        const nextAmt = upcoming[0] ? upcoming.filter((x) => x.date === upcoming[0].date).reduce((t, x) => t + x.amount, 0) : 0;
+        const offBy = schedules.map((x) => x.paidOffBy).filter(Boolean).sort().pop();
+        const perPay = adv ? adv.sending : d.payroll?.perPay;
+        const isPerson = d.kind === 'person' || d.kind === 'loan';
         return (
-          <section key={d.id} className="acc-section" data-flip={d.id}>
-            {/* Closed: what's owed, when the next payment is, and what each pay sends. The rest is inside. */}
-            <div className="reorder-row">
-            <button className="acc-head" aria-expanded={isOpen} onClick={() => toggle(d.id)}>
+          <section key={d.id} className="card acct" data-flip={d.id}>
+            <div className="acct-head">
               <AccIcon color={acc?.color} name={d.kind === 'person' || d.payroll ? 'send' : 'card'} />
-              <span className="grow">
-                <span className="row gap-8 wrap"><span className="h2">{d.name}</span>{sourcePill(d)}</span>
-                <span className="small muted block">
-                  {day === today
-                    ? `${cash(o)} owed`
-                    : oDay !== undefined ? `${cash(oDay)} owed on ${fmtShort(day)} (${cash(o)} today)` : `no record for ${fmtShort(day)}`}
-                  {nextDue}
-                </span>
-              </span>
-              {(adv || d.payroll) && (
-                <span className="right" style={{ flex: '0 0 auto' }}>
-                  <b className="num block">{cash(adv ? adv.sending : d.payroll!.perPay)}<span className="small muted" style={{ fontWeight: 500 }}> a pay</span></b>
-                  <span className={`xs ${diff < 0 ? 'neg' : 'muted'}`}>{!adv ? 'from your salary' : diff === 0 ? 'as recommended' : diff < 0 ? `${cash(-diff)} under` : `${cash(diff)} over`}</span>
-                </span>
+              <div className="grow min0">
+                <h2 className="h2 clip">{d.name}</h2>
+                <p className="small muted clip">{KIND_LABEL[d.kind]}{d.rate ? ` · ${d.rate}% p.a.` : ''}</p>
+              </div>
+              <div className="acct-side">
+                {sourcePill(d)}
+                {reorder
+                  ? <MoveButtons name={d.name} first={i === 0} last={i === debts.length - 1} onMove={(dir) => move(d.id, dir)} />
+                  : <button className="icon-btn mini has-tip tip-left" data-tip="Edit debt" aria-label={`Edit ${d.name}`} onClick={() => setDebtModal({ debt: d })}><Icon name="settings" size={16} /></button>}
+              </div>
+            </div>
+
+            {editBal === d.id
+              ? <BalanceEditor debt={d} used={used} editing onDone={() => setEditBal(null)} onAddPlan={() => setPlanModal({ debt: d, prefill: unplanned(d) })} />
+              : (
+                <div className="acct-fig">
+                  <b className="fig">{cash(day === today ? o : oDay ?? o)}</b>
+                  <button className="icon-btn mini has-tip" data-tip="Update balance" aria-label={`Update what's owed on ${d.name}`} onClick={() => setEditBal(d.id)}><Icon name="edit" size={16} /></button>
+                  {!d.payroll && <button className="icon-btn mini has-tip" data-tip={isPerson ? 'Add amount owed' : 'Add purchase'} aria-label={isPerson ? 'Add amount owed' : `Add a purchase on ${d.name}`} onClick={() => setPlanModal({ debt: d })}><Icon name="plus" size={16} /></button>}
+                  {o > 0 && !d.payroll && <button className="icon-btn mini has-tip" data-tip="Record a payment" aria-label={`Record a payment to ${d.name}`} onClick={() => setPayModal(d)}><Icon name="check" size={16} /></button>}
+                  {day !== today && (
+                    <span className="xs muted note-line">{oDay !== undefined ? `${day > today ? 'Projected' : 'Owed'} ${fmtShort(day)} · ${cash(o)} today` : `No record for ${fmtShort(day)} · ${cash(o)} today`}</span>
+                  )}
+                </div>
               )}
-              <Chevron />
-            </button>
-            {reorder && <MoveButtons name={d.name} first={i === 0} last={i === debts.length - 1} onMove={(dir) => move(d.id, dir)} />}
+
+            <div className="trio">
+              <div className="stat">
+                <span className="small muted">Next payment</span>
+                <b>{upcoming[0] ? cash(nextAmt) : '—'}</b>
+                <span className="xs muted">{upcoming[0] ? fmtShort(upcoming[0].date) : 'none planned'}</span>
+              </div>
+              <div className="stat">
+                <span className="small muted">Each pay</span>
+                <b>{perPay !== undefined ? cash(perPay) : '—'}</b>
+                <span className={`xs ${diff < 0 ? 'neg' : 'muted'}`}>{d.payroll ? 'from your salary' : !adv ? '' : diff === 0 ? 'as recommended' : diff < 0 ? `${cash(-diff)} under` : `${cash(diff)} over`}</span>
+              </div>
+              {d.limit ? (
+                <div className="stat">
+                  <span className="small muted">Available</span>
+                  <b className={d.limit - o < 0 ? 'neg' : ''}>{cash(d.limit - o, { whole: true })}</b>
+                  <span className="xs muted">of {cash(d.limit, { whole: true })}</span>
+                </div>
+              ) : (
+                <div className="stat">
+                  <span className="small muted">Paid off</span>
+                  <b>{o === 0 ? 'Done' : offBy ? monthYear(offBy) : '—'}</b>
+                  <span className="xs muted">{o === 0 ? 'nothing owed' : offBy ? 'at this rate' : 'no end date'}</span>
+                </div>
+              )}
             </div>
-            <Collapse open={isOpen}>
-            <div className="acc-body">
-            <div className="between">
-              <span className="small muted">{KIND_LABEL[d.kind]}{d.rate ? ` · ${d.rate}% p.a.` : ''}</span>
-              <button className="btn small" onClick={() => setDebtModal({ debt: d })}><Icon name="edit" size={16} /> Edit</button>
-            </div>
+
+            <Collapse open={isOpen} stacked>
+            <div className="acct-body sections">
             {d.payroll && <p className="small muted">Taken from your salary: about {cash(d.payroll.perPay)} each payday, before pay reaches you. Not part of the payday split.</p>}
             {adv && (
               <div className="stack gap-8">
@@ -236,13 +265,6 @@ export function Debts() {
               );
             })}
 
-            <div className="row wrap gap-8">
-              <button className="btn small" onClick={() => setPlanModal({ debt: d })}>
-                <Icon name="plus" size={16} /> {d.kind === 'person' || d.kind === 'loan' ? 'Add amount owed' : 'Add purchase'}
-              </button>
-              {o > 0 && <button className="btn small" onClick={() => setPayModal(d)}><Icon name="check" size={16} /> Record a payment</button>}
-            </div>
-
             {(d.bankPayments?.length ?? 0) > 0 && <BankPayments debt={d} />}
             <TransactionList items={d.transactions ?? []} card />
 
@@ -256,10 +278,11 @@ export function Debts() {
             </div>}
             </div>
             </Collapse>
+            <DetailsToggle open={isOpen} onChange={() => toggle(d.id)} />
           </section>
         );
       })}
-      </div>
+      </CardColumns>
 
       {debts.length > 0 && <DebtChart budget={budget} />}
 
@@ -521,7 +544,7 @@ export function DebtModal({ debt, onClose, onDelete }: { debt?: Debt; onClose: (
 }
 
 /** Outstanding balance and available credit, editable either way round. */
-function BalanceEditor({ debt: d, used, onAddPlan }: { debt: Debt; used: number; onAddPlan: () => void }) {
+function BalanceEditor({ debt: d, used, onAddPlan, editing: startEditing, onDone }: { debt: Debt; used: number; onAddPlan: () => void; editing?: boolean; onDone?: () => void }) {
   const { budget, update } = useBudget();
   // Money owed outside a plan still gets paid from the payday amount; it's only unscheduled when that's $0.
   const unscheduled = debtPerPay(budget, d) === 0;
@@ -529,16 +552,13 @@ function BalanceEditor({ debt: d, used, onAddPlan }: { debt: Debt; used: number;
   const o = owed(d);
   const planned = plannedOwed(d);
   const extra = unplanned(d);
-  const [editing, setEditing] = useState(false);
+  const [editingState, setEditingState] = useState(!!startEditing);
+  const editing = editingState;
+  const setEditing = (v: boolean) => { setEditingState(v); if (!v) onDone?.(); };
   const [owedText, setOwedText] = useState(centsToInput(o));
   const [availText, setAvailText] = useState(d.limit ? centsToInput(d.limit - o) : '');
   const [err, setErr] = useState('');
 
-  function start() {
-    setOwedText(centsToInput(o));
-    setAvailText(d.limit ? centsToInput(d.limit - o) : '');
-    setErr(''); setEditing(true);
-  }
   // Typing one fills in the other (owed + available = limit).
   function onOwed(v: string) {
     setOwedText(v); setErr('');
@@ -592,17 +612,10 @@ function BalanceEditor({ debt: d, used, onAddPlan }: { debt: Debt; used: number;
 
   return (
     <div className="stack gap-6">
-      <div className="between small">
-        <span><b className="fig-sm">{cash(o)}</b> owed</span>
-        {d.limit ? <span className="muted"><b className={d.limit - o < 0 ? 'neg' : ''}>{cash(d.limit - o)}</b> available of {cash(d.limit, { whole: true })}</span> : null}
-      </div>
-      {d.limit ? <div className="bar" role="img" aria-label={`${Math.round(used)}% of the limit used`}><div style={{ width: `${used}%`, background: used > 80 ? 'var(--bad)' : undefined }} /></div> : null}
-      <div className="between small">
-        <span className="muted">
-          {d.balance ? `Balance checked ${fmtShort(d.balance.asOf)}${d.balance.asOf.slice(0, 4) !== today.slice(0, 4) ? ` ${d.balance.asOf.slice(0, 4)}` : ''}` : 'From your plans below'}
-        </span>
-        <button className="btn small" onClick={start}><Icon name="edit" size={16} /> Update balance</button>
-      </div>
+      {d.limit ? <div className="bar" style={{ marginTop: 0 }} role="img" aria-label={`${Math.round(used)}% of the limit used`}><div style={{ width: `${used}%`, background: used > 80 ? 'var(--bad)' : undefined }} /></div> : null}
+      <p className="small muted">
+        {d.balance ? `Balance checked ${fmtShort(d.balance.asOf)}${d.balance.asOf.slice(0, 4) !== today.slice(0, 4) ? ` ${d.balance.asOf.slice(0, 4)}` : ''}` : 'Owed is from the plans below'}{d.limit ? ` · ${Math.round(used)}% of the limit used` : ''}
+      </p>
       {d.balance && extra > 0 && d.rules !== 'gem' && unscheduled && (
         <div className="tip">
           <Icon name="bulb" />

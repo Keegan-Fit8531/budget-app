@@ -1,7 +1,8 @@
+import { SyncPill } from '../components/SyncPill';
 import { useMemo, useState, type ReactNode } from 'react';
 import { Donut } from '../components/Donut';
 import { Icon } from '../components/Icon';
-import { MoveButtons, PageHead, ReorderToggle, SyncPill, useFlip } from '../components/ui';
+import { MoveButtons, PageHead, ReorderToggle, useFlip } from '../components/ui';
 import { moveAmong } from '../lib/order';
 import { bankSync } from '../lib/bank';
 import { GoalCosts } from '../components/GoalCosts';

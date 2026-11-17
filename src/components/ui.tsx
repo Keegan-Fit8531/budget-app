@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { Children, useCallback, useEffect, useSyncExternalStore, useId, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { fmtShort, todayISO } from '../lib/dates';
 import { PALETTE, PALETTE_LABELS, sameColor, tone } from '../lib/colors';
@@ -100,7 +100,8 @@ export function Disclosure({ title, meta, children, defaultOpen = false, forceOp
   return (
     <div className={`disc${ruled ? ' ruled' : ''}${className ? ` ${className}` : ''}`}>
       <button type="button" className={`disc-head${wide ? ' wide' : ''}`} aria-expanded={open} aria-controls={id} onClick={() => setChosen(!open)}>
-        <span>{title}{meta !== undefined && meta !== null && meta !== false && <span className="disc-meta"> · {meta}</span>}</span>
+        <span className="disc-title">{title}</span>
+        {meta !== undefined && meta !== null && meta !== false && <span className="disc-meta">{meta}</span>}
         <Chevron size={16} />
       </button>
       <Collapse open={open} id={id}><div className="disc-body">{children}</div></Collapse>
@@ -230,25 +231,6 @@ export function ago(iso: string, now = Date.now()): string {
   return fmtShort(day);
 }
 
-/**
- * Where a balance came from and how fresh it is, as a small pill: "Synced 2h ago" (the bank
- * connection), "Updated today" (typed in), or "Not tracked". The dot is lit while it's current.
- */
-export function SyncPill({ source, at }: { source: 'bank' | 'entered' | 'none'; at?: string }) {
-  if (source === 'none' || !at) return <span className="pill sync-pill"><span className="sync-dot" aria-hidden="true" />{source === 'bank' ? 'Synced' : 'Not tracked'}</span>;
-  const days = (Date.now() - Date.parse(at.length <= 10 ? `${at}T12:00:00` : at)) / 86400000;
-  const fresh = source === 'bank' ? days < 1.5 : days < 1;
-  const when = ago(at);
-  const full = at.length > 10 ? new Date(at).toLocaleString('en-NZ', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }) : fmtShort(at);
-  return (
-    <span className={`pill sync-pill${fresh ? ' fresh' : ''}`} title={`${source === 'bank' ? 'Last synced from your bank' : 'Balance last entered'}: ${full}`}>
-      <span className="sync-dot" aria-hidden="true" />
-      {source === 'bank' ? <Icon name="sync" size={12} stroke={2.4} /> : null}
-      {source === 'bank' ? `Synced ${when}` : `Updated ${when}`}
-    </span>
-  );
-}
-
 /** Up and down buttons for moving a card, shown while a page is being reordered. */
 export function MoveButtons({ name, first, last, onMove }: { name: string; first: boolean; last: boolean; onMove: (dir: -1 | 1) => void }) {
   return (
@@ -294,3 +276,35 @@ export function useFlip(order: string) {
   }, [order]);
   return { ref, capture };
 }
+
+const WIDE = '(min-width: 1180px)';
+function useWide(): boolean {
+  return useSyncExternalStore((f) => { const m = window.matchMedia(WIDE); m.addEventListener('change', f); return () => m.removeEventListener('change', f); },
+    () => window.matchMedia(WIDE).matches);
+}
+
+/**
+ * Cards two across when there's room: two columns, each its own stack, filled left, right, left… so a
+ * card that opens only pushes down the cards below it, and nothing jumps across. One column on a phone.
+ */
+export function CardColumns({ children, innerRef, className }: { children: ReactNode; innerRef?: React.Ref<HTMLDivElement>; className?: string }) {
+  const wide = useWide();
+  const list = Children.toArray(children);
+  return (
+    <div ref={innerRef} className={`card-cols${className ? ` ${className}` : ''}`}>
+      {wide
+        ? [0, 1].map((c) => <div key={c} className="card-col">{list.filter((_, i) => i % 2 === c)}</div>)
+        : <div className="card-col">{list}</div>}
+    </div>
+  );
+}
+
+/** The Details row at the foot of a card. */
+export function DetailsToggle({ open, onChange }: { open: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <div className="acct-foot">
+      <button type="button" className="disc-head" aria-expanded={open} onClick={() => onChange(!open)}>{open ? 'Hide details' : 'Details'}<Chevron size={16} /></button>
+    </div>
+  );
+}
+
