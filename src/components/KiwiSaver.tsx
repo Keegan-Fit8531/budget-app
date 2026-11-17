@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent } from 'react';
-import { Disclosure } from './ui';
+import { AccIcon, Disclosure } from './ui';
+import { Donut } from './Donut';
 import { Icon } from './Icon';
 import { tone } from '../lib/colors';
 import { diffDays, fmtShort, todayISO, addMonths, type ISODate } from '../lib/dates';
-import { kiwiHistory, kiwiPerPay, recordReading, type KiwiPoint } from '../lib/kiwisaver';
+import { kiwiHistory, kiwiMonths, kiwiPerPay, recordReading, type KiwiMonth, type KiwiPoint } from '../lib/kiwisaver';
 import { cash, centsToInput, parseMoney } from '../lib/money';
 import { useBudget } from '../lib/store';
 import type { SavingsGoal } from '../lib/types';
@@ -21,56 +22,74 @@ export function KiwiSaverCard({ goal, onEdit, extra }: { goal: SavingsGoal; onEd
   const { budget } = useBudget();
   const [updating, setUpdating] = useState(false);
   const points = useMemo(() => kiwiHistory(budget, goal), [budget, goal]);
+  const months = useMemo(() => kiwiMonths(budget, goal), [budget, goal]);
   const last = points[points.length - 1];
   const first = points[0];
   const perPay = kiwiPerPay(budget);
   const acc = budget.accounts.find((a) => a.id === goal.accountId);
   const total = last.funds.reduce((t, f) => t + f.value, 0);
+  const slices = last.funds.length ? last.funds.map((f) => ({ label: f.name, value: f.value, color: tone(f.color) })) : [{ label: 'Balance', value: 1, color: tone(acc?.color) }];
+  const wentIn = last.putIn - first.balance;
 
   return (
-    <section className="card stack gap-12" data-flip={goal.id}>
-      <div className="between nowrap top">
-        <div className="min0">
-          <h2 className="h2">{goal.name}</h2>
-          <p className="small muted">{[goal.note, 'From your pay, locked in until 65'].filter(Boolean).join(' · ')}</p>
+    <section className="card acct" data-flip={goal.id}>
+      <div className="acct-head">
+        <AccIcon color={acc?.color} name="piggy" />
+        <div className="grow min0">
+          <h2 className="h2 clip">{goal.name}</h2>
+          <p className="small muted clip">{goal.note && !/bank connection/i.test(goal.note) ? `${goal.note} · ` : ''}From your pay, locked in until 65</p>
         </div>
-        <span className="row nowrap gap-8">{extra}<button className="icon-btn sm has-tip tip-left" data-tip="Edit" aria-label={`Edit ${goal.name}`} onClick={onEdit}><Icon name="edit" size={16} /></button></span>
+        <div className="acct-side">
+          {extra}
+          <button className="icon-btn mini has-tip tip-left" data-tip="Edit" aria-label={`Edit ${goal.name}`} onClick={onEdit}><Icon name="settings" size={16} /></button>
+        </div>
       </div>
 
-      <div className="stack gap-2">
-        <span className="fig">{cash(goal.balance)}</span>
-        <span className="small muted">Balance, {day(goal.asOf)}</span>
-        {points.length > 1 && (
-          <span className={`small strong ${last.returns < 0 ? 'neg' : 'pos'}`}>
-            {signed(last.returns)} {last.returns < 0 ? 'lost' : 'returns'} since {day(first.date)}
-          </span>
-        )}
-        {perPay && perPay.total > 0 && (
-          <span className="small muted">{cash(perPay.total)} goes in each pay: {cash(perPay.you)} from you, {cash(perPay.employer)} from your employer after tax</span>
-        )}
+      <div className="acct-fig">
+        <b className="fig">{cash(goal.balance)}</b>
+        <button className="icon-btn mini has-tip" data-tip="Add a balance" aria-label={`Add a ${goal.name} balance`} onClick={() => setUpdating(true)}><Icon name="plus" size={16} /></button>
+        <span className="xs muted note-line">As at {day(goal.asOf)}</span>
+      </div>
+
+      <div className="trio">
+        <div className="stat">
+          <span className="small muted">Returns</span>
+          <b className={points.length > 1 ? (last.returns < 0 ? 'neg' : 'pos') : ''}>{points.length > 1 ? signed(last.returns, { whole: true }) : '—'}</b>
+          <span className="xs muted">{points.length > 1 ? `since ${monthYear(first.date)}` : 'needs two balances'}</span>
+        </div>
+        <div className="stat">
+          <span className="small muted">Went in</span>
+          <b>{points.length > 1 ? cash(wentIn, { whole: true }) : '—'}</b>
+          <span className="xs muted">{points.length > 1 ? `since ${monthYear(first.date)}` : 'contributions'}</span>
+        </div>
+        <div className="stat">
+          <span className="small muted">Each pay</span>
+          <b>{perPay && perPay.total > 0 ? cash(perPay.total) : '—'}</b>
+          <span className="xs muted">{perPay && perPay.total > 0 ? 'you + employer' : 'from a payslip'}</span>
+        </div>
       </div>
 
       {last.funds.length > 0 && (
-        <div className="legend" style={{ flex: "none" }}>
-          {last.funds.map((f) => (
-            <div key={f.name} className="legend-row">
-              <span className="dot" style={{ background: tone(f.color) }} />
-              <span className="grow">{f.name}</span>
-              <b>{cash(f.value)}</b>
-              <span className="pct small muted">{total ? `${((f.value / total) * 100).toFixed(1)}%` : ''}</span>
-            </div>
-          ))}
-          {last.fundsEstimated && <span className="xs muted">Each fund’s share of today’s balance, from the split on the last balance with funds.</span>}
+        <div className="row wrap gap-16" style={{ alignItems: 'center' }}>
+          <Donut size={96} slices={slices}>
+            <b className="h3">{last.funds.length}</b>
+            <span className="xs muted">fund{last.funds.length === 1 ? '' : 's'}</span>
+          </Donut>
+          <div className="legend">
+            {last.funds.map((f) => (
+              <div key={f.name} className="legend-row">
+                <span className="dot" style={{ background: tone(f.color) }} />
+                <span className="grow min0 clip">{f.name.replace(/^Kernel\s+/, '')}</span>
+                <b className="num">{cash(f.value, { whole: true })}</b>
+                <span className="pct small muted">{total ? `${Math.round((f.value / total) * 100)}%` : ''}</span>
+              </div>
+            ))}
+            {last.fundsEstimated && <span className="xs muted">Shared out from the last balance with each fund’s value.</span>}
+          </div>
         </div>
       )}
 
-      <div className="row wrap gap-8">
-        <button className="btn small" onClick={() => setUpdating(true)}><Icon name="plus" size={16} /> Add a balance</button>
-      </div>
-
-      <Disclosure title="Gains and losses" meta={points.length > 1 ? `since ${day(first.date)}` : undefined} storageKey={`paydays.kiwi.${goal.id}`}>
-        <KiwiChart goal={goal} points={points} color={tone(acc?.color)} />
-      </Disclosure>
+      <KiwiChart goal={goal} points={points} months={months} color={tone(acc?.color)} />
 
       {updating && <KiwiBalanceModal goal={goal} onClose={() => setUpdating(false)} />}
     </section>
@@ -174,97 +193,70 @@ const axisMoney = (c: number) => {
   return c < 0 ? `−${s}` : s;
 };
 
-const RANGES = [{ months: 3, label: '3M' }, { months: 12, label: '1Y' }, { months: 36, label: '3Y' }, { months: 0, label: 'All' }];
+const RANGES = [{ months: 12, label: '1Y' }, { months: 36, label: '3Y' }, { months: 0, label: 'All' }];
+const monthYear = (d: ISODate) => `${fmtShort(d).replace(/^\d+\s/, '')} ${d.slice(0, 4)}`;
 
-/** A gain or loss between two kept balances (one a month at most, so daily bank balances don't make hairline bars). */
-interface Bar { from: KiwiPoint; to: KiwiPoint; gain: number; stated: boolean; inKnown: boolean }
-
-function barsFor(points: KiwiPoint[]): Bar[] {
-  // The last balance in each month, and the very first.
-  const kept = points.filter((p, i) => i === 0 || i === points.length - 1 || points[i + 1].date.slice(0, 7) !== p.date.slice(0, 7));
-  const out: Bar[] = [];
-  for (let i = 1; i < kept.length; i++) {
-    const span = points.slice(points.indexOf(kept[i - 1]) + 1, points.indexOf(kept[i]) + 1);
-    out.push({ from: kept[i - 1], to: kept[i], gain: kept[i].returns - kept[i - 1].returns, stated: span.every((p) => p.stated), inKnown: span.every((p) => p.inKnown) });
-  }
-  return out;
-}
-
-function KiwiChart({ goal, points: all, color }: { goal: SavingsGoal; points: KiwiPoint[]; color: string }) {
+/**
+ * What it's worth month by month (each real balance a dot, the months between worked out from what
+ * went in), what's gone in (dashed), and below, what went in each month. The gap between the two
+ * lines is the returns.
+ */
+function KiwiChart({ goal, points, months: all, color }: { goal: SavingsGoal; points: KiwiPoint[]; months: KiwiMonth[]; color: string }) {
   const { update } = useBudget();
   const today = todayISO();
   const [range, setRange] = useState(0);
   const [hovered, setHover] = useState<number | null>(null);
   const [wrapRef, width] = useWidth<HTMLDivElement>();
 
-  const from = range ? addMonths(today, -range) : '';
-  // The balance just before the window starts too, so its first gain shows.
-  const startI = from ? Math.max(0, all.findIndex((p) => p.date >= from) - 1) : 0;
-  const points = from && all.some((p) => p.date >= from) ? all.slice(startI) : all;
-  const bars = useMemo(() => barsFor(points), [points]);
-
   if (all.length < 2) {
     return (
       <p className="small muted">
-        Gains and losses show once there are two balances. Upload a statement or breakdown from your provider (Add → Upload a document): its
-        opening and closing values, contributions and returns go straight in. Each balance the bank connection brings in is kept too.
+        The chart shows once there are two balances. Upload a statement from your provider (Add → Upload a document), or add a balance with +.
       </p>
     );
   }
 
-  const fundNames = (goal.funds ?? []).filter((f) => points.some((p) => p.funds.some((x) => x.name === f.name)));
-  const stacked = fundNames.length > 0;
-  const padL = 56, padR = 12, topH = 200, barH = 90, gap = 34, axisH = 22;
+  const from = range ? addMonths(today, -range) : '';
+  const startI = from ? Math.max(0, all.findIndex((p) => p.date >= from) - 1) : 0;
+  const months = from && all.some((p) => p.date >= from) ? all.slice(startI) : all;
+
+  const padL = 56, padR = 12, topH = 200, barH = 64, gap = 30, axisH = 22;
   const innerW = Math.max(120, width - padL - padR);
-  const t0 = points[0].date, span = Math.max(1, diffDays(t0, points[points.length - 1].date));
+  const t0 = months[0].date, span = Math.max(1, diffDays(t0, months[months.length - 1].date));
   const x = (d: ISODate) => padL + (diffDays(t0, d) / span) * innerW;
-  const maxBal = niceMax(Math.max(...points.map((p) => Math.max(p.balance, p.putIn))));
-  const yB = (v: number) => 12 + (1 - v / maxBal) * (topH - 12);
-  const maxGain = niceMax(Math.max(1, ...bars.map((b) => Math.abs(b.gain))));
+  const minBal = 0;
+  const maxBal = niceMax(Math.max(...months.map((p) => Math.max(p.balance, p.putIn))));
+  const yB = (v: number) => 12 + (1 - (v - minBal) / (maxBal - minBal)) * (topH - 12);
+  const bars = months.slice(1);
+  // Scaled to the biggest month, so the bars fill their space.
+  const maxAdd = Math.max(100, ...bars.map((b) => b.added)) * 1.1;
   const barTop = topH + gap;
-  const zero = barTop + barH / 2;
-  const yG = (v: number) => zero - (v / maxGain) * (barH / 2);
+  const yA = (v: number) => barTop + barH - (v / maxAdd) * barH;
   const H = barTop + barH + axisH;
+  const step = innerW / Math.max(1, months.length - 1);
 
-  // Stacked fund areas: each fund sits on the ones before it, in the goal's fund order.
-  const layers = stacked
-    ? fundNames.map((f, k) => {
-      const lower = points.map((p) => fundNames.slice(0, k).reduce((t, g) => t + (p.funds.find((x) => x.name === g.name)?.value ?? 0), 0));
-      const upper = points.map((p, i) => lower[i] + (p.funds.find((x) => x.name === f.name)?.value ?? 0));
-      const top = points.map((p, i) => `${i ? 'L' : 'M'}${x(p.date).toFixed(1)},${yB(upper[i]).toFixed(1)}`).join('');
-      const bottom = [...points].reverse().map((p, j) => `L${x(p.date).toFixed(1)},${yB(lower[points.length - 1 - j]).toFixed(1)}`).join('');
-      return { f, d: `${top}${bottom}Z` };
-    })
-    : [];
-  const line = points.map((p, i) => `${i ? 'L' : 'M'}${x(p.date).toFixed(1)},${yB(p.balance).toFixed(1)}`).join('');
-  const area = `${line}L${x(points[points.length - 1].date).toFixed(1)},${yB(0)}L${padL},${yB(0)}Z`;
-  const putIn = points.map((p, i) => `${i ? 'L' : 'M'}${x(p.date).toFixed(1)},${yB(p.putIn).toFixed(1)}`).join('');
-
-  const last = points[points.length - 1];
-  const gained = last.returns - points[0].returns;
-  const summary = `${goal.name}: ${cash(points[0].balance, { whole: true })} on ${day(points[0].date)} to ${cash(last.balance, { whole: true })} on ${day(last.date)}, ${gained < 0 ? `a loss of ${cash(-gained, { whole: true })}` : `${cash(gained, { whole: true })} of returns`} on top of what went in.`;
+  const line = months.map((p, i) => `${i ? 'L' : 'M'}${x(p.date).toFixed(1)},${yB(p.balance).toFixed(1)}`).join('');
+  const area = `${line}L${x(months[months.length - 1].date).toFixed(1)},${yB(minBal)}L${padL},${yB(minBal)}Z`;
+  const putIn = months.map((p, i) => `${i ? 'L' : 'M'}${x(p.date).toFixed(1)},${yB(p.putIn).toFixed(1)}`).join('');
+  const last = months[months.length - 1];
+  const returns = last.balance - last.putIn - (months[0].balance - months[0].putIn);
+  const summary = `${goal.name} went from ${cash(months[0].balance, { whole: true })} in ${monthYear(months[0].date)} to ${cash(last.balance, { whole: true })}: ${cash(last.putIn - months[0].putIn, { whole: true })} went in, and ${returns < 0 ? `${cash(-returns, { whole: true })} was lost` : `${cash(returns, { whole: true })} came from returns`}.`;
 
   function onMove(e: PointerEvent<SVGSVGElement>) {
     const r = e.currentTarget.getBoundingClientRect();
     const px = e.clientX - r.left;
     let best = 0;
-    points.forEach((p, i) => { if (Math.abs(x(p.date) - px) < Math.abs(x(points[best].date) - px)) best = i; });
+    months.forEach((p, i) => { if (Math.abs(x(p.date) - px) < Math.abs(x(months[best].date) - px)) best = i; });
     setHover(best);
   }
   function onKey(e: KeyboardEvent<SVGSVGElement>) {
-    if (e.key === 'ArrowRight') { setHover((h) => Math.min(points.length - 1, (h ?? -1) + 1)); e.preventDefault(); }
+    if (e.key === 'ArrowRight') { setHover((h) => Math.min(months.length - 1, (h ?? -1) + 1)); e.preventDefault(); }
     if (e.key === 'ArrowLeft') { setHover((h) => Math.max(0, (h ?? 1) - 1)); e.preventDefault(); }
   }
-  const hover = hovered !== null && hovered < points.length ? hovered : null;
-  const h = hover !== null ? points[hover] : null;
-  const hBar = h ? bars.find((b) => b.from.date < h.date && b.to.date >= h.date) : undefined;
+  const h = hovered !== null && hovered < months.length ? months[hovered] : null;
   const labels = (() => {
-    const n = Math.max(2, Math.floor(innerW / 80));
-    return Array.from({ length: n }, (_, i) => {
-      const d = new Date(`${t0}T00:00:00`);
-      d.setDate(d.getDate() + Math.round((span * i) / (n - 1)));
-      return d.toISOString().slice(0, 10);
-    });
+    const n = Math.max(2, Math.min(months.length, Math.floor(innerW / 80)));
+    return Array.from({ length: n }, (_, i) => months[Math.round(((months.length - 1) * i) / (n - 1))].date);
   })();
   const remove = (date: ISODate) => {
     if (!confirm(`Take the ${day(date)} balance out of the history?`)) return;
@@ -277,13 +269,11 @@ function KiwiChart({ goal, points: all, color }: { goal: SavingsGoal; points: Ki
 
   return (
     <div className="stack gap-12">
-      <span className="small muted">{summary}</span>
       <div className="row wrap gap-8 between">
-        <div className="row wrap gap-12 small" aria-label="Legend">
-          {stacked ? fundNames.map((f) => (
-            <span key={f.name} className="row gap-6"><span className="dot" style={{ background: tone(f.color) }} />{f.name}</span>
-          )) : <span className="row gap-6"><span className="dot" style={{ background: color }} />Balance</span>}
+        <div className="row wrap gap-12 small muted" aria-label="Legend">
+          <span className="row gap-6"><span className="dot" style={{ background: color }} />Worth</span>
           <span className="row gap-6"><svg width="16" height="10" aria-hidden="true"><line x1="0" y1="5" x2="16" y2="5" stroke="var(--ink)" strokeWidth="2" strokeDasharray="4 3" /></svg>What went in</span>
+          <span className="row gap-6"><svg width="10" height="10" aria-hidden="true"><circle cx="5" cy="5" r="4" fill="var(--card)" stroke={color} strokeWidth="2" /></svg>A real balance</span>
         </div>
         <div className="seg" role="group" aria-label="How far back">
           {RANGES.map((r) => <button key={r.label} aria-pressed={range === r.months} onClick={() => { setRange(r.months); setHover(null); }}>{r.label}</button>)}
@@ -291,40 +281,33 @@ function KiwiChart({ goal, points: all, color }: { goal: SavingsGoal; points: Ki
       </div>
 
       <div ref={wrapRef} style={{ position: 'relative', width: '100%' }}>
-        <svg width={width} height={H} role="img" aria-label={`${summary} Use the left and right arrow keys to read each balance.`}
+        <svg width={width} height={H} role="img" aria-label={`${summary} Use the left and right arrow keys to read each month.`}
           tabIndex={0} onPointerMove={onMove} onPointerLeave={() => setHover(null)} onKeyDown={onKey} onBlur={() => setHover(null)}
           style={{ display: 'block', touchAction: 'pan-y', outline: 'none' }}>
-          {[0, 0.25, 0.5, 0.75, 1].map((t) => (
-            <g key={`b${t}`}>
-              <line x1={padL} x2={padL + innerW} y1={yB(maxBal * t)} y2={yB(maxBal * t)} stroke="var(--line)" strokeWidth="1" />
-              <text x={padL - 8} y={yB(maxBal * t) + 4} textAnchor="end" fontSize="11" fill="var(--muted)">{axisMoney(maxBal * t)}</text>
-            </g>
-          ))}
-          {[-1, 0, 1].map((t) => (
-            <g key={`g${t}`}>
-              <line x1={padL} x2={padL + innerW} y1={yG(maxGain * t)} y2={yG(maxGain * t)} stroke={t === 0 ? 'var(--muted)' : 'var(--line)'} strokeWidth="1" opacity={t === 0 ? 0.6 : 1} />
-              <text x={padL - 8} y={yG(maxGain * t) + 4} textAnchor="end" fontSize="11" fill="var(--muted)">{axisMoney(maxGain * t)}</text>
-            </g>
-          ))}
-          <text x={padL} y={barTop - 10} fontSize="12" fill="var(--muted)">Gain or loss</text>
+          {[0, 0.25, 0.5, 0.75, 1].map((t) => {
+            const v = minBal + (maxBal - minBal) * t;
+            return (
+              <g key={`b${t}`}>
+                <line x1={padL} x2={padL + innerW} y1={yB(v)} y2={yB(v)} stroke="var(--line)" strokeWidth="1" />
+                <text x={padL - 8} y={yB(v) + 4} textAnchor="end" fontSize="11" fill="var(--muted)">{axisMoney(v)}</text>
+              </g>
+            );
+          })}
+          <path d={area} fill={color} opacity="0.14" />
+          <path d={line} fill="none" stroke={color} strokeWidth="2.5" strokeLinejoin="round" />
+          <path d={putIn} fill="none" stroke="var(--ink)" strokeWidth="1.5" strokeDasharray="5 4" opacity="0.6" />
+          {months.map((p) => p.actual && <circle key={`r${p.date}`} cx={x(p.date)} cy={yB(p.balance)} r="4" fill="var(--card)" stroke={color} strokeWidth="2" />)}
 
-          {stacked
-            ? layers.map(({ f, d }) => <path key={f.name} d={d} fill={tone(f.color)} opacity="0.85" stroke="var(--card)" strokeWidth="2" strokeLinejoin="round" />)
-            : <><path d={area} fill={color} opacity="0.12" /><path d={line} fill="none" stroke={color} strokeWidth="2" strokeLinejoin="round" /></>}
-          <path d={putIn} fill="none" stroke="var(--ink)" strokeWidth="2" strokeDasharray="5 4" opacity="0.7" />
-
+          <text x={padL} y={barTop - 10} fontSize="12" fill="var(--muted)">Went in each month</text>
+          <line x1={padL} x2={padL + innerW} y1={barTop + barH} y2={barTop + barH} stroke="var(--line)" strokeWidth="1" />
+          <text x={padL - 8} y={yA(maxAdd / 1.1) + 4} textAnchor="end" fontSize="11" fill="var(--muted)">{axisMoney(maxAdd / 1.1)}</text>
+          <line x1={padL} x2={padL + innerW} y1={yA(maxAdd / 1.1)} y2={yA(maxAdd / 1.1)} stroke="var(--line)" strokeWidth="1" strokeDasharray="2 3" />
           {bars.map((b) => {
-            const x0 = x(b.from.date) + 1, x1 = x(b.to.date) - 1;
-            const w = Math.max(2, x1 - x0);
-            const top = Math.min(yG(b.gain), zero), bh = Math.max(1, Math.abs(yG(b.gain) - zero));
-            const r = Math.min(4, bh, w / 2);
-            const up = b.gain >= 0;
-            const active = hBar === b;
-            // Rounded at the data end only: the top of a gain, the bottom of a loss.
-            const d = up
-              ? `M${x0},${zero}V${top + r}Q${x0},${top} ${x0 + r},${top}H${x0 + w - r}Q${x0 + w},${top} ${x0 + w},${top + r}V${zero}Z`
-              : `M${x0},${zero}V${top + bh - r}Q${x0},${top + bh} ${x0 + r},${top + bh}H${x0 + w - r}Q${x0 + w},${top + bh} ${x0 + w},${top + bh - r}V${zero}Z`;
-            return <path key={b.to.date} d={d} fill={up ? 'var(--good)' : 'var(--bad)'} opacity={hBar === undefined || active ? (b.stated ? 0.85 : 0.6) : 0.3} />;
+            const w = Math.max(2, Math.min(18, step * 0.6));
+            const bh = Math.max(b.added > 0 ? 1 : 0, barTop + barH - yA(b.added));
+            const active = h?.date === b.date;
+            return <rect key={`a${b.date}`} x={x(b.date) - w / 2} y={barTop + barH - bh} width={w} height={bh} rx={Math.min(3, w / 2)}
+              fill={color} opacity={h && !active ? 0.35 : 0.85} />;
           })}
 
           {labels.map((d, i) => (
@@ -342,39 +325,31 @@ function KiwiChart({ goal, points: all, color }: { goal: SavingsGoal; points: Ki
 
         {h && (
           <div role="status" className="pop-card" style={{ position: 'absolute', top: 8, left: Math.min(Math.max(0, x(h.date) + 12), width - 220), width: 208 }}>
-            <span className="muted">{day(h.date)}</span>
-            <span className="row gap-8"><b>{cash(h.balance)}</b><span className="muted">balance</span></span>
-            {h.funds.map((f) => (
-              <span key={f.name} className="row gap-8">
-                <span className="dot sm" style={{ background: tone(f.color) }} />
-                <span className="grow">{f.name}</span><span>{cash(f.value, { whole: true })}</span>
-              </span>
-            ))}
-            {h.fundsEstimated && h.funds.length > 0 && <span className="xs muted">Funds shared out from another day’s split</span>}
-            <span className="row gap-8"><span className="grow muted">What went in</span><span>{cash(h.putIn, { whole: true })}</span></span>
-            <span className="row gap-8"><span className="grow muted">Returns so far</span><span className={h.returns < 0 ? 'neg' : 'pos'}>{signed(h.returns, { whole: true })}</span></span>
-            {hBar && (
-              <span className="row gap-8"><span className="grow muted">Since {fmtShort(hBar.from.date)}</span><span className={hBar.gain < 0 ? 'neg' : 'pos'}>{signed(hBar.gain)}</span></span>
-            )}
+            <span className="muted">{h.actual ? day(h.date) : `End of ${monthYear(h.date)}`}</span>
+            <span className="row gap-8"><b>{cash(h.balance, { whole: true })}</b><span className="muted">{h.actual ? 'balance' : 'about'}</span></span>
+            <span className="row gap-8"><span className="grow muted">Went in that month</span><span>{cash(h.added, { whole: true })}</span></span>
+            <span className="row gap-8"><span className="grow muted">Went in, all told</span><span>{cash(h.putIn, { whole: true })}</span></span>
+            <span className="row gap-8"><span className="grow muted">Returns</span><span className={h.balance - h.putIn < 0 ? 'neg' : 'pos'}>{signed(h.balance - h.putIn, { whole: true })}</span></span>
           </div>
         )}
       </div>
+      <p className="xs muted">{summary} Dots are real balances; between them it’s worked out from what went in.</p>
 
-      <Disclosure title="Show as a table">
+      <Disclosure title="Balances" meta={points.length}>
         <div className="table-scroll">
           <table className="table">
             <thead>
               <tr><th>Date</th><th>Balance</th><th>What went in</th><th>Gain or loss</th><th><span className="sr-only">Remove</span></th></tr>
             </thead>
             <tbody>
-              {[...all].reverse().map((p, i) => (
+              {[...points].reverse().map((p, i) => (
                 <tr key={p.date}>
                   <td>{day(p.date)}</td>
                   <td>{cash(p.balance)}</td>
                   <td>{cash(p.putIn)}</td>
-                  <td className={p.gain < 0 ? 'neg' : p.gain > 0 ? 'pos' : ''}>{i === all.length - 1 ? '' : `${signed(p.gain)}${p.stated ? '' : ' *'}`}</td>
+                  <td className={p.gain < 0 ? 'neg' : p.gain > 0 ? 'pos' : ''}>{i === points.length - 1 ? '' : signed(p.gain)}</td>
                   <td>{(goal.readings ?? []).some((r) => r.date === p.date) && (
-                    <button className="icon-btn plain" aria-label={`Remove the ${day(p.date)} balance`} onClick={() => remove(p.date)}><Icon name="x" size={16} /></button>
+                    <button className="icon-btn mini plain" aria-label={`Remove the ${day(p.date)} balance`} onClick={() => remove(p.date)}><Icon name="x" size={14} /></button>
                   )}</td>
                 </tr>
               ))}
@@ -382,11 +357,6 @@ function KiwiChart({ goal, points: all, color }: { goal: SavingsGoal; points: Ki
           </table>
         </div>
       </Disclosure>
-      <p className="small muted">
-        A gain or loss is the change in balance less what went in. Where a statement says what went in and what was earned (after PIE tax),
-        its figures are used; * marks one worked out from your payslips instead (your contribution, plus your employer’s after its tax), so a month can
-        look up or down depending on when contributions reach the fund, and the yearly government contribution shows as a gain.
-      </p>
     </div>
   );
 }

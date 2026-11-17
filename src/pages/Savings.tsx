@@ -2,7 +2,7 @@ import { SyncPill } from '../components/SyncPill';
 import { useMemo, useState, type ReactNode } from 'react';
 import { Donut } from '../components/Donut';
 import { Icon } from '../components/Icon';
-import { MoveButtons, PageHead, ReorderToggle, useFlip } from '../components/ui';
+import { AccIcon, Modal, MoveButtons, PageHead, ReorderToggle, useFlip } from '../components/ui';
 import { moveAmong } from '../lib/order';
 import { bankSync } from '../lib/bank';
 import { GoalCosts } from '../components/GoalCosts';
@@ -47,7 +47,7 @@ export function Savings() {
   // Its balance from the bank connection (KiwiSaver, an investment), when it's linked.
   const pill = (g: SavingsGoal) => {
     const s1 = bankSync(budget, `saving:${g.id}`), s2 = bankSync(budget, `account:${g.accountId}`);
-    return s1.linked || s2.linked ? <SyncPill source="bank" at={s1.at ?? s2.at ?? g.asOf} /> : null;
+    return s1.linked || s2.linked ? <SyncPill source="bank" at={s1.at ?? s2.at ?? g.asOf} /> : <SyncPill source="entered" at={g.asOf} />;
   };
   const saved = goals.reduce((t, g) => t + g.balance, 0);
   const kiwi = kiwiPerPay(budget)?.total ?? 0;
@@ -91,7 +91,6 @@ export function Savings() {
   );
 }
 
-type Tab = 'costs' | 'money' | 'payday';
 
 /** One savings goal: a short summary (pie, saved, one status line), then tabs for costs, money in and out, and payday. */
 function GoalCard({ f, plan, period, onEdit, extra }: { f: ReturnType<typeof forecast>; plan: ReturnType<typeof planFor>; period: ReturnType<typeof useViewPeriod>['period']; onEdit: () => void; extra?: ReactNode }) {
@@ -115,12 +114,7 @@ function GoalCard({ f, plan, period, onEdit, extra }: { f: ReturnType<typeof for
     : [{ label: 'Saved', value: 1, color }];
   const usual = averageSplit(budget, g.accountId);
   const thisPay = funded?.funded ?? 0;
-  const tabKey = `paydays.goaltab.${g.id}`;
-  const [tab, setTabState] = useState<Tab>(() => {
-    try { const t = localStorage.getItem(tabKey) as Tab | null; if (t) return t; } catch { /* ignore */ }
-    return costs.length ? 'costs' : 'payday';
-  });
-  const setTab = (t: Tab) => { setTabState(t); try { localStorage.setItem(tabKey, t); } catch { /* ignore */ } };
+  const [settings, setSettings] = useState(false);
   const when = g.targetDate ? `${fmtShort(g.targetDate)} ${g.targetDate.slice(0, 4)}` : '';
 
   // One status line: the thing to know about this goal right now.
@@ -135,59 +129,72 @@ function GoalCard({ f, plan, period, onEdit, extra }: { f: ReturnType<typeof for
   else if (g.target && f.reachedBy) status = { text: `Reached by about ${monthName(f.reachedBy)} ${f.reachedBy.slice(0, 4)}`, tone: 'muted' };
   else status = { text: `About ${cash(f.projected, { whole: true })} in 12 pays`, tone: 'muted' };
 
-  const tabs: { id: Tab; label: string }[] = [
-    { id: 'costs', label: costs.length ? `Costs · ${costs.length}` : 'Costs' },
-    { id: 'money', label: g.gifts?.length ? `Money · ${g.gifts.length}` : 'Money' },
-    { id: 'payday', label: 'Payday' },
-  ];
-
   return (
-    <section className="card stack gap-12" data-flip={g.id}>
-      <div className="between nowrap top">
-        <div className="min0">
-          <h2 className="h2">{g.name}</h2>
+    <section className="card acct" data-flip={g.id}>
+      <div className="acct-head">
+        <AccIcon color={acc?.color} name="piggy" />
+        <div className="grow min0">
+          <h2 className="h2 clip">{g.name}</h2>
           {(() => {
             const sub = [acc && !acc.name.toLowerCase().includes(g.name.toLowerCase()) ? acc.name : null, g.note].filter(Boolean).join(' · ');
-            return sub ? <p className="small muted">{sub}</p> : null;
+            return sub ? <p className="small muted clip">{sub}</p> : null;
           })()}
         </div>
-        <span className="row nowrap gap-8">{extra}<button className="icon-btn sm has-tip tip-left" data-tip="Edit goal" aria-label={`Edit ${g.name}`} onClick={onEdit}><Icon name="edit" size={16} /></button></span>
+        <div className="acct-side">
+          {extra}
+          <button className="icon-btn mini has-tip tip-left" data-tip="Money and payday" aria-label={`${g.name}: money in and out, and payday`} onClick={() => setSettings(true)}><Icon name="settings" size={16} /></button>
+          <button className="icon-btn mini has-tip tip-left" data-tip="Edit goal" aria-label={`Edit ${g.name}`} onClick={onEdit}><Icon name="edit" size={16} /></button>
+        </div>
       </div>
 
-      <div className="row nowrap gap-16">
-        <Donut size={96} slices={slices}>
+      <div className="row nowrap gap-20" style={{ alignItems: 'center' }}>
+        <Donut size={104} slices={slices}>
           <b className="h3">{aim ? `${Math.round(pct)}%` : cash(g.balance, { whole: true })}</b>
           <span className="xs muted">{direct ? 'covered' : 'saved'}</span>
         </Donut>
-        <div className="grow stack gap-2">
-          <span className="fig">{cash(g.balance, { whole: true })}</span>
-          <span className="small muted">{direct ? `saved + ${cash(direct, { whole: true })} paid already · ` : ''}{aim ? `of ${cash(aim, { whole: true })}${g.target ? ' target' : ' costs'} · ` : ''}updated {fmtShort(g.asOf)}</span>
+        <div className="grow min0 stack gap-4">
+          <b className="fig" style={{ fontSize: 30 }}>{cash(g.balance, { whole: true })}</b>
+          <span className="small muted">{aim ? `of ${cash(aim, { whole: true })}${g.target ? ' target' : ' costs'}` : 'saved'}{direct ? ` · ${cash(direct, { whole: true })} paid already` : ''}</span>
           <span className={`small strong ${status.tone}`}>{status.text}</span>
-          <span className="small muted">
-            {monthName(period.start)} pay {cash(thisPay, { whole: true })}{thisPay !== usual ? ` (usually ${cash(usual, { whole: true })})` : ''}
-            {f.periodsLeft !== undefined ? ` · ${f.periodsLeft} pays left` : ''}
-            {g.otherPerPay ? ` · +${cash(g.otherPerPay, { whole: true })} a pay from elsewhere` : ''}
-          </span>
+        </div>
+      </div>
+
+      <div className="trio">
+        <div className="stat">
+          <span className="small muted">{monthName(period.start)} pay</span>
+          <b>{cash(thisPay, { whole: true })}</b>
+          <span className="xs muted">{thisPay !== usual ? `usually ${cash(usual, { whole: true })}` : 'as usual'}</span>
+        </div>
+        <div className="stat">
+          <span className="small muted">Pays left</span>
+          <b>{f.periodsLeft ?? '—'}</b>
+          <span className="xs muted">{when ? `to ${when}` : 'no date set'}</span>
+        </div>
+        <div className="stat">
+          <span className="small muted">{c ? 'Still to pay' : 'In 12 pays'}</span>
+          <b>{cash(c ? Math.max(0, c.total - c.paid) : f.projected, { whole: true })}</b>
+          <span className="xs muted">{c ? `${costs.length} cost${costs.length === 1 ? '' : 's'}` : 'projected'}</span>
         </div>
       </div>
 
       {people && <PeopleChips goal={g} />}
 
-      <div className="seg fill" role="tablist" aria-label={`${g.name} details`}>
-        {tabs.map((t) => (
-          <button key={t.id} role="tab" aria-selected={tab === t.id} onClick={() => setTab(t.id)}>{t.label}</button>
-        ))}
-      </div>
+      {costs.length > 0 && <div style={{ borderTop: '1px solid var(--line)', paddingTop: 'var(--s-4)' }}><GoalCosts goal={g} /></div>}
 
-      <div role="tabpanel">
-        {tab === 'costs' && <GoalCosts goal={g} />}
-        {tab === 'money' && <GoalGifts goal={g} />}
-        {tab === 'payday' && (
-          <PaydayControl accountId={g.accountId} sends={funded?.funded ?? 0} needs={funded?.need ?? 0}
-            autoLabel="Send what's needed to hit the target date"
-            autoHint={g.target && g.targetDate ? 'Works out the per-pay amount from your target and date.' : 'Needs a target and a target date.'} />
-        )}
-      </div>
+      {settings && (
+        <Modal title={g.name} sub="Money in and out, and what payday sends" width={640} onClose={() => setSettings(false)}>
+          <section className="stack gap-12">
+            <h3 className="h3">Payday</h3>
+            <PaydayControl accountId={g.accountId} sends={funded?.funded ?? 0} needs={funded?.need ?? 0}
+              autoLabel="Send what's needed to hit the target date"
+              autoHint={g.target && g.targetDate ? 'Works out the per-pay amount from your target and date.' : 'Needs a target and a target date.'} />
+          </section>
+          <section className="stack gap-12" style={{ borderTop: '1px solid var(--line)', paddingTop: 'var(--s-4)' }}>
+            <h3 className="h3">Money in and out</h3>
+            <GoalGifts goal={g} />
+          </section>
+        </Modal>
+      )}
     </section>
   );
 }
