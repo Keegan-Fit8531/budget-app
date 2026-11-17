@@ -397,8 +397,15 @@ select {
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23566367' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
   background-repeat: no-repeat; background-position: right 12px center; background-size: 16px 16px;
   padding-right: 40px !important; text-overflow: ellipsis;
+  /* A dropdown on its own (not in a .field) gets the same box as the app's other controls. */
+  min-height: 36px; padding-left: var(--s-3); border: 1px solid var(--line); border-radius: var(--r-md);
+  background-color: var(--card); color: var(--ink); font-size: var(--fs-sm); cursor: pointer; max-width: 100%;
 }
+select:hover { border-color: var(--muted); }
+select:focus-visible { outline: 2px solid var(--brand-2); outline-offset: 1px; }
 select::-ms-expand { display: none; }
+/* A small dropdown inside a row (a shop's category): a compact chip with a smaller chevron. */
+select.select-sm { min-height: 30px; padding-left: 10px; padding-right: 28px !important; border-radius: var(--r-sm); font-size: var(--fs-xs); font-weight: 500; background-position: right 8px center; background-size: 14px 14px; background-color: var(--card); }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) select {
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%239FADAF' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
