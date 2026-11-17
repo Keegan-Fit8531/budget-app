@@ -187,7 +187,9 @@ h1, h2, h3, p { margin: 0; }
 .nav-sep { height: 1px; background: var(--side-active); margin: var(--s-3) var(--s-2); }
 .btn.side-add { margin-top: auto; background: var(--side-strong); color: var(--side-bg); border: 0; }
 
-.main { flex: 1; min-width: 0; padding: var(--s-8) 40px 64px; max-width: 1200px; display: flex; flex-direction: column; gap: var(--s-5); }
+.main { flex: 1; min-width: 0; padding: var(--s-8) 40px 64px; max-width: 1200px; display: flex; flex-direction: column; gap: var(--s-5);
+  /* Nothing on a page ever makes the screen scroll sideways (clip, unlike hidden, keeps sticky parts working). */
+  overflow-x: clip; }
 
 .bottom-nav { display: none; }
 .mobile-top { display: none; }
@@ -487,16 +489,17 @@ select.select-sm { min-height: 30px; padding-left: 10px; padding-right: 28px !im
 /* Small floating labels and chart read-outs */
 .pop { background: var(--ink); color: var(--card); border-radius: var(--r-sm); padding: 6px 10px; font-size: var(--fs-xs); line-height: 1.35; box-shadow: var(--shadow-pop); pointer-events: none; }
 .pop-card { background: var(--card); border: 1px solid var(--line); border-radius: var(--r-md); padding: 10px var(--s-3); box-shadow: var(--shadow-pop); font-size: var(--fs-sm); pointer-events: none; display: flex; flex-direction: column; gap: var(--s-1); }
-/* A label that appears straight away when you hover (or tab to) an icon button */
+/* A label that appears straight away when you hover (or tab to) an icon button. It's only drawn while
+   shown: hidden but still there, a label on a button by the screen's edge made the page scroll sideways. */
 .has-tip { position: relative; }
 .has-tip::after {
-  content: attr(data-tip); position: absolute; bottom: calc(100% + 8px); left: 50%; transform: translateX(-50%);
+  position: absolute; bottom: calc(100% + 8px); left: 50%; transform: translateX(-50%);
   background: var(--ink); color: var(--card); font-size: var(--fs-xs); font-weight: 600; line-height: 1.3; padding: 6px 10px; border-radius: var(--r-sm);
   white-space: nowrap; pointer-events: none; opacity: 0; transition: opacity .12s; z-index: 30;
 }
 .has-tip.tip-left::after { left: auto; right: 0; transform: none; }
-.has-tip:hover::after, .has-tip:focus-visible::after { opacity: 1; }
-@media (hover: none) { .has-tip:hover::after { opacity: 0; } }
+.has-tip:hover::after, .has-tip:focus-visible::after { content: attr(data-tip); opacity: 1; }
+@media (hover: none) { .has-tip:hover:not(:focus-visible)::after { content: none; } }
 
 /* ---------- Charts ---------- */
 .donut { border-radius: 50%; display: grid; place-items: center; flex: 0 0 auto; }
