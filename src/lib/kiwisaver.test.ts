@@ -135,3 +135,34 @@ function upload(b: Budget, ex: Extraction) {
   if (!r.proposal) throw new Error(r.issues.map((i) => i.text).join(' / '));
   applyProposal(b, r.proposal, '2026-11-16');
 }
+
+describe('KiwiSaver month by month', () => {
+  it('fills the months between two balances from the account’s contributions, landing on each real balance', async () => {
+    const { kiwiMonths } = await import('./kiwisaver');
+    const goal = {
+      id: 'k', name: 'KiwiSaver', accountId: 'ks', balance: 160000, asOf: '2026-04-30', kiwisaver: true,
+      readings: [
+        { date: '2026-01-15', balance: 100000 },
+        { date: '2026-04-30', balance: 160000, statement: { since: '2026-01-15', employee: 30000, employer: 20000 } },
+      ],
+    };
+    const b = {
+      settings: { paydayDay: 19, saturday: 'friday', sunday: 'monday' }, payslips: {},
+      accountTransactions: { ks: [
+        { date: '2026-02-10', description: 'IRDRemittedContribution', amount: 20000 },
+        { date: '2026-03-10', description: 'IRDRemittedContribution', amount: 20000 },
+        { date: '2026-04-10', description: 'IRDRemittedContribution', amount: 10000 },
+      ] },
+    } as never;
+    const m = kiwiMonths(b, goal as never);
+    expect(m[0]).toMatchObject({ date: '2026-01-15', balance: 100000, actual: true });
+    expect(m[m.length - 1]).toMatchObject({ date: '2026-04-30', balance: 160000, actual: true, putIn: 150000 });
+    expect(m.map((x) => x.date)).toEqual(['2026-01-15', '2026-01-31', '2026-02-28', '2026-03-31', '2026-04-30']);
+    // What went in steps with each contribution.
+    expect(m.map((x) => x.added)).toEqual([0, 0, 20000, 20000, 10000]);
+    // Between balances it's estimated, and goes up rather than jumping at the end.
+    expect(m[2].actual).toBe(false);
+    expect(m[2].balance).toBeGreaterThan(100000);
+    expect(m[2].balance).toBeLessThan(160000);
+  });
+});

@@ -1,5 +1,5 @@
 import { nextColor } from './colors';
-import { diffDays, type ISODate } from './dates';
+import { addDays, diffDays, type ISODate } from './dates';
 import { periodContaining, shiftPeriod } from './engine';
 import type { Payslip } from './payslip';
 import type { Budget, Cents, KiwiReading, KiwiStatement, SavingsGoal } from './types';
@@ -152,4 +152,65 @@ export function kiwiHistory(b: Pick<Budget, 'settings' | 'payslips'>, goal: Savi
 export function kiwiPerPay(b: Pick<Budget, 'payslips'>): ReturnType<typeof slipContribution> | undefined {
   const slip = Object.entries(b.payslips ?? {}).filter(([, s]) => s.kiwisaver || s.employerKiwisaver).sort((x, y) => y[0].localeCompare(x[0]))[0]?.[1];
   return slip ? slipContribution(slip) : undefined;
+}
+
+/** A month on the KiwiSaver chart: what it was worth at the end of it, and what went in during it. */
+export interface KiwiMonth {
+  /** The last day shown for the month (the month's end, or the latest balance). */
+  date: ISODate;
+  balance: Cents;
+  /** Everything put in by then: the first balance, plus every contribution since. */
+  putIn: Cents;
+  /** Put in during this month. */
+  added: Cents;
+  /** A real balance on this day (a statement, the bank, typed in); otherwise worked out between two. */
+  actual: boolean;
+}
+
+const monthEnd = (d: ISODate): ISODate => {
+  const [y, m] = d.split('-').map(Number);
+  return new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10);
+};
+
+/**
+ * The goal month by month, from its first balance to its latest. Balances you have are used as they
+ * are. Between two of them, what went in comes from the account's own transactions (the bank
+ * connection's contributions) where there are any, the rest spread evenly; and the returns grow
+ * evenly from one balance's to the next. So the chart has a shape between statements, and lands
+ * exactly on every real balance.
+ */
+export function kiwiMonths(b: Pick<Budget, 'settings' | 'payslips' | 'accountTransactions'>, goal: SavingsGoal): KiwiMonth[] {
+  const pts = kiwiHistory(b, goal);
+  if (pts.length < 2) return pts.map((p) => ({ date: p.date, balance: p.balance, putIn: p.putIn, added: 0, actual: true }));
+  const txns = (b.accountTransactions?.[goal.accountId] ?? []).filter((t) => t.amount > 0);
+  // Days to show: each month's end between the first and last balance, and every real balance.
+  const days = new Set<ISODate>(pts.map((p) => p.date));
+  for (let d = monthEnd(pts[0].date); d < pts[pts.length - 1].date; d = monthEnd(addDays(d, 1))) days.add(d);
+  const sorted = [...days].sort();
+  // What went in by each day, for one stretch between two balances.
+  const putInAt = (i: number, d: ISODate): Cents => {
+    const a = pts[i], z = pts[i + 1];
+    const need = z.putIn - a.putIn;
+    const inside = txns.filter((t) => t.date > a.date && t.date <= z.date);
+    const known = inside.reduce((t, x) => t + x.amount, 0);
+    const upTo = inside.filter((t) => t.date <= d).reduce((t, x) => t + x.amount, 0);
+    if (known <= 0) return a.putIn + Math.round((need * diffDays(a.date, d)) / Math.max(1, diffDays(a.date, z.date)));
+    if (known >= need) return a.putIn + Math.round((upTo * need) / known);
+    // The transactions start partway through: what they don't cover is spread over the time before them.
+    const start = inside[0].date;
+    const before = Math.min(1, diffDays(a.date, d) / Math.max(1, diffDays(a.date, start)));
+    return a.putIn + Math.round((need - known) * before) + upTo;
+  };
+  const out: KiwiMonth[] = [];
+  for (const d of sorted) {
+    const real = pts.find((p) => p.date === d);
+    let i = pts.findIndex((p, k) => k < pts.length - 1 && p.date <= d && pts[k + 1].date >= d);
+    if (i < 0) i = pts.length - 2;
+    const a = pts[i], z = pts[i + 1];
+    const putIn = real ? real.putIn : putInAt(i, d);
+    const returns = real ? real.returns : a.returns + ((z.returns - a.returns) * diffDays(a.date, d)) / Math.max(1, diffDays(a.date, z.date));
+    const prev = out[out.length - 1];
+    out.push({ date: d, balance: real ? real.balance : Math.round(putIn + returns), putIn, added: prev ? putIn - prev.putIn : 0, actual: !!real });
+  }
+  return out;
 }
