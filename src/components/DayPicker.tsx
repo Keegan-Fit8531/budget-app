@@ -68,7 +68,7 @@ export function DayPicker({ dv, title, children }: { dv: DayView; title: string;
             <button className="icon-btn plain" aria-label="Previous pay" disabled={offset === 0} onClick={() => goPay(offset - 1)}><Icon name="left" /></button>
             <button className="icon-btn plain" aria-label="Next pay" onClick={() => goPay(offset + 1)}><Icon name="right" /></button>
             {day === today && (
-              <button className={`icon-btn plain has-tip${open ? ' on' : ''}`} data-tip="Look at another day" aria-label="Look at another day" aria-expanded={open}
+              <button className={`icon-btn plain has-tip tip-left${open ? ' on' : ''}`} data-tip="Look at another day" aria-label="Look at another day" aria-expanded={open}
                 onClick={() => setPicking(!open)}><Icon name="calendar" /></button>
             )}
           </div>
