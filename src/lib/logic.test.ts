@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { balanceToday, billTracker, depositFor, estimateBalance, outflows } from './balances';
 import { applyAllocation, existingExtras, undoAllocation } from './allocate';
 import { addDays } from './dates';
-import { applyPayment, debtPaymentsIn, debtSchedules, owed, paidIn, planSchedule, recordHistory, settleDue } from './debts';
+import { applyPayment, debtPay, debtPaymentsIn, debtPerPay, debtSchedules, owed, projectedOwed, paidIn, planSchedule, recordHistory, settleDue } from './debts';
 import { classifyText, matchDebt, parseDate, parseStatementText, recordStatement } from './documents';
 import { averageNeed, clearPaydayMove, periodContaining, planFor, recordPayday, setAsidePerPay, shiftPeriod } from './engine';
 import { projectedAt, removeSpend, spendFromGoal } from './goalcosts';
@@ -106,6 +106,14 @@ describe('savings goals', () => {
     g.balance = 10000; g.asOf = '2026-11-25';
     expect(projectedAt(b, g, '2027-01-20', '2026-11-25')).toEqual({ amount: 30000, pays: 2 });
     expect(forecast(b, g, '2026-11-25')).toMatchObject({ onTrack: true, reachedBy: '2027-01-19', projected: 30000 });
+  });
+
+  it('counts extra sent for one pay only (Optimise) in the forecast', () => {
+    // $100 a pay, plus $100 extra in the 18 Dec pay: $400 by 19 Jan instead of $300.
+    const b = withGoal(40000);
+    b.overrides = { '2026-12-18': { sv: 20000 } };
+    const f = forecast(b, b.savings![0], '2026-11-12');
+    expect(f).toMatchObject({ reachedBy: '2027-01-19', onTrack: true, projected: 40000 });
   });
 });
 
@@ -1556,5 +1564,26 @@ describe('telling cards and accounts apart', () => {
     b.accounts.push({ id: 'rent', name: 'Rent', kind: 'bank', color: '#000', groupId: 'g', number: '06-0115-0324910-055' });
     expect(transferTo(b, 'To: 06-0115-0324910-55 Debit Transfer 083615')).toEqual({ dir: 'to', name: 'Rent' });
     expect(transferTo(b, 'From: 06-0115-0324910-00 Credit Transfer 071301')).toBeUndefined();
+  });
+});
+
+describe('extra paid off a debt for one pay', () => {
+  it('Gem: a pay with extra (Optimise, this pay only) pays that much on its statement day, and owes that much less after', () => {
+    const b = budget();
+    b.accounts.push({ id: 'gem', name: 'Gem', kind: 'external', color: '#000', groupId: b.groups[0].id });
+    b.split.push({ accountId: 'gem', amount: 10000, mode: 'fixed' });
+    const gem: Debt = {
+      id: 'gem', name: 'Gem Visa', kind: 'card', rules: 'gem', accountId: 'gem', statementDay: 21, balance: { amount: 400000, asOf: '2026-11-01' },
+      plans: [{ id: 'g1', name: 'Purchases', type: 'interest-free', original: 400000, remaining: 400000, asOf: '2026-11-01', purchaseDate: '2026-07-09', ends: '2028-01-20' }],
+    };
+    b.debts = [gem];
+    const steady = projectedOwed(gem, b.settings, '2027-03-31', debtPerPay(b, gem));
+    expect(projectedOwed(gem, b.settings, '2027-03-31', debtPay(b, gem))).toBe(steady);
+    b.overrides = { '2027-03-19': { gem: 160000 } };
+    const pays = debtSchedules(gem, b.settings, debtPay(b, gem)).flatMap((x) => x.payments);
+    expect(pays.find((p) => p.date === '2027-03-21')?.amount).toBe(160000);
+    expect(pays.find((p) => p.date === '2027-04-21')?.amount).toBe(10000);
+    expect(projectedOwed(gem, b.settings, '2027-03-20', debtPay(b, gem))).toBe(projectedOwed(gem, b.settings, '2027-03-20', debtPerPay(b, gem)));
+    expect(projectedOwed(gem, b.settings, '2027-03-31', debtPay(b, gem))).toBe(steady - 150000);
   });
 });

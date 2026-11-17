@@ -9,7 +9,7 @@ import { PaydayControl } from '../components/PaydayControl';
 import { TransactionList } from '../components/Transactions';
 import { nextColor } from '../lib/colors';
 import { addDays, fmtDay, fmtShort, monthName, ordinal, todayISO, type ISODate } from '../lib/dates';
-import { applyPayment, beforeStatement, debtAdvice, debtPerPay, debtSchedules, exactForFirstPlan, gemPlan, historyOwed, owed, type DebtAdvice, PLAN_LABEL, plannedOwed, planSchedule, projectedOwed, recordHistory, suggestPlan, unplanned } from '../lib/debts';
+import { applyPayment, beforeStatement, debtAdvice, debtPay, debtPerPay, debtSchedules, exactForFirstPlan, gemPlan, historyOwed, offRecommended as isOffRecommended, owed, type DebtAdvice, PLAN_LABEL, plannedOwed, planSchedule, projectedOwed, recordHistory, suggestPlan, unplanned } from '../lib/debts';
 import { periodContaining, planFor, upcomingPayPeriod } from '../lib/engine';
 import { DayPicker, useDayView } from '../components/DayPicker';
 import { cash, centsToInput, parseMoney } from '../lib/money';
@@ -26,12 +26,12 @@ export function Debts() {
   const today = todayISO();
   const s = budget.settings;
   // Which pay and day to look at: today in the pay you're in now, by default.
-  const dv = useDayView('paydays.debts.view');
+  const dv = useDayView('paydays.debts.view', { endOfPay: true });
   const period = dv.view;
   const day = dv.day;
   const plan = useMemo(() => planFor(budget, period), [budget, period]);
   /** What a debt owes at the end of the chosen day: now (today), projected (later), or from its history (earlier). */
-  const owedOn = (d: Debt): Cents | undefined => day === today ? owed(d) : day > today ? projectedOwed(d, s, day, debtPerPay(budget, d)) : historyOwed(d, day);
+  const owedOn = (d: Debt): Cents | undefined => day === today ? owed(d) : day > today ? projectedOwed(d, s, day, debtPay(budget, d)) : historyOwed(d, day);
   const [planModal, setPlanModal] = useState<{ debt: Debt; plan?: DebtPlan; prefill?: number } | null>(null);
   const [debtModal, setDebtModal] = useState<{ debt?: Debt } | null>(null);
   const [payModal, setPayModal] = useState<Debt | null>(null);
@@ -70,10 +70,10 @@ export function Debts() {
   const totalOnDay = onDay.every((v) => v !== undefined) ? onDay.reduce<number>((t, v) => t + (v ?? 0), 0) : undefined;
   const totalLimit = debts.reduce((t, d) => t + (d.limit ?? 0), 0);
   const cardOwed = debts.filter((d) => d.limit).reduce((t, d) => t + (owedOn(d) ?? owed(d)), 0);
-  const ends = debts.flatMap((d) => debtSchedules(d, s, debtPerPay(budget, d))).map((x) => x.paidOffBy).filter(Boolean) as ISODate[];
+  const ends = debts.flatMap((d) => debtSchedules(d, s, debtPay(budget, d))).map((x) => x.paidOffBy).filter(Boolean) as ISODate[];
   const debtFree = debts.some((d) => d.plans.some((p) => p.remaining > 0)) && ends.length ? ends.sort()[ends.length - 1] : undefined;
 
-  const offRecommended = advice.filter((a) => a.recommended !== a.sending);
+  const offRecommended = advice.filter(isOffRecommended);
   // Where what's owed came from: the bank connection, or the last balance you checked (a payment seen
   // leaving your bank since then keeps it current, so it shows as synced on that day).
   const sourcePill = (d: Debt) => {
@@ -131,15 +131,15 @@ export function Debts() {
       <CardColumns innerRef={flip.ref} className={reorder ? 'reordering' : undefined}>
       {debts.map((d, i) => {
         const acc = budget.accounts.find((a) => a.id === d.accountId) ?? (d.color ? { color: d.color } : undefined);
-        const schedules = debtSchedules(d, s, debtPerPay(budget, d));
-        const gem = d.rules === 'gem' && d.plans.length + unplanned(d) > 0 ? gemPlan(d, s, debtPerPay(budget, d)) : null;
+        const schedules = debtSchedules(d, s, debtPay(budget, d));
+        const gem = d.rules === 'gem' && d.plans.length + unplanned(d) > 0 ? gemPlan(d, s, debtPay(budget, d)) : null;
         const o = owed(d);
         const oDay = owedOn(d);
         const used = d.limit ? Math.min(100, (o / d.limit) * 100) : 0;
         const funded = plan.accounts.find((a) => a.account.id === d.accountId);
         const isOpen = open.includes(d.id);
         const adv = advice.find((a) => a.debt.id === d.id);
-        const diff = adv ? adv.sending - adv.recommended : 0;
+        const diff = adv ? (adv.extra ? adv.usual : adv.sending) - adv.recommended : 0;
         const upcoming = schedules.flatMap((x) => x.payments).filter((x) => x.date > day).sort((a, b) => a.date.localeCompare(b.date));
         const nextAmt = upcoming[0] ? upcoming.filter((x) => x.date === upcoming[0].date).reduce((t, x) => t + x.amount, 0) : 0;
         const offBy = schedules.map((x) => x.paidOffBy).filter(Boolean).sort().pop();
@@ -178,7 +178,7 @@ export function Debts() {
               <div className="stat">
                 <span className="small muted">Each pay</span>
                 <b>{perPay !== undefined ? cash(perPay) : '—'}</b>
-                <span className={`xs ${diff < 0 ? 'neg' : 'muted'}`}>{d.payroll ? 'from your salary' : !adv ? '' : diff === 0 ? 'as recommended' : diff < 0 ? `${cash(-diff)} under` : `${cash(diff)} over`}</span>
+                <span className={`xs ${diff < 0 && !adv?.extra ? 'neg' : 'muted'}`}>{d.payroll ? 'from your salary' : !adv ? '' : adv.extra ? `incl. ${cash(adv.extra)} extra this pay` : diff === 0 ? 'as recommended' : diff < 0 ? `${cash(-diff)} under` : `${cash(diff)} over`}</span>
               </div>
               {d.limit ? (
                 <div className="stat">
@@ -653,7 +653,7 @@ export function PaymentModal({ debt, onClose, pick, embedded }: { debt: Debt; on
   const [err, setErr] = useState('');
   const amount = parseMoney(text);
 
-  const due = debtSchedules(debt, s, debtPerPay(budget, debt)).flatMap((x) => x.payments).sort((a, b) => a.date.localeCompare(b.date));
+  const due = debtSchedules(debt, s, debtPay(budget, debt)).flatMap((x) => x.payments).sort((a, b) => a.date.localeCompare(b.date));
   const total = owed(debt);
   const nextDate = due[0]?.date;
   const nextTotal = due.filter((p) => p.date === nextDate).reduce((t, p) => t + p.amount, 0);
@@ -734,16 +734,18 @@ export function PaymentModal({ debt, onClose, pick, embedded }: { debt: Debt; on
 /** Recommended vs allocated for a debt, editable in place, with a one-tap Apply. */
 function AllocationRow({ advice: a, onApply }: { advice: DebtAdvice; onApply: () => void }) {
   const { update } = useBudget();
-  const [text, setText] = useState(centsToInput(a.sending));
+  // The steady amount each pay; extra for this pay only is shown beside it.
+  const each = a.extra ? a.usual : a.sending;
+  const [text, setText] = useState(centsToInput(each));
   const [focused, setFocused] = useState(false);
-  useEffect(() => { if (!focused) setText(centsToInput(a.sending)); }, [a.sending, focused]);
-  const diff = a.sending - a.recommended;
+  useEffect(() => { if (!focused) setText(centsToInput(each)); }, [each, focused]);
+  const diff = each - a.recommended;
 
   function commit() {
     setFocused(false);
     const c = parseMoney(text);
-    if (c === null || c < 0) { setText(centsToInput(a.sending)); return; }
-    if (c === a.sending) return;
+    if (c === null || c < 0) { setText(centsToInput(each)); return; }
+    if (c === each) return;
     // Typing an amount sets a fixed payday amount for this debt.
     update((b) => {
       const line = b.split.find((l) => l.accountId === a.debt.accountId);
@@ -775,6 +777,7 @@ function AllocationRow({ advice: a, onApply }: { advice: DebtAdvice; onApply: ()
         </>
       )}
       {diff === 0 && <span className="small muted" style={{ paddingBottom: 12 }}>As recommended</span>}
+      {a.extra ? <span className="small muted" style={{ paddingBottom: 12, flexBasis: '100%' }}>Plus {cash(a.extra)} extra this pay only, so {cash(a.sending)} goes to {a.debt.name}. It comes off what's owed in the forecast.</span> : null}
     </div>
   );
 }

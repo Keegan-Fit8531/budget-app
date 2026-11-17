@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import { pullBudget, pushBudget, readSyncConfig, SyncError, takePairingFromUrl, writeSyncConfig, type SyncConfig } from './sync';
 import { todayISO } from './dates';
-import { debtPerPay, settleDue } from './debts';
+import { debtPay, settleDue } from './debts';
 import { autoBalance } from './rebalance';
 import { seedBudget } from './seed';
 import type { Budget } from './types';
@@ -75,7 +75,7 @@ function bringUpToDate(b: Budget): Budget {
 /** Count instalments and plan payments dated before today as paid (they're automatic). */
 function settleAll(b: Budget) {
   const today = todayISO();
-  for (const d of b.debts ?? []) settleDue(d, b.settings, today, debtPerPay(b, d));
+  for (const d of b.debts ?? []) settleDue(d, b.settings, today, debtPay(b, d));
 }
 
 // Saved copies (one a day, kept 3 months) are in versions.ts.
