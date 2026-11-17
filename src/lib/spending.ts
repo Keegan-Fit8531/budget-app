@@ -116,3 +116,31 @@ export function summarize(txns: Txn[], from: ISODate, to: ISODate, mine?: ShopCa
   for (const c of categories) c.shops.sort((a, b) => b.total - a.total);
   return { total, count, categories, small };
 }
+
+/**
+ * The categories used for shops: Gemini's guesses for ones the rules couldn't place, then your own
+ * choices over them. A guess of "other" is kept too (so it isn't asked again), and changes nothing.
+ */
+export function shopMap(b: { shopCategories?: Record<string, string>; shopGuesses?: Record<string, string> }): ShopCategories {
+  const guesses = Object.fromEntries(Object.entries(b.shopGuesses ?? {}).filter(([, c]) => c in CATEGORY_LABEL && c !== 'other'));
+  return { ...guesses, ...(b.shopCategories ?? {}) } as ShopCategories;
+}
+
+export interface UnsortedShop { shop: string; example: string; count: number; total: Cents }
+
+/** Shops whose purchases are still in Other and haven't been guessed yet, biggest spend first. */
+export function otherShops(txns: Txn[], b: { shopCategories?: Record<string, string>; shopGuesses?: Record<string, string> }): UnsortedShop[] {
+  const map = shopMap(b);
+  const out = new Map<string, UnsortedShop>();
+  for (const t of txns) {
+    if (t.amount >= 0) continue;
+    const { category, shop } = categorizeTxn(t, map);
+    if (category !== 'other') continue;
+    const key = shop.toLowerCase();
+    if (b.shopGuesses?.[key] || b.shopCategories?.[key]) continue;
+    const s = out.get(key) ?? { shop, example: cleanDescription(t.description).slice(0, 60), count: 0, total: 0 };
+    s.count++; s.total += -t.amount;
+    out.set(key, s);
+  }
+  return [...out.values()].sort((x, y) => y.total - x.total);
+}

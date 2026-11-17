@@ -353,6 +353,8 @@ export interface Budget {
   bankSeen?: Record<string, string>;
   /** Bank connection updates (transactions and balances) automatically; false = manual mode. On unless turned off. */
   bankAuto?: boolean;
+  /** Gemini's guesses for shops the app's own rules put in Other (by shop name in lower case). Your own choices win. */
+  shopGuesses?: Record<string, string>;
   /** Spending categories you've chosen for shops (by shop name in lower case), over the app's own guess. */
   shopCategories?: Record<string, string>;
   /** This month's insights: one per pay cycle, by its payday (see review.ts), newest first. */

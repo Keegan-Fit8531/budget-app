@@ -1,8 +1,12 @@
 import { useState } from 'react';
+import { allTxns, sortShops } from '../lib/reader/sortShops';
+import { readReaderConfig } from '../lib/reader/config';
+import { errorMessage, ReaderError } from '../lib/reader/errors';
+import { showToast } from './toast';
 import { colorAt, tone } from '../lib/colors';
 import { addDays, todayISO } from '../lib/dates';
 import { cash } from '../lib/money';
-import { CATEGORY_LABEL, summarize, type ShopCategories, type SpendCategory } from '../lib/spending';
+import { CATEGORY_LABEL, otherShops, shopMap, summarize, type SpendCategory } from '../lib/spending';
 import { useBudget } from '../lib/store';
 import type { Txn } from '../lib/types';
 import { Icon } from './Icon';
@@ -13,7 +17,7 @@ const RANGES = [{ days: 30, label: '30 days' }, { days: 91, label: '3 months' },
 /** Insights → where your money went: spending from the bank and card exports you've uploaded, by category. */
 export function SpendingCard() {
   const { budget, update } = useBudget();
-  const mine = budget.shopCategories as ShopCategories | undefined;
+  const mine = shopMap(budget);
   /** Put a shop in another category from now on (kept in your budget, so it syncs). */
   const recategorize = (shop: string, category: SpendCategory) => update((b) => { b.shopCategories = { ...(b.shopCategories ?? {}), [shop.toLowerCase()]: category }; return b; });
   const sources = [
@@ -23,6 +27,20 @@ export function SpendingCard() {
   const [source, setSource] = useState('all');
   const [days, setDays] = useState<number>(91);
   const [open, setOpen] = useState<string | null>(null);
+  const [sorting, setSorting] = useState(false);
+  const unsorted = otherShops(allTxns(budget), budget);
+  async function sortNow() {
+    setSorting(true);
+    try {
+      const got = await sortShops(budget);
+      const placed = Object.values(got).filter((c) => c !== 'other').length;
+      update((b) => { b.shopGuesses = { ...(b.shopGuesses ?? {}), ...got }; return b; });
+      showToast(placed ? `Sorted ${placed} shop${placed === 1 ? '' : 's'} out of Other. Tap a category to change any.` : 'Gemini couldn’t place any more of them.');
+    } catch (e) {
+      const m = e instanceof ReaderError ? errorMessage(e) : { title: 'Something went wrong.', body: 'Try again.' };
+      showToast(`${m.title} ${m.body}`);
+    } finally { setSorting(false); }
+  }
 
   if (!sources.length) {
     return (
@@ -93,6 +111,12 @@ export function SpendingCard() {
             ))}
           </div>
           <span className="xs muted">Tap a category to see where it went.</span>
+          {unsorted.length > 0 && (
+            <div className="tip small between">
+              <span><b>{unsorted.length} shop{unsorted.length === 1 ? '' : 's'}</b> are in Other because the app doesn’t know them. Gemini can guess where they go (it only sees the shop names).</span>
+              <button className="btn small" disabled={sorting || !readReaderConfig()} onClick={() => void sortNow()}><Icon name="wand" size={16} /> {sorting ? 'Sorting…' : 'Sort them'}</button>
+            </div>
+          )}
           {tips.length > 0 && (
             <div>
               {tips.map((t) => <div className="list-row top small" key={t}><span className="muted" style={{ display: 'grid', marginTop: 2 }}><Icon name="bulb" size={16} /></span><span>{t}</span></div>)}
