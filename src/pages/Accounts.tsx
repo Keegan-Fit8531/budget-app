@@ -1,6 +1,7 @@
 import { SyncPill } from '../components/SyncPill';
 import { useEffect, useState } from 'react';
-import { AccountHistoryList, OneOffCostModal } from '../components/AccountHistory';
+import { AccountHistoryList } from '../components/AccountHistory';
+import { AccountEditModal } from '../components/AccountEdit';
 import { TransactionList } from '../components/Transactions';
 import { DayPicker, useDayView } from '../components/DayPicker';
 import { Icon } from '../components/Icon';
@@ -8,7 +9,7 @@ import { MonthTracker, PayProjectionView } from '../components/MonthTracker';
 import { addDays, fmtDay, fmtShort, monthName, todayISO } from '../lib/dates';
 import { balanceOn, balanceToday, depositFor, forecastBalances, outflows } from '../lib/balances';
 import { periodContaining, shiftPeriod, type Period } from '../lib/engine';
-import { cash, centsToInput, parseMoney } from '../lib/money';
+import { cash, parseMoney } from '../lib/money';
 import { moveAmong } from '../lib/order';
 import { AccIcon, CardColumns, Collapse, DetailsToggle, Disclosure, MoveButtons, ReorderToggle, useFlip, FlatDetails } from '../components/ui';
 import { bankSync } from '../lib/bank';
@@ -84,7 +85,7 @@ export function Accounts({ deposits }: { deposits?: string }) {
           const mover = reorder ? <MoveButtons name={a.name} first={i === 0} last={i === shown.length - 1} onMove={(d) => move(a.id, d)} /> : null;
           return isPlanned(a)
             ? <BalanceCard key={a.id} account={a} view={live ? undefined : view} day={day} mover={mover}
-              onDeposits={() => setDepOpen(a.id)} onPick={(n) => { dv.goPay(n); window.scrollTo({ top: 0, behavior: 'smooth' }); }} />
+              onPick={(n) => { dv.goPay(n); window.scrollTo({ top: 0, behavior: 'smooth' }); }} />
             : <BankOnlyCard key={a.id} account={a} mover={mover} />;
         })}
       </CardColumns>
@@ -116,14 +117,13 @@ function BalanceInput({ initial, onSave, onCancel }: { initial: string; onSave: 
   );
 }
 
-function BalanceCard({ account: a, view, day, mover, onDeposits, onPick }: {
-  account: Account; view?: Period; day: string; mover: React.ReactNode; onDeposits: () => void; onPick: (offset: number) => void;
+function BalanceCard({ account: a, view, day, mover, onPick }: {
+  account: Account; view?: Period; day: string; mover: React.ReactNode; onPick: (offset: number) => void;
 }) {
   const { budget, update } = useBudget();
   const today = todayISO();
   const entry = budget.balances?.[a.id];
   const [editing, setEditing] = useState(false);
-  const [costing, setCosting] = useState(false);
   const [open, setOpen] = useState(false); // every card starts closed
   const sync = bankSync(budget, `account:${a.id}`);
 
@@ -155,17 +155,12 @@ function BalanceCard({ account: a, view, day, mover, onDeposits, onPick }: {
         </div>
         <div className="acct-side">
           {entry && <SyncPill source={sync.linked ? 'bank' : 'entered'} at={sync.at ?? entry.asOf} />}
-          {!mover && entry && <>
-            <button className="icon-btn mini has-tip" data-tip="Update balance" aria-label={`Update ${a.name} balance`} onClick={() => setEditing(true)}><Icon name="edit" size={14} /></button>
-            <button className="icon-btn mini has-tip" data-tip="One-off cost" aria-label={`Record a one-off cost from ${a.name}`} onClick={() => setCosting(true)}><Icon name="plus" size={14} /></button>
-          </>}
-          {mover ?? <button className="icon-btn mini has-tip tip-left" data-tip="Deposits and costs" aria-label={`${a.name}: what payday sends and its costs`} onClick={onDeposits}><Icon name="settings" size={14} /></button>}
+          {mover ?? <button className="icon-btn mini has-tip tip-left" data-tip="Edit" aria-label={`Edit ${a.name}: balance, one-off cost, payday`} onClick={() => setEditing(true)}><Icon name="edit" size={14} /></button>}
         </div>
       </div>
 
-      {editing || !entry ? (
-        <BalanceInput initial={entry ? centsToInput(now ?? entry.amount) : ''} onCancel={editing ? () => setEditing(false) : undefined}
-          onSave={(c) => { update((b) => { setBalance(b, a.id, c, today, newId()); return b; }); setEditing(false); }} />
+      {!entry ? (
+        <BalanceInput initial="" onSave={(c) => { update((b) => { setBalance(b, a.id, c, today, newId()); return b; }); }} />
       ) : (
         <div className="acct-fig">
           <b className={`fig ${shown !== undefined && shown < 0 ? 'neg' : ''}`}>{shown !== undefined ? cash(shown) : '—'}</b>
@@ -210,7 +205,7 @@ function BalanceCard({ account: a, view, day, mover, onDeposits, onPick }: {
       </FlatDetails.Provider></Collapse>
 
       {entry && hasDetails && <DetailsToggle open={open} onChange={setOpen} />}
-      {costing && <OneOffCostModal account={a} onClose={() => setCosting(false)} />}
+      {editing && <AccountEditModal account={a} onClose={() => setEditing(false)} />}
     </section>
   );
 }
@@ -222,6 +217,8 @@ function BalanceCard({ account: a, view, day, mover, onDeposits, onPick }: {
 function BankOnlyCard({ account: a, mover }: { account: Account; mover: React.ReactNode }) {
   const { budget } = useBudget();
   const today = todayISO();
+  // Its transactions are all there is to see, so they show from the start; they can be put away.
+  const [open, setOpen] = useState(true);
   const txns = budget.accountTransactions?.[a.id] ?? [];
   const isPay = a.id === budget.settings.payAccountId;
   const goal = (budget.savings ?? []).find((g) => g.accountId === a.id);
@@ -264,12 +261,12 @@ function BankOnlyCard({ account: a, mover }: { account: Account; mover: React.Re
         </div>
       ) : <p className="small muted">Upload a statement or CSV export to see what goes in and out.</p>}
 
-      {/* Its transactions are all there is to see, so they're shown straight away: the latest few, and more on a tap. */}
-      <FlatDetails.Provider value>
+      <Collapse open={open} stacked><FlatDetails.Provider value>
         <div className="acct-body">
-          <TransactionList items={txns} pending={budget.pendingTransactions?.[a.id]} first={5} />
+          <TransactionList items={txns} pending={budget.pendingTransactions?.[a.id]} first={10} />
         </div>
-      </FlatDetails.Provider>
+      </FlatDetails.Provider></Collapse>
+      {txns.length > 0 && <DetailsToggle open={open} onChange={setOpen} />}
     </section>
   );
 }

@@ -6,7 +6,7 @@ import { tone } from '../lib/colors';
 import { cash } from '../lib/money';
 import type { Account, Budget } from '../lib/types';
 import { Icon } from './Icon';
-import { Collapse, Disclosure, FlatDetails } from './ui';
+import { Collapse, Disclosure, FlatDetails, ShortList } from './ui';
 
 const when = (days: number) => (days === 0 ? 'today' : days === 1 ? 'tomorrow' : days > 0 ? `in ${days} days` : days === -1 ? 'yesterday' : `${-days} days ago`);
 
@@ -121,7 +121,7 @@ export function MonthTracker({ budget, account, today = todayISO(), open }: { bu
 
           {paid.length > 0 && (
             <Disclosure title="Paid this pay" meta={cash(t.paid)}>
-              <div>
+              <ShortList>
                 {paid.map((r, i) => (
                   <div className="list-row small muted" key={`${r.name}-${r.date}-${i}`}>
                     <span style={{ flex: '0 0 72px' }}>{fmtShort(r.date)}</span>
@@ -130,14 +130,14 @@ export function MonthTracker({ budget, account, today = todayISO(), open }: { bu
                     <Icon name="check" size={14} />
                   </div>
                 ))}
-              </div>
+              </ShortList>
             </Disclosure>
           )}
 
           {t.next.rows.length > 0 && (
             <Disclosure title={`Next pay, ${fmtShort(t.next.period.start)}`}
               meta={`+${cash(t.next.deposit)} in · ${cash(t.next.rows.reduce((s, r) => s + r.amount, 0))} out`}>
-              <div>
+              <ShortList>
                 {t.next.rows.map((r, i) => (
                   <div className="list-row small" key={`${r.name}-${r.date}-${i}`}>
                     <span style={{ flex: '0 0 72px' }} className="muted">{fmtShort(r.date)}</span>
@@ -145,7 +145,7 @@ export function MonthTracker({ budget, account, today = todayISO(), open }: { bu
                     <span className="num">{cash(r.amount)}</span>
                   </div>
                 ))}
-              </div>
+              </ShortList>
             </Disclosure>
           )}
           {t.balanceSource === 'estimated' && t.balanceKnown && (

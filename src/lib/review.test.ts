@@ -33,12 +33,13 @@ describe("this month's insights", () => {
     expect(reviewDue(b, today)?.start).toBe(c.start);
     expect(reviewDue({ ...b, accountTransactions: {} }, today)).toBeNull();
   });
-  it('what’s sent: the cycle’s pay, totals and every transaction in it, nothing after', () => {
+  it('what’s sent: the cycle’s pay, totals and its purchases (not transfers), nothing after', () => {
     const b = withSpending(today);
     const text = reviewInput(b, lastCycle(b, today));
     expect(text).toContain('Pay (net) this cycle: $4000.00');
     expect(text).toContain('$95.50 over 2 purchases'); // the transfer isn't spending
-    expect(text).toMatch(/\|McDonald’s\|-15\.50\|Takeaways/);
+    expect(text).toMatch(/\|McDonald’s\|15\.50\|Takeaways/);
+    expect(text.split('Purchases this cycle')[1]).not.toMatch(/transfer/i);
     expect(text).not.toContain('NEW WORLD'); // today's is in the next cycle
   });
   it('the review keeps the app’s own totals, and a saved one isn’t due again; a so-far one is replaced on payday', () => {

@@ -23,6 +23,8 @@ import type { Extraction } from './reader/types';
 import { KEEP_DAYS, localDay, needsCopy, toForget } from './versions';
 import { addGoalFor, applyBank, fetchBank, suggestLink } from './bank';
 import { cardPaid } from './cardPayments';
+import { guessDebt } from './reader/check';
+import { transferTo } from './bank';
 import { moveAmong } from './order';
 import { csvAmount, csvDate, endingOf, fromStatementRows, readTransactionsCsv } from './csv';
 import { layoutPage } from './reader/pdftext';
@@ -1498,5 +1500,22 @@ describe('moving things up and down', () => {
     expect(moveAmong(l, ['a', 'b'], 'a', -1)).toBe(false);
     expect(moveAmong(l, ['a', 'b'], 'b', 1)).toBe(false);
     expect(l.map((x) => x.id)).toEqual(['a', 'b', 'c', 'd']);
+  });
+});
+
+describe('telling cards and accounts apart', () => {
+  it('a document names Gem Visa, Q Mastercard or Afterpay: it goes to that one', () => {
+    const debts = debtBudget().debts!;
+    expect(guessDebt(debts, 'Gem Visa statement')).toBe('gem');
+    expect(guessDebt(debts, 'Q Mastercard')).toBe('qcard');
+    expect(guessDebt(debts, 'Q Card by Latitude')).toBe('qcard');
+    expect(guessDebt(debts, 'Afterpay orders')).toBe('afterpay');
+    expect(guessDebt(debts, 'Latitude Financial')).toBeUndefined(); // Gem and Q both
+  });
+  it('a transfer between your own accounts is named by the account', () => {
+    const b = debtBudget();
+    b.accounts.push({ id: 'rent', name: 'Rent', kind: 'bank', color: '#000', groupId: 'g', number: '06-0115-0324910-055' });
+    expect(transferTo(b, 'To: 06-0115-0324910-55 Debit Transfer 083615')).toEqual({ dir: 'to', name: 'Rent' });
+    expect(transferTo(b, 'From: 06-0115-0324910-00 Credit Transfer 071301')).toBeUndefined();
   });
 });

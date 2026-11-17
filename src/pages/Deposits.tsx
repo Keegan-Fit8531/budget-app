@@ -80,8 +80,27 @@ export function DepositsModal({ openId, onClose }: { openId?: string; onClose: (
   );
 }
 
-function AccountSection({ account: a, open, onToggle, periodNeed, periodSends, periodDays, onEditItem, onAddItem }: {
+/** One account's payday amount and costs, on its own (a tab in the account's pop-up on Accounts). */
+export function AccountPayday({ account: a }: { account: Account }) {
+  const { budget } = useBudget();
+  const { period } = useViewPeriod();
+  const plan = planFor(budget, period);
+  const [modal, setModal] = useState<{ item?: Item; accountId?: string } | null>(null);
+  const line = plan.accounts.find((p) => p.account.id === a.id);
+  return (
+    <>
+      <PayNav compact />
+      <AccountSection account={a} open bare onToggle={() => undefined} periodNeed={line?.need ?? 0} periodSends={line?.funded ?? 0} periodDays={period.days}
+        onEditItem={(item) => setModal({ item })} onAddItem={() => setModal({ accountId: a.id })} />
+      {modal && createPortal(<ItemModal item={modal.item} accountId={modal.accountId} onClose={() => setModal(null)} />, document.body)}
+    </>
+  );
+}
+
+function AccountSection({ account: a, open, bare, onToggle, periodNeed, periodSends, periodDays, onEditItem, onAddItem }: {
   account: Account; open: boolean; onToggle: () => void; periodNeed: number;
+  /** Just the settings, without its row and heading (when it's already the only thing shown). */
+  bare?: boolean;
   /** What the pay being viewed sends here: the same figure the Planner shows. */
   periodSends: number; periodDays: number;
   onEditItem: (i: Item) => void; onAddItem: () => void;
@@ -132,7 +151,7 @@ function AccountSection({ account: a, open, onToggle, periodNeed, periodSends, p
   }
 
   return (
-    <section id={`dep-${a.id}`} className="acc-section" style={{ opacity: a.archived ? 0.6 : 1, scrollMarginTop: 8 }}>
+    <section id={bare ? undefined : `dep-${a.id}`} className={`acc-section${bare ? ' bare' : ''}`} style={{ opacity: a.archived ? 0.6 : 1, scrollMarginTop: 8 }}>
       <button className="acc-head" aria-expanded={open} onClick={onToggle}>
         <AccIcon color={a.color} name={a.kind === 'external' ? 'send' : 'bank'} />
         <span className="grow">

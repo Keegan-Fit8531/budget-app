@@ -2,7 +2,7 @@ import { SyncPill } from '../components/SyncPill';
 import { useEffect, useMemo, useState } from 'react';
 import { DebtChart } from '../components/DebtChart';
 import { Icon } from '../components/Icon';
-import { AccIcon, CardColumns, Collapse, DetailsToggle, Disclosure, MoveButtons, ReorderToggle, useFlip, FlatDetails } from '../components/ui';
+import { AccIcon, CardColumns, Modal, Collapse, DetailsToggle, Disclosure, MoveButtons, ReorderToggle, useFlip, FlatDetails } from '../components/ui';
 import { moveAmong } from '../lib/order';
 import { bankSync } from '../lib/bank';
 import { PaydayControl } from '../components/PaydayControl';
@@ -42,7 +42,7 @@ export function Debts() {
   // Every card starts closed.
   const [open, setOpen] = useState<string[]>([]);
   const toggle = (id: string) => setOpen((o) => (o.includes(id) ? o.filter((x) => x !== id) : [...o, id]));
-  const [editBal, setEditBal] = useState<string | null>(null);
+  const [editDebt, setEditDebt] = useState<{ debt: Debt; tab?: DebtTab } | null>(null);
 
   // Recommended payments are for the next payday.
   // Recommendations are for the pay being viewed (or the next one to come, if that pay has already started).
@@ -77,13 +77,17 @@ export function Debts() {
   // Where what's owed came from: the bank connection, or the last balance you checked (a payment seen
   // leaving your bank since then keeps it current, so it shows as synced on that day).
   const sourcePill = (d: Debt) => {
-    if (d.payroll) return null;
+    // Someone you owe, or a loan from your salary: nothing to keep up to date.
+    if (d.payroll || d.kind === 'person') return null;
     const sync = bankSync(budget, `debt:${d.id}`);
     if (sync.linked) return <SyncPill source="bank" at={sync.at ?? d.balance?.asOf} />;
-    const seen = d.bankPayments?.[d.bankPayments.length - 1];
-    if (seen && (!d.balance || seen.date >= d.balance.asOf)) return <SyncPill source="bank" at={seen.date} />;
-    return d.balance ? <SyncPill source="entered" at={d.balance.asOf} /> : null;
+    // The latest of: a document or balance you gave it, or a payment seen leaving your bank.
+    const seen = d.bankPayments?.[d.bankPayments.length - 1]?.date;
+    const planDays = d.rules === 'afterpay' || d.kind === 'bnpl' ? d.plans.map((p) => p.asOf) : [];
+    const at = [d.checkedOn, d.checked?.asOf, d.balance?.asOf, seen, ...planDays].filter(Boolean).sort().pop();
+    return at ? <SyncPill source="entered" at={at} /> : <SyncPill source="none" />;
   };
+
 
   return (
     <>
@@ -140,7 +144,6 @@ export function Debts() {
         const nextAmt = upcoming[0] ? upcoming.filter((x) => x.date === upcoming[0].date).reduce((t, x) => t + x.amount, 0) : 0;
         const offBy = schedules.map((x) => x.paidOffBy).filter(Boolean).sort().pop();
         const perPay = adv ? adv.sending : d.payroll?.perPay;
-        const isPerson = d.kind === 'person' || d.kind === 'loan';
         return (
           <section key={d.id} className="card acct" data-flip={d.id}>
             <div className="acct-head">
@@ -151,20 +154,13 @@ export function Debts() {
               </div>
               <div className="acct-side">
                 {sourcePill(d)}
-                {!reorder && <>
-                  <button className="icon-btn mini has-tip" data-tip="Update balance" aria-label={`Update what's owed on ${d.name}`} onClick={() => setEditBal(d.id)}><Icon name="edit" size={14} /></button>
-                  {!d.payroll && <button className="icon-btn mini has-tip" data-tip={isPerson ? 'Add amount owed' : 'Add purchase'} aria-label={isPerson ? 'Add amount owed' : `Add a purchase on ${d.name}`} onClick={() => setPlanModal({ debt: d })}><Icon name="plus" size={14} /></button>}
-                  {o > 0 && !d.payroll && <button className="icon-btn mini has-tip" data-tip="Record a payment" aria-label={`Record a payment to ${d.name}`} onClick={() => setPayModal(d)}><Icon name="check" size={14} /></button>}
-                </>}
                 {reorder
                   ? <MoveButtons name={d.name} first={i === 0} last={i === debts.length - 1} onMove={(dir) => move(d.id, dir)} />
-                  : <button className="icon-btn mini has-tip tip-left" data-tip="Edit debt" aria-label={`Edit ${d.name}`} onClick={() => setDebtModal({ debt: d })}><Icon name="settings" size={14} /></button>}
+                  : <button className="icon-btn mini has-tip tip-left" data-tip="Edit" aria-label={`Edit ${d.name}: balance, purchases, payments, details`} onClick={() => setEditDebt({ debt: d })}><Icon name="edit" size={14} /></button>}
               </div>
             </div>
 
-            {editBal === d.id
-              ? <BalanceEditor debt={d} used={used} editing onDone={() => setEditBal(null)} onAddPlan={() => setPlanModal({ debt: d, prefill: unplanned(d) })} />
-              : (
+            {(
                 <div className="acct-fig">
                   <b className="fig">{cash(day === today ? o : oDay ?? o)}</b>
                   {day !== today && (
@@ -287,6 +283,15 @@ export function Debts() {
 
       {debts.length > 0 && <DebtChart budget={budget} />}
 
+      {editDebt && (() => { const live = debts.find((x) => x.id === editDebt.debt.id); return live ? <DebtEditModal debt={live} tab={editDebt.tab} onClose={() => setEditDebt(null)} onDelete={(dd) => {
+        update((b) => {
+          b.debts = (b.debts ?? []).filter((x) => x.id !== dd.id);
+          const a = b.accounts.find((x) => x.id === dd.accountId);
+          if (a) a.archived = true;
+          return b;
+        });
+        setEditDebt(null);
+      }} /> : null; })()}
       {payModal && <PaymentModal debt={payModal} onClose={() => setPayModal(null)} />}
       {planModal && <PlanModal debt={planModal.debt} plan={planModal.plan} prefill={planModal.prefill} onClose={() => setPlanModal(null)} />}
       {debtModal && <DebtModal debt={debtModal.debt} onClose={() => setDebtModal(null)} onDelete={(d) => {
@@ -302,7 +307,7 @@ export function Debts() {
   );
 }
 
-function PlanModal({ debt, plan, prefill, onClose }: { debt: Debt; plan?: DebtPlan; prefill?: number; onClose: () => void }) {
+function PlanModal({ debt, plan, prefill, onClose, embedded }: { debt: Debt; plan?: DebtPlan; prefill?: number; onClose: () => void; embedded?: boolean }) {
   const { budget, update } = useBudget();
   const today = todayISO();
   const [name, setName] = useState(plan?.name ?? (prefill ? 'Existing balance' : ''));
@@ -371,7 +376,7 @@ function PlanModal({ debt, plan, prefill, onClose }: { debt: Debt; plan?: DebtPl
   const nextPay = preview?.payments.find((p) => p.date >= periodContaining(today, budget.settings).start);
 
   return (
-    <div className="modal-back" onClick={onClose}>
+    <div className={`modal-back${embedded ? ' inline' : ''}`} onClick={embedded ? undefined : onClose}>
       <div className="modal" role="dialog" aria-modal="true" aria-labelledby="plan-title" onClick={(e) => e.stopPropagation()}>
         <div className="between">
           <h2 id="plan-title" className="h2">{plan ? `Edit ${plan.name}` : `${debt.name}: ${isPerson ? 'add amount owed' : 'add purchase'}`}</h2>
@@ -446,7 +451,7 @@ function PlanModal({ debt, plan, prefill, onClose }: { debt: Debt; plan?: DebtPl
   );
 }
 
-export function DebtModal({ debt, onClose, onDelete }: { debt?: Debt; onClose: () => void; onDelete: (d: Debt) => void }) {
+export function DebtModal({ debt, onClose, onDelete, embedded }: { debt?: Debt; onClose: () => void; onDelete: (d: Debt) => void; embedded?: boolean }) {
   const { update } = useBudget();
   const [name, setName] = useState(debt?.name ?? '');
   const [kind, setKind] = useState<Debt['kind']>(debt?.kind ?? 'card');
@@ -487,7 +492,7 @@ export function DebtModal({ debt, onClose, onDelete }: { debt?: Debt; onClose: (
   }
 
   return (
-    <div className="modal-back" onClick={onClose}>
+    <div className={`modal-back${embedded ? ' inline' : ''}`} onClick={embedded ? undefined : onClose}>
       <div className="modal" role="dialog" aria-modal="true" aria-labelledby="debt-title" onClick={(e) => e.stopPropagation()}>
         <div className="between">
           <h2 id="debt-title" className="h2">{debt ? `Edit ${debt.name}` : 'Add a debt'}</h2>
@@ -634,7 +639,7 @@ function BalanceEditor({ debt: d, used, onAddPlan, editing: startEditing, onDone
 }
 
 /** Record money paid to a debt; it pays off whatever is due soonest first. */
-export function PaymentModal({ debt, onClose, pick }: { debt: Debt; onClose: () => void; /** A "which debt" chooser, when opened from the Add button. */ pick?: React.ReactNode }) {
+export function PaymentModal({ debt, onClose, pick, embedded }: { debt: Debt; onClose: () => void; /** A "which debt" chooser, when opened from the Add button. */ pick?: React.ReactNode; embedded?: boolean }) {
   const { budget, update } = useBudget();
   const today = todayISO();
   const s = budget.settings;
@@ -674,7 +679,7 @@ export function PaymentModal({ debt, onClose, pick }: { debt: Debt; onClose: () 
   }
 
   return (
-    <div className="modal-back" onClick={onClose}>
+    <div className={`modal-back${embedded ? ' inline' : ''}`} onClick={embedded ? undefined : onClose}>
       <div className="modal" role="dialog" aria-modal="true" aria-labelledby="pay-title" onClick={(e) => e.stopPropagation()}>
         <div className="between">
           <h2 id="pay-title" className="h2">{debt.name}: record a payment</h2>
@@ -793,5 +798,37 @@ function BankPayments({ debt: d }: { debt: Debt }) {
         ))}
       </div>
     </Disclosure>
+  );
+}
+
+type DebtTab = 'balance' | 'purchase' | 'payment' | 'details';
+
+/** Everything you change on a debt, in one pop-up with a tab for each. */
+function DebtEditModal({ debt: d, tab: first = 'balance', onClose, onDelete }: { debt: Debt; tab?: DebtTab; onClose: () => void; onDelete: (d: Debt) => void }) {
+  const [tab, setTab] = useState<DebtTab>(first);
+  const isPerson = d.kind === 'person' || d.kind === 'loan';
+  const used = d.limit ? Math.min(100, (owed(d) / d.limit) * 100) : 0;
+  const tabs: { id: DebtTab; label: string }[] = [
+    { id: 'balance', label: 'Balance' },
+    ...(!d.payroll ? [{ id: 'purchase' as const, label: isPerson ? 'Add owed' : 'Purchase' }] : []),
+    ...(!d.payroll && owed(d) > 0 ? [{ id: 'payment' as const, label: 'Payment' }] : []),
+    { id: 'details', label: 'Details' },
+  ];
+  return (
+    <Modal title={d.name} width={560} onClose={onClose}>
+      {(close) => (
+        <>
+          <div className="seg fill modal-tabs" role="tablist" aria-label={`${d.name}: what to change`}>
+            {tabs.map((t) => <button key={t.id} role="tab" aria-selected={tab === t.id} onClick={() => setTab(t.id)}>{t.label}</button>)}
+          </div>
+          <div role="tabpanel" className="stack gap-16">
+            {tab === 'balance' && <BalanceEditor debt={d} used={used} editing onDone={close} onAddPlan={() => setTab('purchase')} />}
+            {tab === 'purchase' && <PlanModal debt={d} embedded onClose={close} />}
+            {tab === 'payment' && <PaymentModal debt={d} embedded onClose={close} />}
+            {tab === 'details' && <DebtModal debt={d} embedded onClose={close} onDelete={onDelete} />}
+          </div>
+        </>
+      )}
+    </Modal>
   );
 }

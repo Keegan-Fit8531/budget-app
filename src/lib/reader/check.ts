@@ -151,6 +151,27 @@ const keepsPlans = (d: Debt) => d.rules === 'gem' || d.plans.some((p) => p.type 
 
 // ---------- The reader's answer → a draft ----------
 
+/**
+ * The card a document is for, from the name on it, when Gemini didn't pick one: Gem Visa, Q Mastercard
+ * and Afterpay are told apart by name (Gem and Q both come from Latitude, so "Latitude" alone isn't enough).
+ * Only a single clear match counts.
+ */
+export function guessDebt(debts: Debt[], text: string): string | undefined {
+  const t = ` ${text.toLowerCase().replace(/[^a-z0-9]+/g, ' ')} `;
+  const tests: [RegExp, (d: Debt) => boolean][] = [
+    [/ gem( visa)? /, (d) => d.rules === 'gem' || /\bgem\b/i.test(d.name)],
+    [/ q ?(mastercard|card|mc) /, (d) => /^q\b/i.test(d.name) || (d.rules === 'mastercard' && /\bq\b/i.test(d.name))],
+    [/ afterpay /, (d) => d.rules === 'afterpay' || /afterpay/i.test(d.name)],
+  ];
+  for (const [re, is] of tests) {
+    if (!re.test(t)) continue;
+    const hits = debts.filter(is);
+    if (hits.length === 1) return hits[0].id;
+  }
+  const byName = debts.filter((d) => d.name.length >= 4 && t.includes(` ${d.name.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()} `));
+  return byName.length === 1 ? byName[0].id : undefined;
+}
+
 export function toDraft(ex: Extraction, b: Budget, source: ReaderSource, makeId: () => string, today: ISODate = todayISO()): Draft {
   const p = ex.payslip ?? {};
   const s = ex.statement ?? {};
@@ -166,7 +187,7 @@ export function toDraft(ex: Extraction, b: Budget, source: ReaderSource, makeId:
     },
     statement: {
       // Only an id from the list, and never the student loan; anything else is asked about.
-      debtId: s.debtId && debtIds.has(s.debtId) ? s.debtId : '',
+      debtId: s.debtId && debtIds.has(s.debtId) ? s.debtId : guessDebt(statementDebts(b), `${s.nameOnDocument ?? ''} ${ex.notes ?? ''}`) ?? '',
       newName: s.nameOnDocument ?? '',
       newDebtId: makeId(),
       nameOnDocument: s.nameOnDocument ?? '',

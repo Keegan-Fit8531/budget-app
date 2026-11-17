@@ -11,6 +11,7 @@ import { cycleSoFar, cycleTransactions, makeReview, parseReview, REVIEW_INSTRUCT
 import { useBudget } from '../lib/store';
 import type { Budget } from '../lib/types';
 import { Icon } from './Icon';
+import { Chevron, Collapse } from './ui';
 import { showToast } from './toast';
 
 /** Send a cycle to Gemini and make its review (throws a ReaderError when it can't). */
@@ -83,6 +84,9 @@ export function MonthlyInsights() {
   const [pick, setPick] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  // Once there's one to read it opens and closes from its heading, and stays as you left it.
+  const [open, setOpenState] = useState(() => { try { return localStorage.getItem('paydays.insights.open') !== 'closed'; } catch { return true; } });
+  const setOpen = (v: boolean) => { setOpenState(v); try { localStorage.setItem('paydays.insights.open', v ? 'open' : 'closed'); } catch { /* ignore */ } };
   const r = reviews.find((x) => x.from === pick) ?? reviews[0];
   const hasKey = !!readReaderConfig();
   const today = todayISO();
@@ -94,6 +98,7 @@ export function MonthlyInsights() {
       const made = await generateReview(budget, c);
       update((b) => { saveReview(b, made); return b; });
       setPick(made.from);
+      setOpen(true);
     } catch (e) {
       const m = e instanceof ReaderError ? errorMessage(e) : { title: 'Something went wrong.', body: 'Try again.' };
       setErr(`${m.title} ${m.body}`);
@@ -105,10 +110,14 @@ export function MonthlyInsights() {
   const top = r ? Math.max(1, ...r.categories.map((c) => c.total)) : 1;
   return (
     <section className="card stack gap-16">
-      <div>
-        <h2 className="h2">{r?.partial ? 'This cycle so far' : 'This month’s insights'}</h2>
-        {r && <p className="small muted">Pay cycle {fmtSpan(r.from, r.to)}{r.partial ? ' (so far)' : ''} · tracked from {fmtShort(r.from)} · made {new Date(r.made).toLocaleString('en-NZ', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}</p>}
-      </div>
+      <button type="button" className="disc-head wide" style={{ minHeight: 0 }} aria-expanded={!r || open} disabled={!r} onClick={() => setOpen(!open)}>
+        <span className="disc-title min0">
+          <span className="h2 block">Insights</span>
+          {r && <span className="small muted block" style={{ fontWeight: 500 }}>{fmtSpan(r.from, r.to)}{r.partial ? ' · so far' : ''} · made {new Date(r.made).toLocaleString('en-NZ', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}</span>}
+        </span>
+        {r && <Chevron />}
+      </button>
+      <Collapse open={!r || open}><div className="stack gap-16">
       {reviews.length > 1 && (
         <label className="field small">Past insights
           <select aria-label="Past insights" value={r?.from} onChange={(e) => setPick(e.target.value)}>
@@ -153,12 +162,18 @@ export function MonthlyInsights() {
       )}
 
       <div className="row wrap gap-8">
-        <button className="btn primary wrap-text" disabled={busy || !hasKey || !soFarCount} onClick={() => void make(soFar)}>{busy ? 'Working it out…' : `So far this cycle (${fmtShort(soFar.start)} to today)`}</button>
+        <button className="btn primary wrap-text" disabled={busy || !hasKey || !soFarCount} onClick={() => void make(soFar)}>
+          {busy ? 'Working it out…'
+            // One for this cycle already: it's brought up to date with what's come in since.
+            : reviews.some((x) => x.from === soFar.start) ? <><Icon name="sync" size={16} /> Update with the latest spending</>
+            : `Insights so far this cycle (${fmtShort(soFar.start)} to today)`}
+        </button>
         {due && <button className="btn wrap-text" disabled={busy || !hasKey} onClick={() => void make(due)}>Make {fmtSpan(due.start, due.end)} now</button>}
       </div>
       {!soFarCount && <p className="small muted">No transactions since payday yet: they come from the bank connection, or upload a statement or export.</p>}
       {!hasKey && r && <p className="small muted">Add your Google key in Settings → Reading documents to make new ones.</p>}
       {err && <p className="small error" role="status">{err}</p>}
+      </div></Collapse>
     </section>
   );
 }

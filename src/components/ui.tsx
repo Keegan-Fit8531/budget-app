@@ -326,3 +326,19 @@ export function DetailsToggle({ open, onChange }: { open: boolean; onChange: (v:
   );
 }
 
+
+/** A list that shows its first few rows (5), and 10 more each time "Show more" is tapped. */
+export function ShortList({ children, first = 5, step = 10 }: { children: ReactNode; first?: number; step?: number }) {
+  const rows = Children.toArray(children);
+  const [shown, setShown] = useState(first);
+  return (
+    <>
+      <div>{rows.slice(0, shown)}</div>
+      {rows.length > shown && (
+        <button type="button" className="btn small ghost" style={{ alignSelf: 'flex-start' }} onClick={() => setShown(shown + step)}>
+          Show {Math.min(step, rows.length - shown)} more
+        </button>
+      )}
+    </>
+  );
+}
