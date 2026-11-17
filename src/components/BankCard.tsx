@@ -138,7 +138,8 @@ export async function syncBank(update: (f: (b: Budget) => Budget) => void, force
     synced();
     if (force && d.refreshed === false) {
       // Asked the bank, but it hadn't answered by the time we had to reply: look again in a minute.
-      showToast(`Asked ANZ for the latest. It hasn't come through yet, so this checks again in a minute. ${said(result)}`);
+      const got = result.some((r) => r.added || r.balance !== undefined || r.cardPayments?.length);
+      showToast(`${got ? `${said(result)} ` : 'Nothing new yet. '}ANZ hasn’t sent its latest, so this checks again in a minute.`);
       setTimeout(() => { void syncAgain(update); }, 60_000);
     } else if (force || result.some((r) => r.added || r.cardPayments?.length)) showToast(`Bank sync: ${said(result)}`);
   } catch (e) {
