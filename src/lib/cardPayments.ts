@@ -42,6 +42,18 @@ export function cardPaid(b: Budget, t: Txn): Debt | undefined {
   return watched(b).find((d) => matcher(d)(text));
 }
 
+/**
+ * The day what a debt owes was last read or checked: its balance, or the orders or plans from a
+ * screenshot or statement. A payment made before then is already in those figures. With nothing
+ * checked, the oldest purchase it holds: a payment before that can't have paid for any of them.
+ */
+export function knownSince(debt: Debt): ISODate | undefined {
+  const checked = [debt.balance?.asOf, ...debt.plans.filter((p) => p.instalments?.length).map((p) => p.asOf)]
+    .filter((d): d is ISODate => !!d).sort();
+  if (checked.length) return checked[checked.length - 1];
+  return debt.plans.map((p) => p.purchaseDate).filter((d): d is ISODate => !!d).sort()[0];
+}
+
 export interface SeenPayment { debt: string; amount: Cents; date: ISODate; from: string; counted: Cents }
 
 /**
@@ -73,8 +85,10 @@ export function recordCardPayments(b: Budget, accountId: string, added: Txn[], t
       covered += x.amount;
     }
     let counted = Math.max(0, amount - covered);
-    // A balance you checked on or after the day it was paid already has it taken off.
-    if (debt.balance && debt.balance.asOf >= t.date) counted = 0;
+    // What's owed, checked on or after the day it was paid, already has it taken off (an old payment
+    // from a bank account's history paid for things long gone, never today's orders).
+    const since = knownSince(debt);
+    if (since && since >= t.date) counted = 0;
     if (counted > 0) applyPayment(debt, counted, b.settings, t.date <= today ? t.date : today);
     debt.bankPayments = [...(debt.bankPayments ?? []), { date: t.date, amount, from: accountId, counted, ...(planned.length ? { planned } : {}) }]
       .sort((x, y) => x.date.localeCompare(y.date)).slice(-200);
