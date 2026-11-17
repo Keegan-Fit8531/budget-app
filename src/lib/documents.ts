@@ -1,4 +1,4 @@
-import { applyPayrollDeduction, debtPerPay, owed, settleDue } from './debts';
+import { applyPayrollDeduction, debtPay, owed, settleDue } from './debts';
 import { todayISO, type ISODate } from './dates';
 import { recordPayday } from './engine';
 import { parsePayslipText, readPdfText, type Payslip } from './payslip';
@@ -154,7 +154,7 @@ export function recordStatement(b: Budget, debtId: string, s: { balance: Cents; 
   // (Ones worked out from the earlier balance are dropped first, or they'd be counted twice.)
   if (asOf < today) {
     if (debt.paid) debt.paid = debt.paid.filter((x) => !(x.synthetic && x.date >= asOf));
-    settleDue(debt, b.settings, today, debtPerPay(b, debt));
+    settleDue(debt, b.settings, today, debtPay(b, debt));
   }
   return debt;
 }

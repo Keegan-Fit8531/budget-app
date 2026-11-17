@@ -25,6 +25,35 @@ export interface PlanSchedule {
 
 const HORIZON = 120; // pay periods (~10 years)
 
+/**
+ * What payday sends a debt: a steady amount (undefined = whatever's recommended / due), or that plus
+ * one-pay amounts by pay start (e.g. $1,500 extra to Gem in the March pay, from Optimise or the Planner).
+ */
+export interface DebtPay { usual?: Cents; byPeriod: Record<ISODate, Cents> }
+export type PerPay = Cents | DebtPay | undefined;
+
+/** The steady part of a PerPay. */
+export function usualPay(perPay: PerPay): Cents | undefined {
+  return typeof perPay === 'object' ? perPay.usual : perPay;
+}
+
+/**
+ * What's paid in the pay starting `start`: its one-pay amount if it has one, else the steady amount.
+ * `used` makes a pay's one-pay amount count once, even if two payment dates fall in that pay.
+ */
+function payFor(perPay: PerPay, start: ISODate, used?: Set<ISODate>): Cents | undefined {
+  if (typeof perPay !== 'object') return perPay;
+  const o = perPay.byPeriod[start];
+  if (o === undefined || used?.has(start)) return perPay.usual;
+  used?.add(start);
+  return o;
+}
+
+/** The last pay with a one-pay amount (so a zero steady amount doesn't stop the forecast before it). */
+function lastOneOff(perPay: PerPay): ISODate | undefined {
+  return typeof perPay === 'object' ? Object.keys(perPay.byPeriod).sort().pop() : undefined;
+}
+
 export const PLAN_LABEL: Record<PlanType, string> = {
   'interest-free': 'Interest-free, any payments',
   equal: 'Equal payments',
@@ -141,7 +170,7 @@ export function planSchedule(debt: Debt, plan: DebtPlan, s: Settings): PlanSched
  * Each plan's payments. `perPay` is what payday sends to this debt (undefined = the recommended amount);
  * it only matters for cards like Gem where one payment is split across plans by the card's own rules.
  */
-export function debtSchedules(debt: Debt, s: Settings, perPay?: Cents): PlanSchedule[] {
+export function debtSchedules(debt: Debt, s: Settings, perPay?: PerPay): PlanSchedule[] {
   if (debt.rules === 'gem') return gemPlan(debt, s, perPay).schedules;
   const list = debt.plans.map((p) => planSchedule(debt, p, s));
   const other = unplanned(debt);
@@ -172,7 +201,7 @@ export function mastercardPurchases(debt: Debt, other: Cents): { date: ISODate; 
   return inc.filter((x) => x.amount > 0);
 }
 
-function mastercardBalanceSchedules(debt: Debt, s: Settings, other: Cents, perPay: Cents | undefined, plans: PlanSchedule[]): PlanSchedule[] {
+function mastercardBalanceSchedules(debt: Debt, s: Settings, other: Cents, perPayIn: PerPay, plans: PlanSchedule[]): PlanSchedule[] {
   const months = 3;
   const items = mastercardPurchases(debt, other).map((x, i) => {
     const plan: DebtPlan = {
@@ -196,6 +225,7 @@ function mastercardBalanceSchedules(debt: Debt, s: Settings, other: Cents, perPa
         const i = Math.round(x.left * monthlyRate); x.left += i; x.interest += i;
       }
     }
+    const perPay = payFor(perPayIn, p.start);
     let room = perPay === undefined ? Infinity : Math.max(0, perPay - planPayments.filter((y) => y.date >= p.start && y.date <= p.end).reduce((t, y) => t + y.amount, 0));
     for (const x of live) {
       if (room <= 0) break;
@@ -221,7 +251,7 @@ function mastercardBalanceSchedules(debt: Debt, s: Settings, other: Cents, perPa
  * The part of an entered balance that isn't in a plan (e.g. a Mastercard balance): paid down each
  * payday by what's left of the payday amount after plan payments, or in full when paying "what's due".
  */
-function otherBalanceSchedule(debt: Debt, s: Settings, other: Cents, perPay: Cents | undefined, plans: PlanSchedule[]): PlanSchedule {
+function otherBalanceSchedule(debt: Debt, s: Settings, other: Cents, perPayIn: PerPay, plans: PlanSchedule[]): PlanSchedule {
   const start = debt.balance?.asOf ?? todayISO();
   const plan: DebtPlan = { id: `${debt.id}-other`, name: 'Balance', type: 'balance', original: other, remaining: other, asOf: start, purchaseDate: start };
   const monthlyRate = (debt.rate ?? 0) / 100 / 12;
@@ -234,9 +264,14 @@ function otherBalanceSchedule(debt: Debt, s: Settings, other: Cents, perPay: Cen
     const i = n === 0 ? 0 : Math.round(left * monthlyRate); // a month passes before interest is charged
     interest += i; left += i;
     const planned = planPayments.filter((x) => x.date >= p.start && x.date <= p.end).reduce((t, x) => t + x.amount, 0);
+    const perPay = payFor(perPayIn, p.start);
     const room = perPay === undefined ? left : Math.max(0, perPay - planned);
     const amount = Math.min(left, room);
-    if (amount <= 0) { if (perPay !== undefined && perPay <= 0) break; continue; }
+    if (amount <= 0) {
+      const more = lastOneOff(perPayIn);
+      if (perPay !== undefined && perPay <= 0 && !(more && more > p.start)) break;
+      continue;
+    }
     left -= amount;
     payments.push({ date: p.start, amount, debtId: debt.id, planId: plan.id, after: left });
   }
@@ -253,6 +288,21 @@ export function debtPerPay(b: Budget, debt: Debt): Cents | undefined {
   const line = b.split.find((l) => l.accountId === debt.accountId);
   const mode = line?.mode ?? (line?.auto ? 'exact' : 'fixed');
   return mode === 'fixed' ? (line?.amount ?? 0) : undefined;
+}
+
+/**
+ * What payday sends a debt, with any one-pay amounts (Optimise's "this pay only" extra, or an amount
+ * changed for one pay): use this for forecasts, so extra paid in a pay comes off what's owed.
+ */
+export function debtPay(b: Budget, debt: Debt): PerPay {
+  const usual = debtPerPay(b, debt);
+  if (debt.payroll) return usual;
+  const byPeriod: Record<ISODate, Cents> = {};
+  for (const [start, o] of Object.entries(b.overrides ?? {})) {
+    const v = o?.[debt.accountId];
+    if (v !== undefined) byPeriod[start] = v;
+  }
+  return Object.keys(byPeriod).length ? { usual, byPeriod } : usual;
 }
 
 /** What the payment plans still owe, added up. */
@@ -318,7 +368,7 @@ export function suggestPlan(debt: Debt, amount: Cents): { type: PlanType; months
 }
 
 /** What a debt is forecast to owe at the end of `date`, from its plans (unplanned balance stays as it is). */
-export function projectedOwed(debt: Debt, s: Settings, date: ISODate, perPay?: Cents): Cents {
+export function projectedOwed(debt: Debt, s: Settings, date: ISODate, perPay?: PerPay): Cents {
   const schedules = debtSchedules(debt, s, perPay);
   let total = schedules.some((x) => x.synthetic) ? 0 : unplanned(debt);
   for (const sch of schedules) {
@@ -405,7 +455,7 @@ function recordPaymentHistory(debt: Debt, date: ISODate, amount: Cents): void {
  * Payments are automatic (Afterpay direct debit, card payments from payday), so anything scheduled
  * before today counts as paid. Returns true if anything changed.
  */
-export function settleDue(debt: Debt, s: Settings, today: ISODate, perPay?: Cents): boolean {
+export function settleDue(debt: Debt, s: Settings, today: ISODate, perPay?: PerPay): boolean {
   let paid = 0;
   const log: PaidPayment[] = [];
   for (const sch of debtSchedules(debt, s, perPay)) {
@@ -509,7 +559,7 @@ export interface GemPlanResult {
   instalmentsDue: Cents;
 }
 
-export function gemPlan(debt: Debt, s: Settings, perPay?: Cents): GemPlanResult {
+export function gemPlan(debt: Debt, s: Settings, perPayIn?: PerPay): GemPlanResult {
   const dates = [debt.balance?.asOf, ...debt.plans.map((p) => p.asOf)].filter(Boolean) as ISODate[];
   const start = dates.sort()[dates.length - 1] ?? todayISO();
   const buckets = gemBuckets(debt, start);
@@ -541,19 +591,23 @@ export function gemPlan(debt: Debt, s: Settings, perPay?: Cents): GemPlanResult 
     need = Math.max(need, n > 0 ? Math.ceil(cum / n) : cum);
   }
   const recommended = Math.ceil(Math.max(instalmentsDue + need, minimum) / 100) * 100;
-  const amount = perPay ?? recommended;
+  const amount = usualPay(perPayIn) ?? recommended;
+  const more = lastOneOff(perPayIn);
 
-  // Simulate each payday.
+  // Simulate each payday. A pay with a one-pay amount (extra from Optimise) pays that instead.
   const payments = new Map<Bucket, Payment[]>(buckets.map((b) => [b, []]));
   const warnings = new Map<Bucket, string>();
+  const used = new Set<ISODate>();
   for (const date of paydays) {
-    if (buckets.every((b) => b.left <= 0) || amount <= 0) break;
+    const pay = payFor(perPayIn, periodContaining(date, s).start, used) ?? recommended;
+    if (buckets.every((b) => b.left <= 0)) break;
+    if (pay <= 0) { if (more && more > date) continue; break; }
     for (const b of buckets) {
       if (b.kind === 'promo' && b.left > 0 && b.end <= date && !warnings.has(b)) {
         warnings.set(b, `${fmt(b.left)} will still be owed when interest-free ends on ${b.end}, so interest is charged on it from then.`);
       }
     }
-    for (const [b, x] of gemSplit(buckets, amount, date)) {
+    for (const [b, x] of gemSplit(buckets, pay, date)) {
       payments.get(b)!.push({ date, amount: x, debtId: debt.id, planId: b.plan.id, after: b.left });
     }
   }
@@ -616,8 +670,12 @@ export interface DebtAdvice {
   debt: Debt;
   /** What we recommend sending on this payday. */
   recommended: Cents;
-  /** What payday is set to send now. */
+  /** What payday is set to send this pay (including any extra for this pay only). */
   sending: Cents;
+  /** What it sends each pay, without this pay's one-off amount. */
+  usual: Cents;
+  /** Extra sent this pay only (e.g. from Optimise), on top of the usual amount. */
+  extra?: Cents;
   /** Plain-English reason for the recommendation. */
   reason: string;
   /** The card's own minimum, when it has one. */
@@ -626,27 +684,34 @@ export interface DebtAdvice {
   apply: { mode: 'exact' } | { mode: 'fixed'; amount: Cents };
 }
 
+/** True when a debt's payday amount isn't what's recommended (extra on top of it, for one pay, is fine). */
+export function offRecommended(a: DebtAdvice): boolean {
+  return a.extra ? a.sending < a.recommended : a.sending !== a.recommended;
+}
+
 export function debtAdvice(b: Budget, debt: Debt, period: Period): DebtAdvice {
   const s = b.settings;
   const line = b.split.find((l) => l.accountId === debt.accountId);
   const fixed = debtPerPay(b, debt);
-  const inPeriod = (perPay?: Cents) => debtSchedules(debt, s, perPay)
+  const inPeriod = (perPay?: PerPay) => debtSchedules(debt, s, perPay)
     .flatMap((x) => x.payments).filter((p) => p.date >= period.start && p.date <= period.end)
     .reduce((t, p) => t + p.amount, 0);
-  const sending = fixed !== undefined ? fixed : inPeriod();
+  const usual = fixed !== undefined ? fixed : inPeriod();
+  const once = debt.payroll ? undefined : b.overrides?.[period.start]?.[debt.accountId];
+  const sending = once ?? usual;
   const total = owed(debt);
-  const base = { debt, sending };
+  const base = { debt, sending, usual, ...(sending > usual ? { extra: sending - usual } : {}) };
 
   const balanceKnown = !!debt.balance || debt.plans.length > 0 || !!debt.history?.length;
   if (!balanceKnown) {
     return {
-      ...base, recommended: sending, apply: { mode: 'fixed', amount: sending },
+      ...base, recommended: usual, apply: { mode: 'fixed', amount: usual },
       reason: 'Enter what\u2019s owed (Update balance) to get a recommendation. Keeping your current amount for now.',
     };
   }
   if (total <= 0) return { ...base, recommended: 0, reason: 'Paid off.', apply: { mode: 'fixed', amount: 0 } };
   if (debt.payroll) {
-    return { ...base, recommended: sending, apply: { mode: 'fixed', amount: sending },
+    return { ...base, recommended: usual, apply: { mode: 'fixed', amount: usual },
       reason: 'Taken from your salary before pay reaches you, so it isn\u2019t part of the payday split.' };
   }
 

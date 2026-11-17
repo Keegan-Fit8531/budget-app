@@ -1,5 +1,5 @@
 import { addDays, type ISODate } from './dates';
-import { debtPerPay, debtSchedules, applyPayment } from './debts';
+import { debtPay, debtSchedules, applyPayment } from './debts';
 import type { Budget, Cents, Debt, Txn } from './types';
 
 // ---------------------------------------------------------------------------------------------
@@ -72,7 +72,7 @@ export function recordCardPayments(b: Budget, accountId: string, added: Txn[], t
     const from = addDays(t.date, -BEFORE), to = addDays(t.date, AFTER);
     const near = [
       ...(debt.paid ?? []).filter((x) => x.date >= from && x.date <= to).map((x) => ({ key: `${x.date}|${x.amount}|${x.planId ?? x.name}`, date: x.date, amount: x.amount })),
-      ...debtSchedules(debt, b.settings, debtPerPay(b, debt)).flatMap((sch) => sch.payments
+      ...debtSchedules(debt, b.settings, debtPay(b, debt)).flatMap((sch) => sch.payments
         .filter((p) => p.date >= today && p.date >= from && p.date <= to)
         .map((p) => ({ key: `${p.date}|${p.amount}|${sch.synthetic ? sch.plan.name : sch.plan.id}`, date: p.date, amount: p.amount }))),
     ].filter((x) => x.amount > 0 && !taken.has(x.key))

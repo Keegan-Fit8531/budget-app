@@ -1,6 +1,6 @@
 import { nextColor } from '../colors';
 import { fmtDay, fmtShort, fmtSpan, monthName, type ISODate } from '../dates';
-import { debtPerPay, exactForFirstPlan, owed, planEnds, recordHistory, settleDue } from '../debts';
+import { debtPay, exactForFirstPlan, owed, planEnds, recordHistory, settleDue } from '../debts';
 import { recordPayslip } from '../documents';
 import { paydayFor, planFor, recordPayday } from '../engine';
 import { cash } from '../money';
@@ -155,7 +155,7 @@ export function applyStatement(b: Budget, debtId: string, s: Pick<Extract<Propos
   const hist = (debt.history ?? []).filter((h) => h.asOf !== asOf);
   hist.push({ amount: owed(debt), asOf });
   debt.history = hist.sort((x, y) => x.asOf.localeCompare(y.asOf)).slice(-500);
-  if (asOf < today) settleDue(debt, b.settings, today, debtPerPay(b, debt));
+  if (asOf < today) settleDue(debt, b.settings, today, debtPay(b, debt));
   return debt;
 }
 

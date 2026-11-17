@@ -1,5 +1,5 @@
 import { addDays, todayISO, type ISODate } from './dates';
-import { accountHasPlans, debtPaymentsIn, debtPerPay, projectedOwed } from './debts';
+import { accountHasPlans, debtPaymentsIn, debtPay, projectedOwed } from './debts';
 import {
   averageNeed, firstBudgetPay, hasSetAsides, isSetAside, itemDates, periodContaining, setAsideOn, setAsidesOn, shiftPeriod, type Period,
 } from './engine';
@@ -255,7 +255,7 @@ export function depositFor(b: Budget, accountId: string, p: Period, today: ISODa
     // What it owed going into this pay: for a pay already under way, that's what it owes now plus the
     // payments that have gone out since (so its last payment doesn't turn into $0 once it's made).
     const since = (debt.paid ?? []).reduce((t, x) => t + (x.date >= p.start ? x.amount : 0), 0);
-    return Math.min(amount, Math.max(0, projectedOwed(debt, b.settings, addDays(p.start, -1), debtPerPay(b, debt)) + since));
+    return Math.min(amount, Math.max(0, projectedOwed(debt, b.settings, addDays(p.start, -1), debtPay(b, debt)) + since));
   }
   // A cost put aside here (moved to a savings account, say) is always sent, even with a fixed amount below it.
   return Math.max(amount, setAsideOn(b, accountId, p.start));
