@@ -1498,6 +1498,18 @@ describe('card payments seen in a bank account', () => {
     expect(debt(b, 'qcard').bankPayments?.[0].counted).toBe(0);
   });
 
+  it('old Afterpay payments in a bank account’s history never clear today’s orders', () => {
+    const b = debtBudget();
+    const ap = debt(b, 'afterpay');
+    const before = owed(ap);
+    // A sync that brings in a year of history: Afterpay instalments paid long before these orders.
+    const old = Array.from({ length: 30 }, (_, i) => tx(`o${i}`, `2025-${String(6 + Math.floor(i / 5)).padStart(2, '0')}-0${1 + (i % 5)}`, 'Afterpay', -41.69));
+    applyBank(b, { accounts: [go], transactions: old }, links, '2026-11-16');
+    expect(owed(ap)).toBe(before);
+    expect(ap.plans).toHaveLength(2);
+    expect(ap.bankPayments?.every((p) => p.counted === 0)).toBe(true);
+  });
+
   it('a card linked to the bank itself is left to the bank', () => {
     const b = debtBudget();
     b.bankLinks = { c1: 'debt:qcard' };
