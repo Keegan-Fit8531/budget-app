@@ -11,6 +11,7 @@ import { cycleSoFar, cycleTransactions, makeReview, parseReview, REVIEW_INSTRUCT
 import { useBudget } from '../lib/store';
 import { otherShops } from '../lib/spending';
 import { allTxns, sortShops } from '../lib/reader/sortShops';
+import { SYNCED } from './BankCard';
 import type { Budget } from '../lib/types';
 import { Icon } from './Icon';
 import { Chevron, Collapse } from './ui';
@@ -35,28 +36,32 @@ const TRIED = 'paydays.review.tried';
 const SORT_TRIED = 'paydays.shops.tried';
 
 /**
- * New shops in Other (from a bank sync or an upload) are sorted by Gemini in the background, at most
- * once every 6 hours, while the app is open and your Google key is set.
+ * Shops in Other that haven't been asked about are sorted by Gemini straight after each bank sync, and
+ * when the app opens (after an upload, say), while your Google key is set. Each shop is only ever
+ * asked about once, so this only sends the new ones. After a failure it waits an hour.
  */
 export function ShopSortAutoRun() {
   const { budget, update } = useBudget();
   const running = useRef(false);
   const latest = useRef(budget);
   latest.current = budget;
-  const count = otherShops(allTxns(budget), budget).length;
   useEffect(() => {
-    if (!count) return;
     const run = () => {
-      if (running.current || document.visibilityState === 'hidden' || !readReaderConfig()) return;
-      try { if (Date.now() - Number(localStorage.getItem(SORT_TRIED) ?? 0) < 6 * RETRY_MS) return; localStorage.setItem(SORT_TRIED, String(Date.now())); } catch { return; }
+      if (running.current || !readReaderConfig() || !otherShops(allTxns(latest.current), latest.current).length) return;
+      try { if (Date.now() - Number(localStorage.getItem(SORT_TRIED) ?? 0) < RETRY_MS) return; } catch { return; }
       running.current = true;
       sortShops(latest.current).then((got) => {
+        const placed = Object.values(got).filter((c) => c !== 'other').length;
         update((b) => { b.shopGuesses = { ...(b.shopGuesses ?? {}), ...got }; return b; });
-      }).catch(() => { /* tried again later */ }).finally(() => { running.current = false; });
+        if (placed) showToast(`Sorted ${placed} new shop${placed === 1 ? '' : 's'} out of Other.`);
+      }).catch(() => {
+        try { localStorage.setItem(SORT_TRIED, String(Date.now())); } catch { /* storage blocked */ }
+      }).finally(() => { running.current = false; });
     };
-    const t0 = setTimeout(run, 40_000); // after the bank's sync on opening
-    return () => clearTimeout(t0);
-  }, [count, update]);
+    const t0 = setTimeout(run, 40_000); // on opening, once the bank's own sync has had its turn
+    window.addEventListener(SYNCED, run);
+    return () => { clearTimeout(t0); window.removeEventListener(SYNCED, run); };
+  }, [update]);
   return null;
 }
 const RETRY_MS = 60 * 60 * 1000;

@@ -110,6 +110,9 @@ export function BankCard() {
 let running = false;
 const watchers = new Set<() => void>();
 const setRunning = (v: boolean) => { running = v; watchers.forEach((f) => f()); };
+/** Said when a sync has added what the bank sent, so other things can follow on (sorting new shops). */
+export const SYNCED = 'paydays:synced';
+const synced = () => setTimeout(() => window.dispatchEvent(new Event(SYNCED)), 500);
 
 /** Whether a bank sync is running now. */
 export function useBankSyncing(): boolean {
@@ -132,6 +135,7 @@ export async function syncBank(update: (f: (b: Budget) => Budget) => void, force
     update((b) => { result = applyBank(b, d, b.bankLinks ?? {}); return b; });
     const now = new Date().toISOString();
     writeBankConfig({ ...conf, lastSync: now, lastRefresh: now });
+    synced();
     if (force && d.refreshed === false) {
       // Asked the bank, but it hadn't answered by the time we had to reply: look again in a minute.
       showToast(`Asked ANZ for the latest. It hasn't come through yet, so this checks again in a minute. ${said(result)}`);
@@ -152,6 +156,7 @@ async function syncAgain(update: (f: (b: Budget) => Budget) => void): Promise<vo
     let result: BankResult[] = [];
     update((b) => { result = applyBank(b, d, b.bankLinks ?? {}); return b; });
     writeBankConfig({ ...conf, lastSync: new Date().toISOString() });
+    synced();
     showToast(`Bank sync: ${said(result)}`);
   } catch { /* the hourly sync tries again */ } finally { setRunning(false); }
 }
