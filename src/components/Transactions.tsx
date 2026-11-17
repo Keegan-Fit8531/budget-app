@@ -13,7 +13,7 @@ export function TransactionList({ items, card }: { items: Txn[]; card?: boolean 
   if (!items.length) return null;
   const latest = items.slice().reverse();
   return (
-    <Disclosure title="Transactions" meta={`${items.length} since ${fmtShort(items[0].date)}${items[0].date.slice(0, 4) !== items[items.length - 1].date.slice(0, 4) ? ` ${items[0].date.slice(0, 4)}` : ''}`}>
+    <Disclosure title="Transactions" meta={items.length}>
       <div>
       {latest.slice(0, shown).map((t, i) => (
         <div key={`${t.date}-${i}`} className="list-row small">

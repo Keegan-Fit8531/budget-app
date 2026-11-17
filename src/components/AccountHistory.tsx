@@ -97,7 +97,7 @@ export function AccountHistoryList({ account: a }: { account: Account }) {
   }
 
   return (
-    <Disclosure title="History" meta={`${list.length} entr${list.length === 1 ? 'y' : 'ies'}`}>
+    <Disclosure title="History" meta={list.length}>
       <div>
       {shown.map((e) => (
         <div key={e.id} className="list-row small">

@@ -94,8 +94,8 @@ export function MonthTracker({ budget, account, today = todayISO(), open }: { bu
           {steady && t.balanceKnown && t.spare > 0 && (
             <p className="small muted">
               {bufferFor
-                ? <>The buffer isn't spare: the {fmtShort(bufferFor.period.start)} pay needs {cash(bufferFor.need)} but gets {cash(bufferFor.deposit)}, and it covers the {cash(bufferFor.need - bufferFor.deposit)}.</>
-                : 'The buffer isn’t spare: it covers pays with an extra week.'}
+                ? <>Buffer is for the {fmtShort(bufferFor.period.start)} pay: it needs {cash(bufferFor.need)}, gets {cash(bufferFor.deposit)}.</>
+                : 'Buffer is for pays with an extra week.'}
             </p>
           )}
 
@@ -120,7 +120,7 @@ export function MonthTracker({ budget, account, today = todayISO(), open }: { bu
           </div>}
 
           {paid.length > 0 && (
-            <Disclosure title="Already come out this pay" meta={cash(t.paid)}>
+            <Disclosure title="Paid this pay" meta={cash(t.paid)}>
               <div>
                 {paid.map((r, i) => (
                   <div className="list-row small muted" key={`${r.name}-${r.date}-${i}`}>
@@ -135,8 +135,8 @@ export function MonthTracker({ budget, account, today = todayISO(), open }: { bu
           )}
 
           {t.next.rows.length > 0 && (
-            <Disclosure title={`Next pay (${fmtShort(t.next.period.start)}) puts in ${cash(t.next.deposit)}`}
-              meta={`${t.next.rows.length} bill${t.next.rows.length === 1 ? '' : 's'}, ${cash(t.next.rows.reduce((s, r) => s + r.amount, 0))}`}>
+            <Disclosure title={`Next pay, ${fmtShort(t.next.period.start)}`}
+              meta={`+${cash(t.next.deposit)} in · ${cash(t.next.rows.reduce((s, r) => s + r.amount, 0))} out`}>
               <div>
                 {t.next.rows.map((r, i) => (
                   <div className="list-row small" key={`${r.name}-${r.date}-${i}`}>

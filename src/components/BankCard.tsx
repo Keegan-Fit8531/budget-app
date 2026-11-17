@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState, useSyncExternalStore } from 'react';
+import type { Budget } from '../lib/types';
 import { addGoalFor, applyBank, AUTO_EVERY_MS, BANK_URL, bankMessage, fetchBank, readBankConfig, sinceFor, suggestLink, writeBankConfig, type BankData, type BankResult } from '../lib/bank';
 import { cash } from '../lib/money';
 import { csvTargets } from '../lib/reader/check';
@@ -105,6 +106,38 @@ export function BankCard() {
   );
 }
 
+// One sync at a time, whoever asks (the hourly check, or tapping a Synced pill). Pills spin while it runs.
+let running = false;
+const watchers = new Set<() => void>();
+const setRunning = (v: boolean) => { running = v; watchers.forEach((f) => f()); };
+
+/** Whether a bank sync is running now. */
+export function useBankSyncing(): boolean {
+  return useSyncExternalStore((f) => { watchers.add(f); return () => { watchers.delete(f); }; }, () => running);
+}
+
+/**
+ * Sync with the bank now: ask it for the latest, and add what's new. `force` goes ahead even if it
+ * synced within the hour (tapping a pill); otherwise it waits for the hour to pass. Says what it did.
+ */
+export async function syncBank(update: (f: (b: Budget) => Budget) => void, force = false): Promise<void> {
+  const conf = readBankConfig();
+  if (!conf) { if (force) showToast('The bank connection isn’t set up on this device: connect it in Settings → Bank connection.'); return; }
+  if (running) return;
+  if (!force && conf.lastSync && Date.now() - Date.parse(conf.lastSync) < AUTO_EVERY_MS) return;
+  setRunning(true);
+  try {
+    const d = await fetchBank(conf, sinceFor(conf), undefined, true);
+    let result: BankResult[] = [];
+    update((b) => { result = applyBank(b, d, b.bankLinks ?? {}); return b; });
+    const now = new Date().toISOString();
+    writeBankConfig({ ...conf, lastSync: now, lastRefresh: now });
+    if (force || result.some((r) => r.added || r.cardPayments?.length)) showToast(`Bank sync: ${said(result)}`);
+  } catch (e) {
+    if (force) showToast(`Bank sync didn’t work: ${bankMessage(e)}`);
+  } finally { setRunning(false); }
+}
+
 /**
  * Keeps the bank connection up to date while the app is open: when it opens or comes back on screen,
  * and every hour, once accounts are linked in Settings. Asks the bank for the latest (Akahu allows that
@@ -112,23 +145,10 @@ export function BankCard() {
  */
 export function BankAutoSync() {
   const { budget, update } = useBudget();
-  const running = useRef(false);
   const hasLinks = budget.bankAuto !== false && !!budget.bankLinks && Object.keys(budget.bankLinks).length > 0;
   useEffect(() => {
     if (!hasLinks) return;
-    const run = () => {
-      const conf = readBankConfig();
-      if (!conf || running.current || document.visibilityState === 'hidden') return;
-      if (conf.lastSync && Date.now() - Date.parse(conf.lastSync) < AUTO_EVERY_MS) return;
-      running.current = true;
-      fetchBank(conf, sinceFor(conf), undefined, true).then((d) => {
-        let result: BankResult[] = [];
-        update((b) => { result = applyBank(b, d, b.bankLinks ?? {}); return b; });
-        const now = new Date().toISOString();
-        writeBankConfig({ ...conf, lastSync: now, lastRefresh: now });
-        if (result.some((r) => r.added || r.cardPayments?.length)) showToast(`Bank sync: ${said(result)}`);
-      }).catch(() => { /* tried again later; Settings shows the reason */ }).finally(() => { running.current = false; });
-    };
+    const run = () => { if (document.visibilityState !== 'hidden') void syncBank(update); };
     run();
     const t = setInterval(run, 5 * 60 * 1000);
     document.addEventListener('visibilitychange', run);

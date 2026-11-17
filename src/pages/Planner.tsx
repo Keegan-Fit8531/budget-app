@@ -459,11 +459,11 @@ export function Planner() {
               ? `${billBreakdown[0].count} × ${cash(billBreakdown.reduce((s, x) => s + x.item.amount, 0))}`
               : paying.length || !asidePart ? `${paying.length} payment${paying.length === 1 ? '' : 's'} due` : '', asidePart].filter(Boolean).join(' + ');
             const detail = auto
-              ? (longRun ? (steadyMode ? 'Steady' : 'Exact · average')
+              ? (longRun ? (steadyMode ? 'Same each pay' : 'Average')
                 : !steadyMode && topsUp(budget, a.account.id)
-                  ? (a.funded < a.need ? `Exact · ${cash(a.need, { whole: true })} of bills − ${cash(a.need - a.funded, { whole: true })} already there`
-                    : asidePart ? `Exact · ${times}` : `Exact · ${a.dues.length} bills, nothing left over`)
-                  : `${steadyMode ? 'Steady' : 'Exact'} · ${times}`)
+                  ? (a.funded < a.need ? `${cash(a.need, { whole: true })} of bills − ${cash(a.need - a.funded, { whole: true })} already there`
+                    : asidePart ? times : `${a.dues.length} bills, nothing left over`)
+                  : times)
               : isPay
               ? (known ? 'Pay lands here · what’s left' : 'Pay lands here · shows once pay is in')
               : a.diff === null

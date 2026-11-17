@@ -1,3 +1,4 @@
+import { SyncPill } from '../components/SyncPill';
 import { useEffect, useState } from 'react';
 import { AccountHistoryList, OneOffCostModal } from '../components/AccountHistory';
 import { TransactionList } from '../components/Transactions';
@@ -5,11 +6,11 @@ import { DayPicker, useDayView } from '../components/DayPicker';
 import { Icon } from '../components/Icon';
 import { MonthTracker, PayProjectionView } from '../components/MonthTracker';
 import { addDays, fmtDay, fmtShort, monthName, todayISO } from '../lib/dates';
-import { accountMode, balanceOn, balanceToday, depositFor, forecastBalances, outflows, smoothAmount } from '../lib/balances';
-import { periodContaining, type Period } from '../lib/engine';
+import { balanceOn, balanceToday, depositFor, forecastBalances, outflows } from '../lib/balances';
+import { periodContaining, shiftPeriod, type Period } from '../lib/engine';
 import { cash, centsToInput, parseMoney } from '../lib/money';
 import { moveAmong } from '../lib/order';
-import { AccIcon, Chevron, Collapse, Disclosure, MoveButtons, PageHead, ReorderToggle, SyncPill, useFlip } from '../components/ui';
+import { AccIcon, CardColumns, Collapse, DetailsToggle, Disclosure, MoveButtons, PageHead, ReorderToggle, useFlip } from '../components/ui';
 import { bankSync } from '../lib/bank';
 import { setBalance } from '../lib/history';
 import { newId, useBudget } from '../lib/store';
@@ -80,7 +81,7 @@ export function Accounts({ deposits }: { deposits?: string }) {
         </section>
       )}
 
-      <div ref={flip.ref} className={`cards-2 even${reorder ? ' reordering' : ''}`}>
+      <CardColumns innerRef={flip.ref} className={reorder ? 'reordering' : undefined}>
         {shown.map((a, i) => {
           const mover = reorder ? <MoveButtons name={a.name} first={i === 0} last={i === shown.length - 1} onMove={(d) => move(a.id, d)} /> : null;
           return isPlanned(a)
@@ -88,26 +89,10 @@ export function Accounts({ deposits }: { deposits?: string }) {
               onDeposits={() => setDepOpen(a.id)} onPick={(n) => { dv.goPay(n); window.scrollTo({ top: 0, behavior: 'smooth' }); }} />
             : <BankOnlyCard key={a.id} account={a} mover={mover} />;
         })}
-      </div>
+      </CardColumns>
 
       {depOpen !== undefined && <DepositsModal openId={depOpen || undefined} onClose={closeDeposits} />}
     </>
-  );
-}
-
-/** Whether a card's details are open, remembered per account on this device. */
-function useCardOpen(id: string): [boolean, (v: boolean) => void] {
-  const key = `paydays.accounts.open.${id}`;
-  const [open, setOpenState] = useState(() => { try { return localStorage.getItem(key) === 'open'; } catch { return false; } });
-  return [open, (v) => { setOpenState(v); try { localStorage.setItem(key, v ? 'open' : 'closed'); } catch { /* ignore */ } }];
-}
-
-/** The Details row at the foot of a card. */
-function DetailsToggle({ open, onChange }: { open: boolean; onChange: (v: boolean) => void }) {
-  return (
-    <div className="acct-foot">
-      <button type="button" className="disc-head" aria-expanded={open} onClick={() => onChange(!open)}>{open ? 'Hide details' : 'Details'}<Chevron size={16} /></button>
-    </div>
   );
 }
 
@@ -141,8 +126,7 @@ function BalanceCard({ account: a, view, day, mover, onDeposits, onPick }: {
   const entry = budget.balances?.[a.id];
   const [editing, setEditing] = useState(false);
   const [costing, setCosting] = useState(false);
-  const [open, setOpen] = useCardOpen(a.id);
-  const mode = accountMode(budget, a.id);
+  const [open, setOpen] = useState(false); // every card starts closed
   const sync = bankSync(budget, `account:${a.id}`);
 
   // Today: what's in the account before today's payments come out, the same figure as the tracker's
@@ -159,9 +143,9 @@ function BalanceCard({ account: a, view, day, mover, onDeposits, onPick }: {
   const txns = budget.accountTransactions?.[a.id] ?? [];
   const hasDetails = tracked || forecast.length > 0 || hasHistory || txns.length > 0;
 
-  const modeText = mode === 'smooth' ? `Steady · ${cash(view ? depositFor(budget, a.id, view, today) : smoothAmount(budget, a.id))} ${view ? `on ${fmtShort(view.start)}` : 'next pay'}`
-    : mode === 'exact' ? 'Exact each pay'
-    : `${cash(budget.split.find((l) => l.accountId === a.id)?.amount ?? 0)} each pay`;
+  // What payday sends here: next pay's, or the pay being looked at.
+  const pay = view ?? shiftPeriod(periodContaining(today, budget.settings), 1, budget.settings);
+  const sends = depositFor(budget, a.id, pay, today);
 
   return (
     <section className={`card acct${open ? ' open' : ''}`} data-flip={a.id}>
@@ -169,11 +153,11 @@ function BalanceCard({ account: a, view, day, mover, onDeposits, onPick }: {
         <AccIcon color={a.color} name="bank" />
         <div className="grow min0">
           <h2 className="h2 clip">{a.name}</h2>
-          <button type="button" className="acct-sub" title="What payday sends here" onClick={onDeposits}><span>{modeText}</span><Icon name="right" size={14} /></button>
+          <p className="small muted clip">+{cash(sends)} on {fmtShort(pay.start)}</p>
         </div>
         <div className="acct-side">
           {entry && <SyncPill source={sync.linked ? 'bank' : 'entered'} at={sync.at ?? entry.asOf} />}
-          {mover}
+          {mover ?? <button className="icon-btn mini has-tip tip-left" data-tip="Deposits and costs" aria-label={`${a.name}: what payday sends and its costs`} onClick={onDeposits}><Icon name="settings" size={16} /></button>}
         </div>
       </div>
 
@@ -183,8 +167,8 @@ function BalanceCard({ account: a, view, day, mover, onDeposits, onPick }: {
       ) : (
         <div className="acct-fig">
           <b className={`fig ${shown !== undefined && shown < 0 ? 'neg' : ''}`}>{shown !== undefined ? cash(shown) : '—'}</b>
-          <button className="icon-btn mini plain has-tip" data-tip="Update balance" aria-label={`Update ${a.name} balance`} onClick={() => setEditing(true)}><Icon name="edit" size={16} /></button>
-          <button className="icon-btn mini plain has-tip" data-tip="One-off cost" aria-label={`Record a one-off cost from ${a.name}`} onClick={() => setCosting(true)}><Icon name="plus" size={18} /></button>
+          <button className="icon-btn mini has-tip" data-tip="Update balance" aria-label={`Update ${a.name} balance`} onClick={() => setEditing(true)}><Icon name="edit" size={16} /></button>
+          <button className="icon-btn mini has-tip" data-tip="One-off cost" aria-label={`Record a one-off cost from ${a.name}`} onClick={() => setCosting(true)}><Icon name="plus" size={16} /></button>
           {(view || estimated) && (
             <span className="xs muted note-line">
               {view ? `${day > today ? 'Estimated' : 'On'} ${fmtShort(day)}` : `Estimated from ${fmtShort(entry.asOf)}${dueToday ? ", before today's bills" : ''}`}
@@ -200,7 +184,7 @@ function BalanceCard({ account: a, view, day, mover, onDeposits, onPick }: {
       <Collapse open={open} stacked>
         <div className="acct-body">
           {forecast.length > 0 && (
-            <Disclosure title="Next 6 pays" meta={lowest !== undefined ? `lowest ${cash(lowest)}` : undefined}>
+            <Disclosure title="Next 6 pays" meta={lowest !== undefined ? `lowest ${cash(lowest, { whole: true })}` : undefined}>
               <div className="table-scroll">
                 <table className="table">
                   <thead><tr><th>Pay</th><th>In</th><th>Out</th><th>Ends with</th></tr></thead>
@@ -238,7 +222,7 @@ function BalanceCard({ account: a, view, day, mover, onDeposits, onPick }: {
 function BankOnlyCard({ account: a, mover }: { account: Account; mover: React.ReactNode }) {
   const { budget } = useBudget();
   const today = todayISO();
-  const [open, setOpen] = useCardOpen(a.id);
+  const [open, setOpen] = useState(false); // every card starts closed
   const txns = budget.accountTransactions?.[a.id] ?? [];
   const isPay = a.id === budget.settings.payAccountId;
   const goal = (budget.savings ?? []).find((g) => g.accountId === a.id);
@@ -257,12 +241,14 @@ function BankOnlyCard({ account: a, mover }: { account: Account; mover: React.Re
         <div className="grow min0">
           <h2 className="h2 clip">{a.name}</h2>
           {goal
-            ? <a className="acct-sub" href="#/savings" style={{ textDecoration: 'none' }}>Savings goal<Icon name="right" size={14} /></a>
-            : <span className="small muted">{isPay ? 'Pay lands here' : 'Not planned'}</span>}
+            ? <p className="small muted">Savings goal</p>
+            : <p className="small muted">{isPay ? 'Pay lands here' : 'Not planned'}</p>}
         </div>
         <div className="acct-side">
           <SyncPill source={sync.linked || goalSync.linked ? 'bank' : bal ? 'entered' : 'none'} at={sync.at ?? goalSync.at ?? bal?.asOf} />
-          {mover}
+          {mover ?? (goal
+            ? <a className="icon-btn mini has-tip tip-left" data-tip="Open in Savings" aria-label={`Open ${goal.name} in Savings`} href="#/savings"><Icon name="right" size={16} /></a>
+            : <a className="icon-btn mini has-tip tip-left" data-tip="Spending in Insights" aria-label="Spending in Insights" href="#/insights"><Icon name="pie" size={16} /></a>)}
         </div>
       </div>
 
@@ -282,7 +268,6 @@ function BankOnlyCard({ account: a, mover }: { account: Account; mover: React.Re
       <Collapse open={open} stacked>
         <div className="acct-body">
           <TransactionList items={txns} />
-          <p className="xs muted">See where it went in <a href="#/insights">Insights</a>.</p>
         </div>
       </Collapse>
 
