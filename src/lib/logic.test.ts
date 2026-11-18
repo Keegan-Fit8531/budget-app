@@ -218,7 +218,7 @@ describe('payday morning before the deposit lands', () => {
   function withRent() {
     const b = budget();
     b.accounts.push({ id: 'rent', name: 'Rent', kind: 'bank', color: '#000', groupId: 'needs' });
-    b.split.push({ accountId: 'rent', amount: 180500, mode: 'smooth' });
+    b.split.push({ accountId: 'rent', amount: 0, mode: 'smooth' });
     b.items.push({ id: 'r', name: 'Rent', amount: 41500, frequency: 'weekly', start: '2026-01-05', accountId: 'rent' });
     return b;
   }
@@ -232,8 +232,10 @@ describe('payday morning before the deposit lands', () => {
     expect(depositPending(b, 'rent', b.balances!.rent)).toBe(true);
     // What's in the bank right now is still $500…
     expect(balanceToday(b, 'rent', '2026-11-19')).toBe(50000);
-    // …but the period's end still counts today's deposit, so it isn't falsely short.
-    expect(estimateBalance(b, 'rent', p.end, '2026-11-19')).toBe(64500);
+    // …but the period's end still counts today's deposit (to the cent), so it isn't falsely short.
+    // Steady ≈ $1,804.51; 4 × $415 out → ends $644.51.
+    expect(depositFor(b, 'rent', p, '2026-11-19')).toBe(180451);
+    expect(estimateBalance(b, 'rent', p.end, '2026-11-19')).toBe(64451);
     expect(balancePay(b, p, '2026-11-19').shortAccounts).toEqual([]);
   });
 
@@ -251,10 +253,10 @@ describe('payday morning before the deposit lands', () => {
   it('once the deposit is in the balance, it is not counted twice', () => {
     const b = withRent();
     setBalance(b, 'rent', 50000, '2026-11-18', 'h1');
-    setBalance(b, 'rent', 230500, '2026-11-19', 'h2');
+    setBalance(b, 'rent', 230451, '2026-11-19', 'h2'); // $500 + steady $1,804.51
     const p = periodContaining('2026-11-19', b.settings);
     expect(depositPending(b, 'rent', b.balances!.rent)).toBe(false);
-    expect(estimateBalance(b, 'rent', p.end, '2026-11-19')).toBe(64500);
+    expect(estimateBalance(b, 'rent', p.end, '2026-11-19')).toBe(64451);
     expect(balancePay(b, p, '2026-11-19').shortAccounts).toEqual([]);
   });
 });

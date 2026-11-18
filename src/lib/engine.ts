@@ -403,7 +403,7 @@ export function averageSplit(b: Budget, accountId: string): Cents {
   if (!line) return 0;
   const mode = modeOf(line);
   // Steady: its usual amount (not the next pay's, which can include a one-off catch-up).
-  return mode === 'exact' ? averageNeed(b, accountId) : mode === 'smooth' ? Math.ceil(averageNeed(b, accountId) / 100) * 100 : line.amount;
+  return mode === 'exact' ? averageNeed(b, accountId) : mode === 'smooth' ? averageNeed(b, accountId) : line.amount;
 }
 
 /**

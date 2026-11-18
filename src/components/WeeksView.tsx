@@ -92,7 +92,7 @@ export function WeeksView({ budget, period, plan }: { budget: Budget; period: Pe
         : diff >= 0
           ? { text: `${cash(diff)} spare`, tone: 'pos' }
           : { text: `${cash(-diff)} short`, tone: 'neg' };
-    const usual = Math.ceil(averageNeed(budget, acc.id) / 100) * 100;
+    const usual = averageNeed(budget, acc.id);
     const how = `${count} ${day}s × (${what}) = ${cash(ap.need)} this pay. ${mode === 'smooth'
       ? ap.funded === usual ? `Steady ${cash(ap.funded)} each pay.` : `Sends ${cash(ap.funded)} this pay (usually ${cash(usual)})${shortBefore ? `, including ${cash(shortBefore)} ${prevPay} left short` : ap.funded > usual ? ', leaving enough for the next 5-week pay' : ''}.`
       : mode === 'fixed' ? `Sending ${cash(ap.funded)}.` : ''}`;

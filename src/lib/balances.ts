@@ -79,8 +79,8 @@ function window(b: Budget, accountId: string, pay: Period, count: number): { slo
   return { slots, out: fundedOut(b, accountId, pay.start, addDays(slots[count].date, -1)) };
 }
 
-/** The usual steady amount: the long-run average, to the dollar. */
-const usualSteady = (b: Budget, accountId: string) => Math.ceil(averageNeed(b, accountId) / 100) * 100;
+/** The usual steady amount: the long-run average, to the cent (no dollar rounding). */
+const usualSteady = (b: Budget, accountId: string) => averageNeed(b, accountId);
 
 /**
  * Core of the steady amount, worked out at one payday (slots[0]) from `balance` the day before:
@@ -110,7 +110,8 @@ function steadyAt(slots: PaySlot[], out: Outflow[], usual: Cents, balance: Cents
   }
   const extra = low === Infinity ? 0 : Math.max(0, low - cushion);
   const steady = Math.max(need, usual - extra / Math.max(1, pays.filter((x) => x.fixed === undefined).length));
-  return Math.ceil(steady / 100) * 100;
+  // Nearest cent: dollar rounding left a few cents of drift in the buffer each pay.
+  return Math.round(steady);
 }
 
 /** Payments in `out` from `from` up to (not including) `to`, using a moving index into the sorted list. */
