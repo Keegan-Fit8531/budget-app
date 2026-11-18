@@ -237,6 +237,23 @@ export interface SavingsGoal {
   funds?: { name: string; color: string }[];
   /** Its balance over time (and each fund's), oldest first, one per day. */
   readings?: KiwiReading[];
+  /**
+   * Money moved in or out seen in a linked bank account (ANZ → Kernel, or a Kernel withdrawal back),
+   * oldest first. One after the balance was last updated is added to it.
+   */
+  bankMoves?: GoalBankMove[];
+  /** The balance the bank connection last sent for it, and the day the bank had it as at. */
+  bankBalance?: BalanceEntry;
+}
+
+export interface GoalBankMove {
+  date: ISODate;
+  /** + paid in, − taken out. */
+  amount: Cents;
+  /** The bank account it left or went to. */
+  from: string;
+  /** How much of it was added to the balance (0 when the balance was updated after it, so already had it). */
+  counted: Cents;
 }
 
 /** A KiwiSaver balance on a day: from the bank connection, a statement, or typed in. */

@@ -794,7 +794,7 @@ function BankPayments({ debt: d }: { debt: Debt }) {
           <div key={`${p.date}-${i}`} className="list-row small">
             <span style={{ flex: '0 0 56px' }} className="muted">{fmtShort(p.date)}</span>
             <span className="grow min0">From {name(p.from)}
-              <span className="xs muted block">{p.counted === p.amount ? 'Taken off what’s owed' : p.counted > 0 ? `${cash(p.amount - p.counted)} was a planned payment; ${cash(p.counted)} extra taken off` : 'A planned payment (already counted)'}</span>
+              <span className="xs muted block">{p.counted === p.amount ? 'Taken off what’s owed' : p.counted > 0 ? `${cash(p.amount - p.counted)} was a planned payment; ${cash(p.counted)} extra taken off` : 'Already counted: a planned payment, or in a balance checked since'}</span>
             </span>
             <b className="num">{cash(p.amount)}</b>
           </div>

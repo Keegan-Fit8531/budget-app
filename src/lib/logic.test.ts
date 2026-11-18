@@ -1646,3 +1646,81 @@ describe('a screenshot of a bank’s accounts and balances', () => {
     expect(r.ignored).toEqual(['Car Maintenance: left out.']);
   });
 });
+
+describe('payments to cards and savings funds, from every stored bank transaction', () => {
+  const go = { id: 'a1', name: 'Go', number: '06-0999-0123456-00', type: 'CHECKING', institution: 'ANZ', balance: 500, transactions: true };
+  const tx = (id: string, date: string, description: string, amount: number) => ({ account: 'a1', id, date, description, amount, balance: null, merchant: null });
+
+  it('a card payment already in the account before payments were looked for is noted once', () => {
+    const b = debtBudget();
+    // Already stored (an earlier sync, or the history trimmed): not new to the account.
+    b.accountTransactions = { everyday: [{ date: '2026-11-10', description: 'Q Mastercard Fitzgerald Id1105532418', amount: -5000 }] };
+    debt(b, 'qcard').balance = { amount: 50000, asOf: '2026-11-05' };
+    const data = { accounts: [go], transactions: [tx('t1', '2026-11-10', 'Q Mastercard Fitzgerald Id1105532418', -50)] };
+    applyBank(b, data, { a1: 'account:everyday' }, '2026-11-16');
+    expect(debt(b, 'qcard').bankPayments).toEqual([expect.objectContaining({ date: '2026-11-10', amount: 5000, counted: 5000 })]);
+    expect(owed(debt(b, 'qcard'))).toBe(45000);
+    applyBank(b, data, { a1: 'account:everyday' }, '2026-11-17');
+    expect(debt(b, 'qcard').bankPayments).toHaveLength(1);
+    expect(owed(debt(b, 'qcard'))).toBe(45000);
+  });
+
+  function fund(linked: boolean) {
+    const b = debtBudget();
+    b.accounts.push({ id: 'kernel', name: 'Wedding · Kernel', kind: 'external', color: '#000', groupId: 'savings' });
+    b.savings = [{ id: 'wedding', name: 'Wedding', accountId: 'kernel', balance: 1000000, asOf: '2026-11-10' }];
+    const links: Record<string, string> = { a1: 'account:everyday', ...(linked ? { k1: 'saving:wedding' } : {}) };
+    return { b, links };
+  }
+  const kernel = (updated: string, balance: number) => ({ id: 'k1', name: 'Kernel Cash Plus', number: null, type: 'INVESTMENT', institution: 'Kernel', balance, transactions: false, updated });
+
+  it('Kernel, from the bank connection: money paid in or out after its balance date is added on, once', () => {
+    const { b, links } = fund(true);
+    const data = {
+      accounts: [kernel('2026-11-14T10:00:00+13:00', 10000), go],
+      transactions: [
+        tx('t1', '2026-11-12', 'Kernel - Adminis Cus Fitzgerald K F W7H7Ghge', -1000), // before: already in Kernel's balance
+        tx('t2', '2026-11-15', 'Kernel - Adminis Cus Fitzgerald K F W7H7Ghge', -250), // after: added
+        tx('t3', '2026-11-16', 'Kernel Consols Withdrawal For Suit And', 550), // taken out after: off
+        tx('t4', '2026-11-16', 'Countdown', -20),
+      ],
+    };
+    const r = applyBank(b, data, links, '2026-11-17');
+    const g = b.savings![0];
+    expect(g.balance).toBe(1000000 + 25000 - 55000);
+    expect(g.asOf).toBe('2026-11-16');
+    expect(g.bankMoves?.map((m) => [m.date, m.amount, m.counted])).toEqual([['2026-11-12', 100000, 0], ['2026-11-15', 25000, 25000], ['2026-11-16', -55000, -55000]]);
+    expect(r.find((x) => x.name === 'Wedding')).toMatchObject({ balance: 970000 });
+    // Synced again: nothing added twice. Then Kernel catches up: its balance has them, so they're not added on.
+    applyBank(b, data, links, '2026-11-17');
+    expect(g.balance).toBe(970000);
+    applyBank(b, { ...data, accounts: [kernel('2026-11-17T08:00:00+13:00', 9700), go] }, links, '2026-11-17');
+    expect(g.balance).toBe(970000);
+    expect(g.bankMoves?.every((m) => m.counted === 0)).toBe(true);
+  });
+
+  it('Kernel typed in or uploaded (not linked): a move after that balance is added once; one before is only noted', () => {
+    const { b, links } = fund(false);
+    const data = { accounts: [go], transactions: [tx('t1', '2026-11-08', 'Kernel - Adminis Cus', -1000), tx('t2', '2026-11-15', 'Kernel - Adminis Cus', -250)] };
+    applyBank(b, data, links, '2026-11-17');
+    const g = b.savings![0];
+    expect(g.balance).toBe(1025000);
+    expect(g.asOf).toBe('2026-11-15');
+    expect(g.bankMoves?.map((m) => m.counted)).toEqual([0, 25000]);
+    applyBank(b, data, links, '2026-11-18');
+    expect(g.balance).toBe(1025000);
+  });
+
+  it('a statement older than a payment seen in the bank: the payment comes off it again', () => {
+    const b = debtBudget();
+    const q = debt(b, 'qcard');
+    q.balance = { amount: 50000, asOf: '2026-11-05' };
+    b.accountTransactions = { everyday: [] };
+    applyBank(b, { accounts: [go], transactions: [tx('t1', '2026-11-12', 'Q Mastercard', -100)] }, { a1: 'account:everyday' }, '2026-11-16');
+    expect(owed(q)).toBe(40000);
+    // A screenshot dated 10 Nov (before the payment): its $600 is the latest figure, less the $100 paid since.
+    const r = review({ ...toDraft({ kind: 'statement', statement: { debtId: 'qcard', balance: { amount: '600.00' }, statementDate: '2026-11-10' } }, b, 'gemini', seq(), '2026-11-16') }, b, '2026-11-16');
+    const after = applyProposal(structuredClone(b), r.proposal!, '2026-11-16');
+    expect(owed(debt(after, 'qcard'))).toBe(50000);
+  });
+});
