@@ -36,7 +36,7 @@ export function buildContext(b: Budget, today: ISODate): ReadContext {
 
 export function instructions(today: ISODate): string {
   return [
-    'You read one New Zealand financial document for a personal budgeting app: a payslip, a credit card or loan statement, a screenshot of a card\'s app (what is owed now and recent purchases), a bank account statement (or a screen listing a bank account\'s transactions), a KiwiSaver statement or app screen, or a screenshot of the Afterpay app. You fill in the JSON form and nothing else.',
+    'You read one New Zealand financial document for a personal budgeting app: a payslip, a credit card or loan statement, a screenshot of a card\'s app (what is owed now and recent purchases), a bank account statement (or a screen listing a bank account\'s transactions), a KiwiSaver statement or app screen, a list of bank accounts with their balances, or a screenshot of the Afterpay app. You fill in the JSON form and nothing else.',
     '',
     'Rules:',
     '- Fill in every field of the form. Use null for anything the document doesn\'t show (and for the sections that aren\'t this kind of document), and an empty list when there are none.',
@@ -44,7 +44,8 @@ export function instructions(today: ISODate): string {
     '- Amounts: digits and a decimal point only, like "1240.50". If the document shows an amount as in credit (CR, a minus sign, "in credit"), add " CR" after it.',
     `- Dates: YYYY-MM-DD. New Zealand documents write the day first: 03/11/2026 is 3 November 2026. If a date has no year, use the year that puts it closest to today, ${today}.`,
     '- For each figure, put the words printed next to it on the document in "label".',
-    '- kind: "payslip" for a payslip, "statement" for a credit card or loan statement or a card app screen (it shows what is owed, usually with a credit limit), "account" for a bank account statement or list of a bank account\'s transactions (an everyday, cheque, debit card or savings account: money in and out with a running balance, nothing owed), "afterpay" for Afterpay orders or instalments, "kiwisaver" for a KiwiSaver statement, breakdown or app screen (a retirement fund balance, often split into funds, with contributions and returns; a payslip\'s KiwiSaver deduction is still a "payslip"), "unknown" if you are not sure. A bank account is never a "statement".',
+    '- kind: "payslip" for a payslip, "statement" for a credit card or loan statement or a card app screen (it shows what is owed, usually with a credit limit), "account" for a bank account statement or list of a bank account\'s transactions (an everyday, cheque, debit card or savings account: money in and out with a running balance, nothing owed), "afterpay" for Afterpay orders or instalments, "kiwisaver" for a KiwiSaver statement, breakdown or app screen (a retirement fund balance, often split into funds, with contributions and returns; a payslip\'s KiwiSaver deduction is still a "payslip"), "balances" for a list of several bank accounts each with its balance and no transactions (internet banking or a bank app\'s "Current and savings" or "Accounts" page), "unknown" if you are not sure. A bank account is never a "statement".',
+    '- A list of bank accounts ("balances"): bank is the bank\'s name, from its logo, wording or layout, or else the account numbers\' first two digits (01 or 06 ANZ, 02 BNZ, 03 Westpac, 12 ASB, 38 Kiwibank, 15 TSB). asOf is the date the balances are shown as at, or null if none is shown. accounts: every account listed, in order, with its name exactly as printed, its number as printed (e.g. "06-0115-0324910-53"), balance (the main balance figure) and available (the "Available" figure, if shown). Leave out credit cards and loans listed with them. One account\'s list of transactions is an "account", not "balances".',
     '- A bank account ("account"): put every transaction in account.rows, in the order printed, each as one line "date|description|amount|balance", like "2026-06-10|Pizza Hut Ho|-8.49|342.51". date: YYYY-MM-DD (a date printed without a year takes the year of the statement period around it). description: who it was paid to or from and what it was (e.g. "Pak N Save R", "SPARK NZ TRADING SALARY"), without card numbers or "Orig date" lines. amount: money out (withdrawals, debits, purchases, payments) with a minus sign, like "-45.20"; money in (deposits, credits) without, like "150.00". balance: the balance printed after it, or nothing if none is printed ("2026-06-10|Pizza Hut Ho|-8.49|"). Leave out opening balances, balances brought forward, and page or statement totals. closingBalance and closingDate: the last balance shown (after the last transaction), and its date.',
     '- A card app screen (Gem, Q Mastercard or a bank app) is a "statement" with appScreen true: balance is what is owed now (the current balance, not the last statement\'s), available is the available credit, statementDate is null unless the screen shows the date the balance is as at, and every purchase it lists goes in purchases (leave out payments, refunds and pending holds). For a statement, appScreen is false and purchases is empty.',
     '- Choose debtId and planId ONLY from the list of debts you are given, or null if none fits. Never make one up. Never choose a debt marked neverAStatement.',
@@ -77,7 +78,7 @@ const list = (items: Record<string, unknown>) => ({ type: 'array', items });
 
 /** The fixed form, as JSON Schema (the subset Gemini's structured output supports). */
 export const RESPONSE_SCHEMA = form({
-  kind: { type: 'string', enum: ['payslip', 'statement', 'account', 'afterpay', 'kiwisaver', 'unknown'] },
+  kind: { type: 'string', enum: ['payslip', 'statement', 'account', 'balances', 'afterpay', 'kiwisaver', 'unknown'] },
   payslip: form({ payDay: date, net: amt, gross: amt, taxableGross: amt, paye: amt, studentLoan: amt, kiwisaver: amt, employerKiwisaver: amt }, true),
   statement: form({
     debtId: id,
@@ -103,6 +104,11 @@ export const RESPONSE_SCHEMA = form({
     // One line per transaction: about a third of the length of a labelled record, so a long
     // statement comes back three times as fast.
     rows: list({ type: 'string', description: 'date|description|amount|balance, e.g. "2026-06-10|Pizza Hut Ho|-8.49|342.51".' }),
+  }, true),
+  balances: form({
+    bank: text('The bank, e.g. "ANZ".'),
+    asOf: date,
+    accounts: list(form({ name: text('The account’s name as printed, e.g. "Rent".'), number: text('The account number as printed.'), balance: amt, available: amt })),
   }, true),
   kiwisaver: form({
     provider: text('The KiwiSaver scheme or provider, as printed.'),

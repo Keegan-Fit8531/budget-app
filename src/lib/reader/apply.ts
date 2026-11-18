@@ -32,6 +32,7 @@ function applyProposalInner(b: Budget, p: Proposal, today: ISODate): Budget {
   if (p.kind === 'payslip') { recordPayslip(b, p.slip); return b; }
   if (p.kind === 'transactions') { applyTransactions(b, p, today); return b; }
   if (p.kind === 'kiwisaver') { applyKiwiSaver(b, p); return b; }
+  if (p.kind === 'balances') { applyBalances(b, p); return b; }
   if (p.kind === 'statement') {
     if (p.newDebt) addDebt(b, p.debtId, p.newDebt.name);
     applyStatement(b, p.debtId, p, today);
@@ -84,6 +85,16 @@ function applyTransactions(b: Budget, p: Extract<Proposal, { kind: 'transactions
   b.accountTransactions = { ...(b.accountTransactions ?? {}), [account.id]: merge(b.accountTransactions?.[account.id]) };
   if (p.ending && !account.ending) account.ending = p.ending;
   if (p.balance) setBalance(b, account.id, p.balance.amount, p.balance.asOf, p.eventId);
+}
+
+/** A bank's list of balances: each account's balance is set, as at the day shown, and its number kept. */
+function applyBalances(b: Budget, p: Extract<Proposal, { kind: 'balances' }>): void {
+  for (const [i, x] of p.set.entries()) {
+    const account = b.accounts.find((a) => a.id === x.accountId);
+    if (!account) continue;
+    if (x.number && !account.number) account.number = x.number;
+    setBalance(b, account.id, x.amount, p.asOf, `${p.eventId}-${i}`);
+  }
 }
 
 /** A debt that isn't set up yet: added with its own payday account, paid from the split like any other. */
@@ -239,6 +250,12 @@ export function preview(before: Budget, p: Proposal, today: ISODate): Preview {
     for (const np of p.newPlans) {
       const z = now.plans.find((x) => x.id === np.id);
       lines.push(`New plan: ${np.name}, ${cash(z?.remaining ?? np.remaining)} left, interest-free until ${fmtShort(np.ends!)}`);
+    }
+  } else if (p.kind === 'balances') {
+    for (const x of p.set) {
+      const name = after.accounts.find((a) => a.id === x.accountId)?.name ?? 'An account';
+      const prev = before.balances?.[x.accountId];
+      lines.push(`${name}: balance ${prev && prev.amount !== x.amount ? `${cash(prev.amount)} → ` : ''}${cash(x.amount)}${prev?.amount === x.amount ? ' (no change)' : ''}, as at ${fmtShort(p.asOf)}`);
     }
   } else if (p.kind === 'transactions') {
     const isDebt = p.target.type === 'debt';
