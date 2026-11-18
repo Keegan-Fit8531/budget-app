@@ -3,8 +3,9 @@ import { createPortal } from 'react-dom';
 import { Icon } from '../components/Icon';
 import { AccIcon, Chevron, Collapse, ColorPicker, Modal } from '../components/ui';
 import { ItemModal } from '../components/ItemModal';
-import { fmtShort, todayISO } from '../lib/dates';
+import { fmtShort, ordinal, todayISO } from '../lib/dates';
 import { depositFor, exactNeed, modeOf, smoothAmount, topsUp } from '../lib/balances';
+import { debtPerPay } from '../lib/debts';
 import { averageNeed, convert, isSetAside, itemDates, periodContaining, planFor, setAsidePerPay, shiftPeriod } from '../lib/engine';
 import { PayNav, useViewPeriod } from '../lib/period';
 import { cash, centsToInput, parseMoney } from '../lib/money';
@@ -125,6 +126,9 @@ function AccountSection({ account: a, open, bare, onToggle, periodNeed, periodSe
   const bills = items.filter((i) => !isSetAside(i));
   const asides = items.filter(isSetAside);
   const asidePerPay = asides.filter((i) => !i.end || i.end >= today).reduce((t, i) => t + setAsidePerPay(i), 0);
+  // Debts that store their payday payment here until statement day (e.g. Gem Visa → Misc bills).
+  const heldDebts = (budget.debts ?? []).filter((d) => d.holdAccountId === a.id && !d.payroll);
+  const costCount = items.length + heldDebts.length;
 
   function set<K extends keyof Account>(k: K, val: Account[K]) {
     update((b) => { const acc = b.accounts.find((x) => x.id === a.id); if (acc) acc[k] = val; return b; });
@@ -159,7 +163,7 @@ function AccountSection({ account: a, open, bare, onToggle, periodNeed, periodSe
         <span className="grow">
           <b className="block">{a.name}</b>
           <span className="small muted">
-            {isPay ? 'Pay lands here' : a.kind === 'external' ? 'Sent elsewhere' : `${items.length} cost${items.length === 1 ? '' : 's'}`}
+            {isPay ? 'Pay lands here' : a.kind === 'external' ? 'Sent elsewhere' : `${costCount} cost${costCount === 1 ? '' : 's'}`}
             {a.archived ? ' · archived' : ''}
           </span>
         </span>
@@ -195,7 +199,7 @@ function AccountSection({ account: a, open, bare, onToggle, periodNeed, periodSe
           {!isPay && (
             <div className="stack gap-8">
               <span className="small muted">How payday fills this account</span>
-              {(bills.length > 0 || items.length > 0) && (
+              {(bills.length > 0 || items.length > 0 || heldDebts.length > 0) && (
                 <div className="seg" role="group" aria-label="How payday fills this account" style={{ alignSelf: 'flex-start', flexWrap: 'wrap' }}>
                   {/* Set amount: when balancing is not choosing for you, or you already use it. */}
                   {(!balanced || mode === 'fixed') && (
@@ -290,13 +294,29 @@ function AccountSection({ account: a, open, bare, onToggle, periodNeed, periodSe
             </div>
           )}
 
-          {(a.kind === 'bank' || items.length > 0) && (
+          {(a.kind === 'bank' || items.length > 0 || heldDebts.length > 0) && (
             <div>
               <div className="card-head" style={{ marginBottom: 4 }}>
-                <h3 className="h3">{asides.length === 0 ? 'Costs paid from here' : bills.length ? 'Costs and money put aside' : 'Money put aside here'}</h3>
+                <h3 className="h3">{asides.length === 0 && heldDebts.length === 0 ? 'Costs paid from here' : bills.length || heldDebts.length ? 'Costs and money put aside' : 'Money put aside here'}</h3>
                 <button className="btn small" onClick={onAddItem}><Icon name="plus" size={16} /> Add cost</button>
               </div>
-              {items.length === 0 && <p className="small muted">No costs yet.</p>}
+              {items.length === 0 && heldDebts.length === 0 && <p className="small muted">No costs yet.</p>}
+              {heldDebts.map((d) => {
+                const perPay = debtPerPay(budget, d);
+                const stmt = d.statementDay ? ordinal(d.statementDay) : 'statement day';
+                return (
+                  <a key={d.id} className="list-row" href="#/debts" title={`Open ${d.name} in Debts to change where the payment is stored`}>
+                    <span className="grow">
+                      {d.name}
+                      <span className="small muted block">
+                        Debt payment · stored here until the {stmt} · set on {d.name} in Debts
+                      </span>
+                    </span>
+                    <b>{perPay !== undefined ? cash(perPay) : '—'}</b>
+                    <Icon name="card" size={16} />
+                  </a>
+                );
+              })}
               {items.map((i) => {
                 const kept = isSetAside(i);
                 const next = kept ? undefined : itemDates(i, today, '2100-01-01', budget.settings)[0];

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { addDays, fmtDay, monthName, toDate, todayISO, WEEKDAY_NAMES, type ISODate } from '../lib/dates';
+import { addDays, fmtDay, monthName, ordinal, toDate, todayISO, WEEKDAY_NAMES, type ISODate } from '../lib/dates';
 import { debtPaymentsIn } from '../lib/debts';
 import type { Period, PeriodPlan } from '../lib/engine';
 import { accountMode, balanceOn } from '../lib/balances';
@@ -43,16 +43,21 @@ export function WeeksView({ budget, period, plan }: { budget: Budget; period: Pe
       }
     }
     // Debt payments (e.g. Afterpay instalments, Gem), one per debt per day.
-    const pays = new Map<string, { name: string; amount: number; plans: string[] }>();
+    // When the debt stores its payment here until statement day, note that on the chip.
+    const pays = new Map<string, { name: string; amount: number; plans: string[]; holdNote?: string }>();
     for (const x of debtPaymentsIn(budget, a.id, period.start, period.end)) {
       const k = `${x.debt.id}|${x.date}`;
-      const cur = pays.get(k) ?? { name: x.debt.name, amount: 0, plans: [] };
+      const holdNote = x.debt.holdAccountId === a.id && x.debt.statementDay
+        ? `Stored until the ${ordinal(x.debt.statementDay)} · set on ${x.debt.name}`
+        : x.debt.holdAccountId === a.id ? `Stored until statement day · set on ${x.debt.name}` : undefined;
+      const cur = pays.get(k) ?? { name: x.debt.name, amount: 0, plans: [], holdNote };
       cur.amount += x.amount; cur.plans.push(x.plan.name);
       pays.set(k, cur);
     }
     for (const [k, v] of pays) {
       const d = k.split('|')[1];
-      add(d, { key: `${k}`, color: a.color, amount: v.amount, name: v.name, account: a.name, what: 'Debt payment', note: v.plans.length > 1 ? `${v.plans.length} plans` : v.plans[0], main: false });
+      const planNote = v.plans.length > 1 ? `${v.plans.length} plans` : v.plans[0];
+      add(d, { key: `${k}`, color: a.color, amount: v.amount, name: v.name, account: a.name, what: 'Debt payment', note: v.holdNote ? `${v.holdNote}${planNote && planNote !== v.name ? ` · ${planNote}` : ''}` : planNote, main: false });
     }
   }
   for (const list of byDate.values()) list.sort((x, y) => Number(y.main) - Number(x.main) || y.amount - x.amount);

@@ -1647,6 +1647,11 @@ describe('Gem payment held in Misc bills until statement day', () => {
     expect(plan.totalSplit).toBe(bills.funded);
     expect(debtPaymentsIn(b, 'bills', p.start, p.end).reduce((t, x) => t + x.amount, 0)).toBe(gem.funded);
     expect(debtPaymentsIn(b, 'gem', p.start, p.end)).toEqual([]);
+    // Misc bills lists the payment as Gem Visa, noted as stored until statement day / set on the debt.
+    const gemLine = bills.dues.find((d) => d.item.name === 'Gem Visa');
+    expect(gemLine).toBeTruthy();
+    expect(gemLine!.item.note).toMatch(/Stored until the 21st/);
+    expect(gemLine!.item.note).toMatch(/set on Gem Visa/);
   });
 });
 
