@@ -155,7 +155,7 @@ function BalanceCard({ account: a, view, day, mover, onPick }: {
         </div>
         <div className="acct-side">
           {entry && <SyncPill source={sync.linked ? 'bank' : 'entered'} at={sync.at ?? entry.asOf} />}
-          {mover ?? <button className="icon-btn mini has-tip tip-left" data-tip="Edit" aria-label={`Edit ${a.name}: balance, one-off cost, payday`} onClick={() => setEditing(true)}><Icon name="edit" size={14} /></button>}
+          {mover ?? <button className="icon-btn mini has-tip tip-left" data-tip="Account settings" aria-label={`Edit ${a.name}: balance, payday send, costs`} onClick={() => setEditing(true)}><Icon name="edit" size={14} /></button>}
         </div>
       </div>
 

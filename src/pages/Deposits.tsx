@@ -12,6 +12,7 @@ import { RoundSetting } from '../components/PaydayControl';
 import { nextColor } from '../lib/colors';
 import { newId, useBudget } from '../lib/store';
 import { asideNames, balancedMode } from '../lib/rebalance';
+import { PAYDAY_MODE_HINT, PAYDAY_MODE_LABEL } from '../lib/paydayModes';
 import type { Account, Budget, Item, PaydayMode } from '../lib/types';
 
 const items0 = (b: Budget, id: string) => b.items.some((i) => i.accountId === id);
@@ -193,21 +194,34 @@ function AccountSection({ account: a, open, bare, onToggle, periodNeed, periodSe
 
           {!isPay && (
             <div className="stack gap-8">
-              <span className="small muted">Each payday, send</span>
-              <div className="seg" role="group" aria-label="Payday amount" style={{ alignSelf: 'flex-start' }}>
-                {!balanced && <button aria-pressed={mode === 'fixed'} onClick={() => setMode('fixed')}>Fixed amount</button>}
-                {bills.length > 0 && <button aria-pressed={mode === 'smooth'} onClick={() => setMode('smooth')}>Same each pay</button>}
-                {items.length > 0 && balanced !== 'smooth' && <button aria-pressed={mode === 'exact'} onClick={() => setMode('exact')}>Just what's due</button>}
-              </div>
-              {balanced && (
-                <p className="small muted">
-                  {balanced === 'smooth'
-                    ? 'Every cost here is weekly, so it gets the same amount each pay, with 4-week pays covering the 5th week.'
-                    : bills.length === 0
-                      ? 'Each payday sends what\u2019s put aside here, so it follows the amounts below rather than a fixed amount.'
-                      : 'This account has bills on set dates, so each pay is worked out from them rather than a fixed amount.'}
-                  {periodSends !== (mode === 'smooth' ? steady : periodNeed) && mode !== 'fixed' ? ` The pay being viewed sends ${cash(periodSends)}.` : ''}
-                </p>
+              <span className="small muted">How payday fills this account</span>
+              {(bills.length > 0 || items.length > 0) && (
+                <div className="seg" role="group" aria-label="How payday fills this account" style={{ alignSelf: 'flex-start', flexWrap: 'wrap' }}>
+                  {/* Set amount: when balancing is not choosing for you, or you already use it. */}
+                  {(!balanced || mode === 'fixed') && (
+                    <button aria-pressed={mode === 'fixed'} onClick={() => setMode('fixed')}>{PAYDAY_MODE_LABEL.fixed}</button>
+                  )}
+                  {bills.length > 0 && (
+                    <button aria-pressed={mode === 'smooth'} onClick={() => setMode('smooth')}>
+                      {PAYDAY_MODE_LABEL.smooth}{balanced === 'smooth' ? ' · recommended' : ''}
+                    </button>
+                  )}
+                  {items.length > 0 && (
+                    <button aria-pressed={mode === 'exact'} onClick={() => setMode('exact')}>
+                      {PAYDAY_MODE_LABEL.exact}{balanced === 'not-fixed' ? ' · recommended' : ''}
+                    </button>
+                  )}
+                </div>
+              )}
+              {(bills.length > 0 || items.length > 0) && (
+                <ul className="stack gap-4 small muted" style={{ margin: 0, paddingLeft: 18 }}>
+                  <li><b>{PAYDAY_MODE_LABEL.fixed}</b>{mode === 'fixed' ? ' (in use)' : ''}: {PAYDAY_MODE_HINT.fixed}</li>
+                  <li><b>{PAYDAY_MODE_LABEL.smooth}</b>{mode === 'smooth' ? ' (in use)' : ''}{balanced === 'smooth' && mode !== 'smooth' ? ' · recommended' : ''}: {PAYDAY_MODE_HINT.smooth}</li>
+                  <li><b>{PAYDAY_MODE_LABEL.exact}</b>{mode === 'exact' ? ' (in use)' : ''}{balanced === 'not-fixed' && mode !== 'exact' ? ' · recommended' : ''}: {PAYDAY_MODE_HINT.exact}</li>
+                </ul>
+              )}
+              {periodSends !== (mode === 'smooth' ? steady : periodNeed) && mode !== 'fixed' && (
+                <p className="small muted">This pay sends {cash(periodSends)}.</p>
               )}
 
               <RoundSetting accountId={a.id} />
@@ -231,9 +245,9 @@ function AccountSection({ account: a, open, bare, onToggle, periodNeed, periodSe
                     <div className="tip wrap" style={{ alignItems: 'center' }}>
                       <Icon name="bulb" />
                       <span style={{ flex: '1 1 220px' }}>
-                        A fixed amount goes short in 5-week pays and builds up in 4-week ones. <b>Same each pay</b> evens it out: about <b>{cash(avgNeed)}</b> every pay, with 4-week pays leaving enough over for the 5th week.
+                        A set amount goes short in 5-week pays and builds up in 4-week ones. <b>{PAYDAY_MODE_LABEL.smooth}</b> evens it out: about <b>{cash(avgNeed)}</b> every pay, with 4-week pays leaving enough over for the 5th week.
                       </span>
-                      <button className="btn small primary" onClick={() => setMode('smooth')}>Even it out</button>
+                      <button className="btn small primary" onClick={() => setMode('smooth')}>Use level amount</button>
                     </div>
                   )}
                 </>
@@ -267,8 +281,8 @@ function AccountSection({ account: a, open, bare, onToggle, periodNeed, periodSe
                     })() : topsUp(budget, a.id) ? (() => {
                       const next = shiftPeriod(periodContaining(today, budget.settings), 1, budget.settings);
                       const sends = depositFor(budget, a.id, next, today);
-                      const bills = exactNeed(budget, a.id, next);
-                      return <>Sends what each pay's bills need, <b>less whatever is already left in the account</b>. Next pay ({fmtShort(next.start)}): bills {cash(bills)}{bills > sends ? `, ${cash(bills - sends)} already there` : ''}, so it sends <b>{cash(sends)}</b>.</>;
+                      const due = exactNeed(budget, a.id, next);
+                      return <>Sends what each pay's bills need, <b>less whatever is already left in the account</b>. Next pay ({fmtShort(next.start)}): bills {cash(due)}{due > sends ? `, ${cash(due - sends)} already there` : ''}, so it sends <b>{cash(sends)}</b>.</>;
                     })() : <>Sends exactly what each period needs. This period ({periodDays} days) that's <b>{cash(periodNeed)}</b>, averaging <b>{cash(avgNeed)}</b> a month.</>}
                   </span>
                 </div>

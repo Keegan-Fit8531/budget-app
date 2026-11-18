@@ -94,7 +94,7 @@ export function WeeksView({ budget, period, plan }: { budget: Budget; period: Pe
           : { text: `${cash(-diff)} short`, tone: 'neg' };
     const usual = averageNeed(budget, acc.id);
     const how = `${count} ${day}s × (${what}) = ${cash(ap.need)} this pay. ${mode === 'smooth'
-      ? ap.funded === usual ? `Steady ${cash(ap.funded)} each pay.` : `Sends ${cash(ap.funded)} this pay (usually ${cash(usual)})${shortBefore ? `, including ${cash(shortBefore)} ${prevPay} left short` : ap.funded > usual ? ', leaving enough for the next 5-week pay' : ''}.`
+      ? ap.funded === usual ? `Level amount ${cash(ap.funded)} each pay.` : `Sends ${cash(ap.funded)} this pay (usually ${cash(usual)})${shortBefore ? `, including ${cash(shortBefore)} ${prevPay} left short` : ap.funded > usual ? ', leaving enough for the next 5-week pay' : ''}.`
       : mode === 'fixed' ? `Sending ${cash(ap.funded)}.` : ''}`;
     return { acc, message, how };
   }).filter((x): x is NonNullable<typeof x> => !!x);
@@ -183,7 +183,7 @@ export function WeeksView({ budget, period, plan }: { budget: Budget; period: Pe
           <Disclosure title="How these are worked out">
             {weekly.map(({ acc, how }) => <p key={acc.id} className="small muted"><b>{acc.name}:</b> {how}</p>)}
             {steadyShown && (
-              <p className="small muted">Steady sends the same amount every pay. Pays with 4 {accountsShown[0]?.day ?? 'Wednesday'}s add a little to the account, and that covers the 5th one when it comes.</p>
+              <p className="small muted">Level amount sends the same every pay. Pays with 4 {accountsShown[0]?.day ?? 'Wednesday'}s add a little to the account, and that covers the 5th one when it comes. Change it under Account settings → Payday send.</p>
             )}
           </Disclosure>
         </div>
