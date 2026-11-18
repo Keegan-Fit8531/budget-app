@@ -1,6 +1,6 @@
 import type { ISODate } from './dates';
 import { modeOf } from './balances';
-import { periodContaining, shiftPeriod, upcomingPayPeriod, type Period } from './engine';
+import { periodContaining, shiftPeriod, type Period } from './engine';
 import type { Budget, Cents, SavingsGoal, Settings } from './types';
 
 export interface GoalForecast {
@@ -42,7 +42,8 @@ export function savedAsOf(goal: Pick<SavingsGoal, 'asOf'>, today: ISODate): ISOD
  * since the balance was updated still counts, instead of dropping out until the balance is updated.
  */
 export function firstPayToCome(b: Pick<Budget, 'settings'>, goal: Pick<SavingsGoal, 'asOf'>, today: ISODate): Period {
-  return upcomingPayPeriod(b, savedAsOf(goal, today));
+  const from = savedAsOf(goal, today);
+  return shiftPeriod(periodContaining(from, b.settings), 1, b.settings);
 }
 
 /** Per-pay amount needed by a goal (used for auto savings accounts). */

@@ -71,10 +71,11 @@ export function Planner() {
   // Show what's left once pay is in — or, before the payslip arrives, estimated from the last pay received.
   const estimated = !plan.payIsActual && !!plan.payEstimateFrom;
   const known = plan.payIsActual || estimated;
-  const paydayPassed = plan.period.start <= today;
+  // Payday itself still counts as "to come" (pay can land late); only the day after is "already split".
+  const paydayEnded = plan.period.start < today;
   // Why the pay is an estimate: shown on hover over "Pay (estimate)".
   const estimateWhy = estimated
-    ? `Using ${monthName(plan.payEstimateFrom!)}'s pay of ${cash(plan.pay)}. ${paydayPassed ? 'Payday has passed: upload the payslip to make it exact.' : `Upload the payslip when it arrives on ${fmtShort(period.start)}.`}`
+    ? `Using ${monthName(plan.payEstimateFrom!)}'s pay of ${cash(plan.pay)}. ${paydayEnded ? 'Payday has passed: upload the payslip to make it exact.' : `Upload the payslip when it arrives on ${fmtShort(period.start)}.`}`
     : '';
   // What each account usually gets a month (worked out once per change, not per card).
   const usualSplit = useMemo(() => new Map(plan.accounts.map((a) => [a.account.id, averageSplit(budget, a.account.id)])), [budget, plan]);
@@ -211,12 +212,12 @@ export function Planner() {
   const canOptimise = !avg && !needsBalance && plan.leftover >= 100;
   // Extra already added to goals, debts or the allowance for this pay only: Optimise can show and change it.
   const extrasHere = useMemo(() => !avg && !!existingExtras(budget, period), [avg, budget, period]);
-  // Automatic balancing looks after the next 12 pays; a pay already split (or further out) is done by hand.
+  // Automatic balancing looks after today's pay (while it is still payday) and the next 11; after that, by hand.
   const autoHere = autoPays(budget, today).some((p) => p.start === period.start);
   const hasModeChanges = (() => { try { return !!JSON.parse(localStorage.getItem(MODES_KEY) ?? '{}')[period.start]; } catch { return false; } })();
   const canReset = adjustments.length > 0 || hasModeChanges;
-  // A pay that's already been split can't be re-sent, so changes to it are made as transfers.
-  const passedNote = paydayPassed && byHand.length > 0
+  // From the day after payday, a change isn't re-sent with the split — make it as a transfer instead.
+  const passedNote = paydayEnded && byHand.length > 0
     ? `This pay was already split on ${fmtShort(period.start)}. A change made since then isn't sent by payday, so make it as a transfer now, before ${fmtShort(plan.dues.find((d) => d.date >= today)?.date ?? period.end)}: move the money from the accounts being trimmed (or from what's left in ${payAccountName}) to the ones being topped up.`
     : undefined;
 

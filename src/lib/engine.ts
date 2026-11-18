@@ -86,10 +86,13 @@ export function firstBudgetPay(b: Pick<Budget, 'settings'>, today: ISODate): Per
   return p.start < s.budgetStart ? shiftPeriod(p, 1, s) : p;
 }
 
-/** The next pay still to come (its payday is after today), never before the budget start. */
+/**
+ * The next pay still to come, never before the budget start. Includes today's pay while it is still
+ * payday (pay often lands late in the day); from the day after, that pay is treated as already split.
+ */
 export function upcomingPayPeriod(b: Pick<Budget, 'settings'>, today: ISODate): Period {
   const p = budgetPeriod(b, today);
-  return p.start > today ? p : shiftPeriod(p, 1, b.settings);
+  return p.start >= today ? p : shiftPeriod(p, 1, b.settings);
 }
 
 /** Move `n` pay periods forward (or back, if negative). */
