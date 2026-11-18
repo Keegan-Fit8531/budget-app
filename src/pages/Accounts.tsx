@@ -144,6 +144,9 @@ function BalanceCard({ account: a, view, day, mover, onPick }: {
   // What payday sends here: next pay's, or the pay being looked at.
   const pay = view ?? shiftPeriod(periodContaining(today, budget.settings), 1, budget.settings);
   const sends = depositFor(budget, a.id, pay, today);
+  // Nominal payday day-of-month can move for the weekend (e.g. 20th on Sunday → Friday 18th).
+  const nominalDay = budget.settings.paydayDay;
+  const movedForWeekend = Number(pay.start.slice(8, 10)) !== nominalDay;
 
   return (
     <section className={`card acct${open ? ' open' : ''}`} data-flip={a.id}>
@@ -151,7 +154,7 @@ function BalanceCard({ account: a, view, day, mover, onPick }: {
         <AccIcon color={a.color} name="bank" />
         <div className="grow min0">
           <h2 className="h2 clip">{a.name}</h2>
-          <p className="small muted clip">+{cash(sends)} on {fmtShort(pay.start)}</p>
+          <p className="small muted clip">+{cash(sends)} on {fmtShort(pay.start)}{movedForWeekend ? ` (${nominalDay}th falls on a weekend)` : ''}</p>
         </div>
         <div className="acct-side">
           {entry && <SyncPill source={sync.linked ? 'bank' : 'entered'} at={sync.at ?? entry.asOf} />}

@@ -27,9 +27,10 @@ export function MonthTracker({ budget, account, today = todayISO(), open }: { bu
   const bufferFor = steady ? nextBufferUse(budget, account.id, t.period, 13, today) : undefined;
   const leftWord = aside ? 'put aside' : steady ? 'buffer' : 'spare';
   const leftLabel = t.spare < 0 ? 'Short' : aside ? 'Put aside' : steady ? 'Buffer' : 'Spare';
-  const leftNote = t.spare < 0 ? 'after bills' : aside ? `for ${asideNames(budget, account.id)}` : steady
+  // Accounts = this pay with what's in the account now. Planner's "Buffer" is often the *next* pay's end.
+  const leftNote = t.spare < 0 ? 'this pay after bills' : aside ? `for ${asideNames(budget, account.id)}` : steady
     ? (bufferFor ? `for ${fmtShort(bufferFor.period.start)}` : 'for extra weeks')
-    : 'after bills';
+    : 'this pay after bills';
   const color = tone(account.color);
 
   return (

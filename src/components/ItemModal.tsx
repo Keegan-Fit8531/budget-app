@@ -27,6 +27,7 @@ export function ItemModal({ item, accountId, onClose }: { item?: Item; accountId
   const [inWeeks, setInWeeks] = useState(item?.showInWeeks ?? false);
   const [skip, setSkip] = useState(String(item?.skipIfWithin ?? 0));
   const [aside, setAside] = useState(item?.setAside ?? false);
+  const [maxSaved, setMaxSaved] = useState(item?.maxSaved ? centsToInput(item.maxSaved) : '');
   const [err, setErr] = useState('');
 
   const cents = parseMoney(amount);
@@ -39,6 +40,12 @@ export function ItemModal({ item, accountId, onClose }: { item?: Item; accountId
     if (cents === null || cents <= 0) return setErr('Enter an amount above $0.');
     if (!start) return setErr('Pick a date.');
     if (end && end < start) return setErr('The end date is before the start date.');
+    let cap: number | undefined;
+    if (keep && maxSaved.trim() !== '') {
+      const parsed = parseMoney(maxSaved);
+      if (parsed === null || parsed <= 0) return setErr('Max saved should be an amount above $0, or left blank.');
+      cap = parsed;
+    }
     const next: Item = {
       ...item, // keep anything this form doesn't edit
       id: item?.id ?? newId(), name: name.trim(), amount: cents, frequency: freq, start,
@@ -46,7 +53,9 @@ export function ItemModal({ item, accountId, onClose }: { item?: Item; accountId
       showInWeeks: weekly ? inWeeks : undefined,
       skipIfWithin: weekly && Number(skip) > 0 ? Number(skip) : undefined,
       setAside: keep || undefined,
+      ...(cap ? { maxSaved: cap } : {}),
     };
+    if (!cap) delete next.maxSaved;
     update((b) => {
       const i = b.items.findIndex((x) => x.id === next.id);
       if (i >= 0) b.items[i] = next; else b.items.push(next);
@@ -104,6 +113,13 @@ export function ItemModal({ item, accountId, onClose }: { item?: Item; accountId
                   : 'For costs that come up now and then, like a WOF, tyres or a service: each payday puts its share aside and it stays in the account until you need it.'}
               </span>
             </span>
+          </label>
+        )}
+
+        {keep && (
+          <label className="field">Max saved (optional)
+            <input inputMode="decimal" value={maxSaved} onChange={(e) => { setMaxSaved(e.target.value); setErr(''); }} placeholder="60.00" />
+            <span className="small muted">Once this much is already aside after bills, payday stops adding more until you spend some (e.g. Haircut $60).</span>
           </label>
         )}
 
