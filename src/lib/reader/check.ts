@@ -762,13 +762,13 @@ function reviewStatement(d: Draft, b: Budget, today: ISODate): Review {
         const asOfRow = date && date <= today ? date : today;
         const ends = validDate(row.ends) ?? (row.monthsLeft ? gemPlanEnds(asOfRow, row.monthsLeft) : undefined);
         const months = row.months && row.months > 0 ? row.months : undefined;
-        const type = row.type ?? (months ? (debt.rules === 'gem' ? gemPlanType(months) : plan.type) : undefined);
-        plans.push({
-          planId: plan.id, remaining: rem.credit ? 0 : rem.cents,
-          ...(ends && ends !== planEnds(plan) ? { ends } : {}),
-          ...(months && months !== plan.months ? { months } : {}),
-          ...(type && type !== plan.type ? { type } : {}),
-        });
+        const nextType = row.type ?? (months && debt.rules === 'gem' ? gemPlanType(months) : undefined);
+        const type = nextType === 'interest-free' || nextType === 'equal' ? nextType : undefined;
+        const update: PlanUpdate = { planId: plan.id, remaining: rem.credit ? 0 : rem.cents };
+        if (ends && ends !== planEnds(plan)) update.ends = ends;
+        if (months && months !== plan.months) update.months = months;
+        if (type && type !== plan.type) update.type = type;
+        plans.push(update);
       } else if (row.addAsNew) {
         const asOf = date && date <= today ? date : today;
         const ends = validDate(row.ends) ?? (row.monthsLeft ? gemPlanEnds(asOf, row.monthsLeft) : undefined);
