@@ -1,4 +1,5 @@
 import { Fragment, lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { startRead, type ReadJob } from '../lib/reader/job';
 import { applyBalance, autoPays, balancePay, restoreOverrides, type BalanceResult } from '../lib/rebalance';
 import { accountMode, leftoverBeforeBudget, nextBufferUse, topsUp } from '../lib/balances';
@@ -6,6 +7,7 @@ import { Donut, Legend } from '../components/Donut';
 import { Icon } from '../components/Icon';
 import { ErrorBoundary } from '../components/ErrorBoundary';
 import { AccIcon, Disclosure, Dot } from '../components/ui';
+import { AccountEditModal, type AccountTab } from '../components/AccountEdit';
 import { WeeksView } from '../components/WeeksView';
 import { PayNav, useViewPeriod, ViewModes } from '../lib/period';
 import { clearOptimiseUndo, OptimiseModal, readOptimiseUndo, type OptimiseUndo } from '../components/OptimiseModal';
@@ -53,6 +55,8 @@ export function Planner() {
     clearOptimiseUndo(); setOptUndo(null);
   }
   const [balanced, setBalanced] = useState<{ periodStart: string; result: BalanceResult } | null>(null);
+  // Account settings opened from a payday-split card (Payday send tab).
+  const [editAccount, setEditAccount] = useState<{ id: string; tab: AccountTab } | null>(null);
   const slipRef = useRef<HTMLInputElement>(null);
 
   // The first pay the budget covers: today's, or the budget start if that's later .
@@ -463,7 +467,7 @@ export function Planner() {
               ? `${billBreakdown[0].count} × ${cash(billBreakdown.reduce((s, x) => s + x.item.amount, 0))}`
               : paying.length || !asidePart ? `${paying.length} payment${paying.length === 1 ? '' : 's'} due` : '', asidePart].filter(Boolean).join(' + ');
             const detail = auto
-              ? (longRun ? (steadyMode ? 'Same each pay' : 'Average')
+              ? (longRun ? (steadyMode ? 'Level amount' : 'Average')
                 : !steadyMode && topsUp(budget, a.account.id)
                   ? (a.funded < a.need ? `${cash(a.need, { whole: true })} of bills − ${cash(a.need - a.funded, { whole: true })} already there`
                     : asidePart ? times : `${a.dues.length} bills, nothing left over`)
@@ -600,8 +604,16 @@ export function Planner() {
                       <span className="small muted">Go to</span>
                       {isDebt && <a className="btn small" href="#/debts"><Icon name="card" size={16} /> Debt and payment plans</a>}
                       {isGoal && <a className="btn small" href="#/savings"><Icon name="piggy" size={16} /> Savings goal</a>}
-                      {(!isDebt && !isGoal || budget.items.some((i) => i.accountId === a.account.id)) && <a className="btn small" href={`#/accounts/deposits/${a.account.id}`}><Icon name="edit" size={16} /> {isPay ? 'Account and costs' : 'Payday amount and costs'}</a>}
-                      {!isDebt && !isGoal && !isPay && a.account.kind === 'bank' && <a className="btn small" href="#/accounts"><Icon name="wallet" size={16} /> {budget.balances?.[a.account.id] ? 'Update balance' : 'Enter balance'}</a>}
+                      {(!isDebt && !isGoal || budget.items.some((i) => i.accountId === a.account.id)) && (
+                        <button type="button" className="btn small" onClick={() => { setOpenCard(null); setEditAccount({ id: a.account.id, tab: 'payday' }); }}>
+                          <Icon name="edit" size={16} /> {isPay ? 'Account settings' : 'Account settings · Payday send'}
+                        </button>
+                      )}
+                      {!isDebt && !isGoal && !isPay && a.account.kind === 'bank' && (
+                        <button type="button" className="btn small" onClick={() => { setOpenCard(null); setEditAccount({ id: a.account.id, tab: 'balance' }); }}>
+                          <Icon name="wallet" size={16} /> {budget.balances?.[a.account.id] ? 'Update balance' : 'Enter balance'}
+                        </button>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -611,6 +623,14 @@ export function Planner() {
           })}
         </div>
       </section>
+
+      {editAccount && (() => {
+        const acc = budget.accounts.find((x) => x.id === editAccount.id);
+        return acc ? createPortal(
+          <AccountEditModal account={acc} tab={editAccount.tab} onClose={() => setEditAccount(null)} />,
+          document.body,
+        ) : null;
+      })()}
 
       {!avg && (
         <div className="planner-lower two">

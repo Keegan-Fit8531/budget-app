@@ -19,8 +19,8 @@ export interface BalanceChange {
 export interface BalanceResult {
   changes: BalanceChange[];
   /**
-   * Accounts whose payday amount is changed as part of balancing: weekly costs → Steady (no ups and downs
-   * between 4- and 5-week pays); bills on a fixed amount → Exact (sends what the bills need, less what's left).
+   * Accounts whose payday amount is changed as part of balancing: weekly costs on a fixed amount →
+   * Level (no ups and downs between 4- and 5-week pays); other fixed bills → This pay's costs.
    */
   toSteady: { accountId: string; name: string; was: 'fixed' | 'exact'; to: 'smooth' | 'exact' }[];
   /** Left after the plan, before and after balancing. */
@@ -52,8 +52,8 @@ const dollarsUp = (c: Cents) => Math.ceil(c / 100) * 100;
  */
 /** `keep`: accounts with an amount you set yourself this pay; never trimmed or changed (except a top-up if it's short). */
 export function balancePay(input: Budget, period: Period, today: ISODate = todayISO(), keep: Set<string> = new Set()): BalanceResult {
-  // Even out first: accounts with weekly costs that aren't on Steady go up and down between 4- and
-  // 5-week pays, so balancing moves them to Steady (and works everything else out from there).
+  // Even out first: weekly costs on a fixed amount go up and down between 4- and 5-week pays, so
+  // balancing moves those to Level amount (and works everything else out from there).
   // The account's bills: what really comes out of it (money put aside stays in it).
   const items = (id: string) => input.items.filter((i) => i.accountId === id && !isSetAside(i));
   const allWeekly = (id: string) => items(id).length > 0 && items(id).every((i) => i.frequency === 'weekly');
@@ -61,9 +61,10 @@ export function balancePay(input: Budget, period: Period, today: ISODate = today
     && input.overrides?.[period.start]?.[a.id] === undefined && !(input.savings ?? []).some((g) => g.accountId === a.id)
     && !(input.debts ?? []).some((d) => d.accountId === a.id);
   const toSteady: BalanceResult['toSteady'] = [
-    // Only accounts whose costs are all weekly transfers (food and gas, allowance) go to Steady.
-    ...input.accounts.filter((a) => usable(a) && accountMode(input, a.id) !== 'smooth' && allWeekly(a.id))
-      .map((a) => ({ accountId: a.id, name: a.name, was: accountMode(input, a.id) as 'fixed' | 'exact', to: 'smooth' as const })),
+    // Weekly costs on a fixed amount go short in 5-week pays: move them to Level amount.
+    // Leave "This pay's costs" alone if you chose it in account settings.
+    ...input.accounts.filter((a) => usable(a) && accountMode(input, a.id) === 'fixed' && allWeekly(a.id))
+      .map((a) => ({ accountId: a.id, name: a.name, was: 'fixed' as const, to: 'smooth' as const })),
     // Accounts with bills on set dates (even with a weekly cost among them, e.g. a bills account), or
     // money put aside (a car fund), go to Exact: payday follows them rather than a fixed amount.
     ...input.accounts.filter((a) => usable(a) && accountMode(input, a.id) === 'fixed' && (items(a.id).length > 0 || hasSetAsides(input, a.id)) && !allWeekly(a.id))

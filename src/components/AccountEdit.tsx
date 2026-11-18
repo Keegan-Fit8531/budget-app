@@ -18,11 +18,12 @@ export type AccountTab = 'balance' | 'cost' | 'payday';
 export function AccountEditModal({ account: a, tab: first = 'balance', onClose }: { account: Account; tab?: AccountTab; onClose: () => void }) {
   const { budget } = useBudget();
   const entry = budget.balances?.[a.id];
-  const [tab, setTab] = useState<AccountTab>(entry || first === 'payday' ? first : 'balance');
+  // Caller picks the tab (e.g. Payday send from the Planner); Accounts defaults to Balance.
+  const [tab, setTab] = useState<AccountTab>(first);
   const tabs: { id: AccountTab; label: string }[] = [
     { id: 'balance', label: 'Balance' },
     ...(entry ? [{ id: 'cost' as const, label: 'One-off cost' }] : []),
-    { id: 'payday', label: 'Payday and costs' },
+    { id: 'payday', label: 'Payday send' },
   ];
   return (
     // One size for every tab, and pinned to the top, so switching tabs doesn't move or resize the pop-up.

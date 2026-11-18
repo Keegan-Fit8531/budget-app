@@ -76,9 +76,9 @@ export interface SplitLine {
   /** Older saves: true meant 'exact'. Use `mode` instead. */
   auto?: boolean;
   /**
-   * fixed: the same set amount every payday
-   * exact: exactly what this period's costs need (4 or 5 weeks of rent)
-   * smooth: a steady amount, worked out from the balance, so a buffer covers 5-week periods
+   * fixed: Set amount — you choose the figure
+   * smooth: Level amount — same every payday; 4-week pays buffer the 5th week
+   * exact: This pay's costs — sends exactly what this period needs
    */
   mode?: PaydayMode;
 }
