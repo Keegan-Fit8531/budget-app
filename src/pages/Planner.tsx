@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { startRead, type ReadJob } from '../lib/reader/job';
 import { applyBalance, autoPays, balancePay, restoreOverrides, type BalanceResult } from '../lib/rebalance';
 import { accountMode, leftoverBeforeBudget, nextBufferUse, topsUp } from '../lib/balances';
+import { isHoldDisplayAccount, owed } from '../lib/debts';
 import { Donut, Legend } from '../components/Donut';
 import { Icon } from '../components/Icon';
 import { ErrorBoundary } from '../components/ErrorBoundary';
@@ -142,14 +143,21 @@ export function Planner() {
   const shorts = plan.accounts.filter((a) => a.diff !== null && a.diff < 0);
 
   // The pay account (Weekly allowance) isn't part of the split — what's left there is the big number above.
-  const cards = plan.accounts.filter((a) =>
-    a.account.id !== budget.settings.payAccountId && (a.funded !== 0 || a.need !== 0));
+  // Hold-display debts (Gem Visa with money in Misc bills) stay on the payday split even when this
+  // pay's figure is $0 — they still show how much is being sent / stored, with the hold note.
+  const cards = plan.accounts.filter((a) => {
+    if (a.account.id === budget.settings.payAccountId) return false;
+    if (a.funded !== 0 || a.need !== 0) return true;
+    if (!isHoldDisplayAccount(budget, a.account.id)) return false;
+    return (budget.debts ?? []).some((d) => d.accountId === a.account.id && !d.payroll && owed(d) > 0);
+  });
 
   // The chart follows the view: this pay, this pay per week / fortnight, or the average of the next 12 pays
   // per month / added up for the year (the same amounts the cards and Total budgeted show). It's by group;
   // each account's own amount is on its card below, and its share is on Insights.
+  // Hold-display cards are shown for clarity but their money is already in the hold account — don't count twice.
   const sentOf = (a: (typeof plan.accounts)[number]) => Math.max(0, longRun ? v(planned?.get(a.account.id)?.sent ?? 0) : v(a.funded));
-  const split_ = plan.accounts.filter((a) => a.account.id !== budget.settings.payAccountId);
+  const split_ = plan.accounts.filter((a) => a.account.id !== budget.settings.payAccountId && !isHoldDisplayAccount(budget, a.account.id));
   const grouped = new Set(budget.groups.map((g) => g.id));
   const slices = [
     ...budget.groups.map((g) => ({ label: g.name, color: g.color, value: split_.filter((a) => a.account.groupId === g.id).reduce((t, a) => t + sentOf(a), 0) })),

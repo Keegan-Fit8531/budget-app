@@ -506,6 +506,13 @@ export function DebtModal({ debt, onClose, onDelete, embedded }: { debt?: Debt; 
         if (!holdId) delete d.holdAccountId;
         const a = b.accounts.find((x) => x.id === d.accountId);
         if (a) a.name = name.trim();
+        // Storing the payment elsewhere: keep a real send amount on the debt card. A $0 fixed amount
+        // would schedule nothing and hide Gem from the Planner.
+        if (holdId) {
+          const line = b.split.find((l) => l.accountId === d.accountId);
+          if (!line) b.split.push({ accountId: d.accountId, amount: 0, mode: 'exact' });
+          else if (line.mode !== 'fixed' || !(line.amount > 0)) { line.mode = 'exact'; delete line.auto; }
+        }
       } else {
         const id = newId();
         const groupId = b.groups.find((g) => g.id === 'debt')?.id ?? b.groups.find((g) => g.bucket === 'savings')?.id ?? b.groups[0]?.id ?? '';

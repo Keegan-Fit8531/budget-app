@@ -1,6 +1,6 @@
 import { accountMode, levelAmount, spareInfo } from './balances';
 import { fmtShort } from './dates';
-import { debtAdvice } from './debts';
+import { debtAdvice, fundingAccountId } from './debts';
 import { todayISO } from './dates';
 import { hasSetAsides, isSetAside, periodContaining, planFor, setAsideOn, shiftPeriod, upcomingPayPeriod, type Period } from './engine';
 import type { ISODate } from './dates';
@@ -146,9 +146,11 @@ export function balancePay(input: Budget, period: Period, today: ISODate = today
       if (d.payroll) continue; // taken from salary, nothing to trim
       const adv = debtAdvice(b, d, period);
       const interestFree = d.rules === 'gem' || d.kind === 'bnpl' || !d.rate;
-      const extra = funded(d.accountId) - adv.recommended;
+      // Trim the account that actually holds the money (Misc bills when Gem stores payment there).
+      const fundId = fundingAccountId(d);
+      const extra = funded(fundId) - adv.recommended;
       if (interestFree && extra > 0) {
-        cut(d.accountId, d.name, extra,
+        cut(fundId, d.name, extra,
           `Paying more than ${fmt(adv.recommended)} saves no interest: ${d.rules === 'gem' ? 'every Gem plan still clears before it expires' : 'it’s interest-free'}.`);
       }
     }

@@ -28,6 +28,10 @@ export function outflows(b: Budget, accountId: string, from: ISODate, to: ISODat
     for (const date of itemDates(item, from, to, b.settings)) out.push({ date, amount: item.amount, name: item.name });
   }
   for (const p of debtPaymentsIn(b, accountId, from, to)) out.push({ date: p.date, amount: p.amount, name: p.plan.name });
+  // Held-elsewhere debts (Gem → Misc bills): still count on the debt card for need/display.
+  if (isHoldDisplayAccount(b, accountId)) {
+    for (const p of heldDebtPaymentsIn(b, accountId, from, to)) out.push({ date: p.date, amount: p.amount, name: p.plan.name });
+  }
   return out.sort((x, y) => x.date.localeCompare(y.date) || y.amount - x.amount);
 }
 
@@ -241,6 +245,11 @@ export function smoothAmount(b: Budget, accountId: string, today: ISODate = toda
  * use this, so they always agree. `usual`: ignore a one-pay adjustment (what it would normally send).
  */
 export function depositFor(b: Budget, accountId: string, p: Period, today: ISODate = todayISO(), opts: { usual?: boolean } = {}): Cents {
+  // Debt card whose money is held elsewhere (e.g. Gem → Misc bills): always show this pay's send amount
+  // on the debt card. One-pay adjustments apply to the hold account (where the money actually sits), not here.
+  if (isHoldDisplayAccount(b, accountId)) {
+    return heldDebtPaymentsIn(b, accountId, p.start, p.end).reduce((t, x) => t + x.amount, 0);
+  }
   // A one-pay adjustment (e.g. from Balance this pay) replaces the usual amount for that pay.
   const override = opts.usual ? undefined : b.overrides?.[p.start]?.[accountId];
   if (override !== undefined) return override;
@@ -252,10 +261,6 @@ export function depositFor(b: Budget, accountId: string, p: Period, today: ISODa
   if (goals.length && goals.every((g) => g.targetDate && g.targetDate <= p.start)) return 0;
   const line = b.split.find((l) => l.accountId === accountId);
   const mode = modeOf(line);
-  // Debt card whose money is held elsewhere (e.g. Gem → Misc bills): still show this pay's send amount.
-  if (isHoldDisplayAccount(b, accountId)) {
-    return heldDebtPaymentsIn(b, accountId, p.start, p.end).reduce((t, x) => t + x.amount, 0);
-  }
   if (mode === 'exact') return topsUp(b, accountId) ? exactTopUp(b, accountId, p, today) : exactNeed(b, accountId, p);
   if (mode === 'smooth') return steadyFor(b, accountId, p, today);
   const amount = line?.amount ?? 0;
@@ -277,6 +282,9 @@ export function depositFor(b: Budget, accountId: string, p: Period, today: ISODa
  * runStart).
  */
 function depositSansBalance(b: Budget, accountId: string, p: Period): Cents {
+  if (isHoldDisplayAccount(b, accountId)) {
+    return heldDebtPaymentsIn(b, accountId, p.start, p.end).reduce((t, x) => t + x.amount, 0);
+  }
   const override = b.overrides?.[p.start]?.[accountId];
   if (override !== undefined) return override;
   const start = b.settings.budgetStart;
@@ -287,9 +295,6 @@ function depositSansBalance(b: Budget, accountId: string, p: Period): Cents {
   }
   const goals = (b.savings ?? []).filter((g) => g.accountId === accountId);
   if (goals.length && goals.every((g) => g.targetDate && g.targetDate <= p.start)) return 0;
-  if (isHoldDisplayAccount(b, accountId)) {
-    return heldDebtPaymentsIn(b, accountId, p.start, p.end).reduce((t, x) => t + x.amount, 0);
-  }
   const line = b.split.find((l) => l.accountId === accountId);
   const mode = modeOf(line);
   if (mode === 'exact') return exactNeed(b, accountId, p);

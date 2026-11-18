@@ -1653,6 +1653,47 @@ describe('Gem payment held in Misc bills until statement day', () => {
     expect(gemLine!.item.note).toMatch(/Stored until the 21st/);
     expect(gemLine!.item.note).toMatch(/set on Gem Visa/);
   });
+
+  it('Gem Visa stays on the payday split when its fixed amount is $0 (pay what’s due into Misc bills)', () => {
+    const b = budget();
+    b.accounts.push(
+      { id: 'gem', name: 'Gem Visa', kind: 'external', color: '#000', groupId: b.groups[0].id },
+      { id: 'bills', name: 'Misc bills', kind: 'bank', color: '#000', groupId: b.groups[0].id },
+    );
+    // A $0 fixed line used to schedule nothing — Gem disappeared from the Planner.
+    b.split.push({ accountId: 'gem', amount: 0, mode: 'fixed' }, { accountId: 'bills', amount: 0, mode: 'exact' });
+    b.debts = [{
+      id: 'gem', name: 'Gem Visa', kind: 'card', rules: 'gem', accountId: 'gem', holdAccountId: 'bills', statementDay: 21,
+      balance: { amount: 180000, asOf: '2026-11-01' },
+      plans: [{ id: 'g1', name: 'Purchases', type: 'interest-free', original: 180000, remaining: 180000, asOf: '2026-11-01', purchaseDate: '2026-07-09', ends: '2027-01-20' }],
+    }];
+    const p = periodContaining('2026-11-19', b.settings);
+    const plan = planFor(b, p, '2026-11-19');
+    const gem = plan.accounts.find((a) => a.account.id === 'gem')!;
+    expect(gem.funded).toBeGreaterThan(0);
+    expect(gem.need).toBe(gem.funded);
+    const cards = plan.accounts.filter((a) => a.account.id !== b.settings.payAccountId && (a.funded !== 0 || a.need !== 0));
+    expect(cards.map((a) => a.account.name)).toContain('Gem Visa');
+  });
+
+  it('a one-pay override on Gem does not wipe the Planner card when money is held in Misc bills', () => {
+    const b = budget();
+    b.accounts.push(
+      { id: 'gem', name: 'Gem Visa', kind: 'external', color: '#000', groupId: b.groups[0].id },
+      { id: 'bills', name: 'Misc bills', kind: 'bank', color: '#000', groupId: b.groups[0].id },
+    );
+    b.split.push({ accountId: 'gem', amount: 30000, mode: 'fixed' }, { accountId: 'bills', amount: 0, mode: 'exact' });
+    b.debts = [{
+      id: 'gem', name: 'Gem Visa', kind: 'card', rules: 'gem', accountId: 'gem', holdAccountId: 'bills', statementDay: 21,
+      balance: { amount: 180000, asOf: '2026-11-01' },
+      plans: [{ id: 'g1', name: 'Purchases', type: 'interest-free', original: 180000, remaining: 180000, asOf: '2026-11-01', purchaseDate: '2026-07-09', ends: '2027-01-20' }],
+    }];
+    b.overrides = { '2026-11-19': { gem: 0 } };
+    const p = periodContaining('2026-11-19', b.settings);
+    const plan = planFor(b, p, '2026-11-19');
+    const gem = plan.accounts.find((a) => a.account.id === 'gem')!;
+    expect(gem.funded).toBeGreaterThan(0);
+  });
 });
 
 describe('extra paid off a debt for one pay', () => {
