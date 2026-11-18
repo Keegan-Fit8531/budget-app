@@ -6,7 +6,7 @@ import { AccIcon, Disclosure, Modal, MoveButtons, ReorderToggle, useFlip } from 
 import { moveAmong } from '../lib/order';
 import { bankSync } from '../lib/bank';
 import { GoalCosts } from '../components/GoalCosts';
-import { GoalGifts, PeopleChips, savedSlices, tracksPeople } from '../components/GoalGifts';
+import { AddMoneyButton, GoalGifts, PeopleChips, savedSlices, tracksPeople } from '../components/GoalGifts';
 import { summariseCosts } from '../lib/goalcosts';
 import { paidDirect } from '../lib/contributions';
 import { PaydayControl } from '../components/PaydayControl';
@@ -197,6 +197,11 @@ function GoalCard({ f, plan, period, onEdit, extra }: { f: ReturnType<typeof for
           <b>{cash(c ? Math.max(0, c.total - c.paid) : f.projected, { whole: true })}</b>
           <span className="xs muted">{c ? `${costs.length} cost${costs.length === 1 ? '' : 's'}` : 'projected'}</span>
         </div>
+      </div>
+
+      {/* One-off deposits (payday sends are separate, under Money and payday). */}
+      <div className="row wrap gap-8">
+        <AddMoneyButton goal={g} />
       </div>
 
       {people && <PeopleChips goal={g} />}
