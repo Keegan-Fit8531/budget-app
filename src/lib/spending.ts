@@ -49,9 +49,23 @@ export function cleanDescription(d: string): string {
   return d.replace(/\s+\d+\s*(months?|mths?)\b.*$/i, '').replace(/\s{2,}/g, ' ').trim();
 }
 
+/**
+ * The shop's part of a description, without the bank's own words around it: "VT" (Visa), "EP"
+ * (EFTPOS), "DD" (direct debit), "A P"/"AP" (automatic payment) and "POS" in front, and the card
+ * number and original date after. So "VT Tasman Epsom 483561******3102" and "Tasman Epsom Card
+ * number: 4835 …" are the same shop.
+ */
+export function shopPart(d: string): string {
+  const s = cleanDescription(d)
+    .replace(/\s+(card number|orig date)\b.*$/i, '')
+    .replace(/^(?:(?:VT|EP|DD|POS|EFTPOS|A ?P)\s+)+/i, '')
+    .trim();
+  return s || cleanDescription(d);
+}
+
 /** A shop's name to group its purchases: the tidy name if known, else its first words without store numbers. */
 function shopName(d: string): string {
-  const words = cleanDescription(d).replace(/[*#]/g, ' ').split(/\s+/).filter((w) => w && !/\d/.test(w));
+  const words = shopPart(d).replace(/[*#]/g, ' ').split(/\s+/).filter((w) => w && !/\d/.test(w));
   const name = words.slice(0, 2).join(' ') || d;
   // Title case, but short capitals stay as they are ("NZ", "ATM", "BP").
   return name.split(' ').map((w) => (/^[A-Z]{2,3}$/.test(w) ? w : w.toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase()))).join(' ');
@@ -126,20 +140,28 @@ export function shopMap(b: { shopCategories?: Record<string, string>; shopGuesse
   return { ...guesses, ...(b.shopCategories ?? {}) } as ShopCategories;
 }
 
-export interface UnsortedShop { shop: string; example: string; count: number; total: Cents }
+export interface UnsortedShop {
+  shop: string; example: string; count: number; total: Cents;
+  /** The smallest and largest purchase there: a $12 to $90 shop is more likely fuel than a café. */
+  min: Cents; max: Cents;
+}
 
-/** Shops whose purchases are still in Other and haven't been guessed yet, biggest spend first. */
-export function otherShops(txns: Txn[], b: { shopCategories?: Record<string, string>; shopGuesses?: Record<string, string> }): UnsortedShop[] {
-  const map = shopMap(b);
+/**
+ * Shops whose purchases are still in Other and haven't been guessed yet, biggest spend first. With
+ * `again`, also the shops Gemini has already placed (to check its guesses), but never ones you chose.
+ */
+export function otherShops(txns: Txn[], b: { shopCategories?: Record<string, string>; shopGuesses?: Record<string, string> }, again = false): UnsortedShop[] {
+  const map = again ? (b.shopCategories ?? {}) as ShopCategories : shopMap(b);
   const out = new Map<string, UnsortedShop>();
   for (const t of txns) {
     if (t.amount >= 0) continue;
     const { category, shop } = categorizeTxn(t, map);
     if (category !== 'other') continue;
     const key = shop.toLowerCase();
-    if (b.shopGuesses?.[key] || b.shopCategories?.[key]) continue;
-    const s = out.get(key) ?? { shop, example: cleanDescription(t.description).slice(0, 60), count: 0, total: 0 };
-    s.count++; s.total += -t.amount;
+    if (b.shopCategories?.[key] || (!again && b.shopGuesses?.[key])) continue;
+    const spent = -t.amount;
+    const s = out.get(key) ?? { shop, example: shopPart(t.description).slice(0, 60), count: 0, total: 0, min: spent, max: spent };
+    s.count++; s.total += spent; s.min = Math.min(s.min, spent); s.max = Math.max(s.max, spent);
     out.set(key, s);
   }
   return [...out.values()].sort((x, y) => y.total - x.total);

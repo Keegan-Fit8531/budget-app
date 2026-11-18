@@ -29,7 +29,7 @@ import { moveAmong } from './order';
 import { csvAmount, csvDate, endingOf, fromStatementRows, readTransactionsCsv } from './csv';
 import { layoutPage } from './reader/pdftext';
 import { mergeReads, splitRow } from './reader/gemini';
-import { categorize, categorizeTxn, summarize } from './spending';
+import { categorize, categorizeTxn, otherShops, summarize } from './spending';
 
 /** A blank budget paid on the 19th, with automatic balancing off so amounts are exactly as set. */
 function budget(): Budget {
@@ -1257,6 +1257,24 @@ describe('reading bank and card exports', () => {
     upload(b, csvDoc(text), '2026-11-16', (d) => { d.transactions.target = 'account:everyday'; });
     expect(b.accountTransactions?.everyday).toHaveLength(2);
     expect(b.balances?.everyday).toEqual({ amount: 33940, asOf: '2026-11-16' });
+  });
+
+  it('names a shop without the bank’s own words, so the same shop is grouped once', () => {
+    expect(categorize('VT Tasman Epsom 483561******3102 Orig date 04/02/2026').shop).toBe('Tasman Epsom');
+    expect(categorize('Tasman Epsom Card number: 4835 **** **** 3102').shop).toBe('Tasman Epsom');
+    expect(categorize('A P Tupou-Fakalaga').shop).toBe('Tupou-Fakalaga');
+    expect(categorize('EP The Bailey').shop).toBe('The Bailey');
+  });
+
+  it('lists shops for Gemini with their purchase amounts, and checks its guesses again only when asked', () => {
+    const txns = [
+      { date: '2026-11-01', description: 'VT Tasman Epsom', amount: -1000 },
+      { date: '2026-11-02', description: 'Tasman Epsom Card number: 4835 **** **** 3102', amount: -9653 },
+      { date: '2026-11-03', description: 'Odd Shop Ltd', amount: -500 },
+    ];
+    const b = { shopGuesses: { 'tasman epsom': 'eating-out' }, shopCategories: { 'odd shop': 'shopping' } };
+    expect(otherShops(txns, b)).toEqual([]);
+    expect(otherShops(txns, b, true)).toEqual([{ shop: 'Tasman Epsom', example: 'Tasman Epsom', count: 2, total: 10653, min: 1000, max: 9653 }]);
   });
 
   it('puts purchases in categories by the shop, so Insights can show what adds up', () => {
