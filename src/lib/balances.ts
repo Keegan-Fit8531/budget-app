@@ -131,7 +131,12 @@ function runStart(b: Budget, accountId: string, today: ISODate, useBalance: bool
   // An account that keeps money put aside (a car fund): its balance is mostly that money, which isn't
   // there to pay the bills, so its amounts are worked out from the budget's start instead.
   const known = useBalance && entry && entry.asOf <= today && !hasSetAsides(b, accountId) ? entry : undefined;
-  if (known) return { pay: shiftPeriod(periodContaining(known.asOf, b.settings), 1, b.settings), bal: known.amount, cursor: known.asOf };
+  if (known) {
+    // Payday morning before the split lands: count the deposit so later pays aren't topped up for a false short.
+    const p = periodContaining(known.asOf, b.settings);
+    const pending = depositPending(b, accountId, known) ? depositSansBalance(b, accountId, p) : 0;
+    return { pay: shiftPeriod(p, 1, b.settings), bal: known.amount + pending, cursor: known.asOf };
+  }
   const pay = firstBudgetPay(b, today);
   return { pay, bal: priorLeftover(b, accountId, today), cursor: addDays(pay.start, -1) };
 }
@@ -261,12 +266,64 @@ export function depositFor(b: Budget, accountId: string, p: Period, today: ISODa
   return Math.max(amount, setAsideOn(b, accountId, p.start));
 }
 
+/**
+ * What payday is meant to send, without reading balance-based steady/exact runs. Used to tell whether
+ * a payday-morning balance already includes the deposit (calling depositFor here would recurse through
+ * runStart).
+ */
+function depositSansBalance(b: Budget, accountId: string, p: Period): Cents {
+  const override = b.overrides?.[p.start]?.[accountId];
+  if (override !== undefined) return override;
+  const start = b.settings.budgetStart;
+  if (start && p.start < start) {
+    const line = b.split.find((l) => l.accountId === accountId);
+    const acc = b.accounts.find((a) => a.id === accountId);
+    return acc?.kind === 'bank' && line && line.amount > 0 ? line.amount : 0;
+  }
+  const goals = (b.savings ?? []).filter((g) => g.accountId === accountId);
+  if (goals.length && goals.every((g) => g.targetDate && g.targetDate <= p.start)) return 0;
+  const line = b.split.find((l) => l.accountId === accountId);
+  const mode = modeOf(line);
+  if (mode === 'exact') return exactNeed(b, accountId, p);
+  if (mode === 'smooth') return usualSteady(b, accountId);
+  return Math.max(line?.amount ?? 0, setAsideOn(b, accountId, p.start));
+}
+
+/**
+ * A balance dated on payday often still excludes that payday's deposit: pay can land late in the
+ * day, and the split into this account may not have run. True when the entered balance still looks
+ * like the pre-deposit amount.
+ */
+export function depositPending(b: Budget, accountId: string, entry: { amount: Cents; asOf: ISODate }): boolean {
+  const p = periodContaining(entry.asOf, b.settings);
+  if (entry.asOf !== p.start) return false;
+  const deposit = depositSansBalance(b, accountId, p);
+  if (deposit <= 0) return false;
+  // Money already paid into the account on payday (the split, or pay landing).
+  const credited = (b.accountTransactions?.[accountId] ?? [])
+    .filter((t) => t.date === entry.asOf && t.amount > 0)
+    .reduce((s, t) => s + t.amount, 0);
+  if (credited >= deposit) return false;
+  // Last balance before payday: if this one hasn't risen by the deposit, it isn't in yet.
+  // (Bank sync on payday morning often only bumps the date, leaving the amount unchanged.)
+  const prior = (b.accountHistory?.[accountId] ?? [])
+    .filter((e) => e.kind === 'balance' && e.date < entry.asOf)
+    .reduce<{ amount: Cents; date: ISODate } | undefined>((best, e) => (!best || e.date >= best.date ? e : best), undefined);
+  if (prior) return entry.amount - prior.amount + credited < deposit;
+  // No earlier reading: a balance below the deposit itself can't include it.
+  return entry.amount + credited < deposit;
+}
+
 /** Estimated balance at the end of `date`, from the last balance you entered. Undefined if unknown. */
 export function estimateBalance(b: Budget, accountId: string, date: ISODate, today: ISODate = todayISO()): Cents | undefined {
   const entry = b.balances?.[accountId];
   if (!entry || date < entry.asOf) return undefined;
   let bal = entry.amount;
   let p = periodContaining(entry.asOf, b.settings);
+  // Balance as-of payday: count this payday's deposit when the bank still shows the pre-deposit amount.
+  if (entry.asOf === p.start && p.start <= date && depositPending(b, accountId, entry)) {
+    bal += depositFor(b, accountId, p, today);
+  }
   // Paydays after the balance date, up to and including `date`.
   while (p.nextPayday <= date) {
     p = shiftPeriod(p, 1, b.settings);
@@ -297,10 +354,12 @@ export interface PeriodForecast { period: Period; deposit: Cents; out: Cents; en
 /** Balance forecast for `count` pay periods starting with the one containing `today`. */
 export function forecastBalances(b: Budget, accountId: string, count: number, today: ISODate = todayISO()): PeriodForecast[] {
   const entry = b.balances?.[accountId];
+  const pending = !!entry && depositPending(b, accountId, entry);
   const rows: PeriodForecast[] = [];
   let p = periodContaining(today, b.settings);
   for (let i = 0; i < count; i++) {
-    const received = !entry || p.start > entry.asOf;
+    // Deposit still counts when the balance is as-of this payday but the money hasn't landed yet.
+    const received = !entry || p.start > entry.asOf || (p.start === entry.asOf && pending);
     rows.push({
       period: p,
       deposit: received ? depositFor(b, accountId, p, today) : 0,

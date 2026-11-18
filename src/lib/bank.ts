@@ -1,5 +1,6 @@
 import { endingOf } from './csv';
 import { addDays, todayISO, toISO, type ISODate } from './dates';
+import { periodContaining } from './engine';
 import { recordGoalMoves, setGoalBankBalance, settleGoalMoves, type SeenMove } from './goalMoves';
 import { setBalance } from './history';
 import { isKiwiSaver, recordReading } from './kiwisaver';
@@ -156,7 +157,12 @@ export function applyBank(b: Budget, data: BankData, links: Record<string, strin
     const changed = live && type === 'account' && b.balances?.[id]?.amount !== cents;
     if (changed) setBalance(b, id, cents, today, `bank-${acc.id}-${today}`);
     // The same as before, but checked again today: it's today's balance, not an estimate from an older one.
-    else if (live && type === 'account' && b.balances?.[id] && b.balances[id].asOf < today) b.balances[id] = { ...b.balances[id], asOf: today };
+    // On payday, an unchanged balance means today's deposit isn't in this account yet — keep the older
+    // asOf so projections still count what payday sends (pay often lands late afternoon).
+    else if (live && type === 'account' && b.balances?.[id] && b.balances[id].asOf < today
+      && today !== periodContaining(today, b.settings).start) {
+      b.balances[id] = { ...b.balances[id], asOf: today };
+    }
     // What hasn't settled yet replaces what was pending last time (once settled, it's in the transactions).
     if (type === 'account' && data.pending) {
       const pend: Txn[] = data.pending.filter((t) => t.account === acc.id && t.amount)

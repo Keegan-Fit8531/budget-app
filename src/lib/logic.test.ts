@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { balanceToday, billTracker, depositFor, estimateBalance, outflows } from './balances';
+import { balanceToday, billTracker, depositFor, depositPending, estimateBalance, outflows } from './balances';
 import { applyAllocation, existingExtras, undoAllocation } from './allocate';
 import { addDays } from './dates';
 import { applyPayment, debtPay, debtPaymentsIn, debtPerPay, debtSchedules, owed, projectedOwed, paidIn, planSchedule, recordHistory, settleDue } from './debts';
@@ -202,6 +202,51 @@ describe('debt payments that have gone out', () => {
     // A statement as at 10 Nov arrives on the 25th: the 19 Nov payment is worked out again from it.
     recordStatement(b, 'm', { balance: 60000, date: '2026-11-10' }, '2026-11-25');
     expect(paidIn(b.debts[0], pay.start, pay.end).map((x) => x.date)).toEqual(['2026-11-19']);
+  });
+});
+
+describe('payday morning before the deposit lands', () => {
+  function withRent() {
+    const b = budget();
+    b.accounts.push({ id: 'rent', name: 'Rent', kind: 'bank', color: '#000', groupId: 'needs' });
+    b.split.push({ accountId: 'rent', amount: 180500, mode: 'smooth' });
+    b.items.push({ id: 'r', name: 'Rent', amount: 41500, frequency: 'weekly', start: '2026-01-05', accountId: 'rent' });
+    return b;
+  }
+
+  it('a balance refreshed on payday before the split still counts what payday sends', () => {
+    // $500 left on Wed 18 Nov; bank sync on Thu 19 Nov (payday) before the split lands.
+    const b = withRent();
+    setBalance(b, 'rent', 50000, '2026-11-18', 'h1');
+    setBalance(b, 'rent', 50000, '2026-11-19', 'h2');
+    const p = periodContaining('2026-11-19', b.settings);
+    expect(depositPending(b, 'rent', b.balances!.rent)).toBe(true);
+    // What's in the bank right now is still $500…
+    expect(balanceToday(b, 'rent', '2026-11-19')).toBe(50000);
+    // …but the period's end still counts today's deposit, so it isn't falsely short.
+    expect(estimateBalance(b, 'rent', p.end, '2026-11-19')).toBe(64500);
+    expect(balancePay(b, p, '2026-11-19').shortAccounts).toEqual([]);
+  });
+
+  it('bank sync on payday does not bump asOf when the balance is unchanged', () => {
+    const b = withRent();
+    setBalance(b, 'rent', 50000, '2026-11-18', 'h1');
+    applyBank(b, {
+      accounts: [{ id: 'a1', name: 'Rent', number: '06-0115-0000001-00', type: 'CHECKING', institution: 'ANZ', balance: 500, transactions: true }],
+      transactions: [],
+    }, { a1: 'account:rent' }, '2026-11-19');
+    expect(b.balances?.rent).toEqual({ amount: 50000, asOf: '2026-11-18' });
+    expect(balancePay(b, periodContaining('2026-11-19', b.settings), '2026-11-19').shortAccounts).toEqual([]);
+  });
+
+  it('once the deposit is in the balance, it is not counted twice', () => {
+    const b = withRent();
+    setBalance(b, 'rent', 50000, '2026-11-18', 'h1');
+    setBalance(b, 'rent', 230500, '2026-11-19', 'h2');
+    const p = periodContaining('2026-11-19', b.settings);
+    expect(depositPending(b, 'rent', b.balances!.rent)).toBe(false);
+    expect(estimateBalance(b, 'rent', p.end, '2026-11-19')).toBe(64500);
+    expect(balancePay(b, p, '2026-11-19').shortAccounts).toEqual([]);
   });
 });
 
