@@ -14,7 +14,7 @@ import { seedBudget } from './seed';
 import type { Budget, Debt, SavingsGoal } from './types';
 import { looksLikeBudget } from './valid';
 import { applyProposal, preview, windBack } from './reader/apply';
-import { csvTargets, NEW_DEBT, review, toCents, toDraft, validDate, type Draft } from './reader/check';
+import { csvTargets, NEW_DEBT, NOT_MINE, review, toCents, toDraft, validDate, type Draft } from './reader/check';
 import { classifyHttpError, nextPacificMidnight, nzTime, ReaderError } from './reader/errors';
 import { geminiProvider, parseReply } from './reader/gemini';
 import { prepareFile } from './reader/prepare';
@@ -1585,5 +1585,64 @@ describe('extra paid off a debt for one pay', () => {
     expect(pays.find((p) => p.date === '2027-04-21')?.amount).toBe(10000);
     expect(projectedOwed(gem, b.settings, '2027-03-20', debtPay(b, gem))).toBe(projectedOwed(gem, b.settings, '2027-03-20', debtPerPay(b, gem)));
     expect(projectedOwed(gem, b.settings, '2027-03-31', debtPay(b, gem))).toBe(steady - 150000);
+  });
+});
+
+describe('a screenshot of a bank’s accounts and balances', () => {
+  const screen = {
+    kind: 'balances', notes: null,
+    balances: {
+      bank: 'ANZ', asOf: null,
+      accounts: [
+        ['Rent', '06-0115-0324910-53', '278.00'], ['Misc Bills', '06-0115-0324910-54', '0.06'], ['Car Maintenance', '06-0115-0324910-56', '0.00'],
+        ['Food / Gas', '06-0115-0324910-55', '0.00'], ['Misc Saving', '06-0115-0324910-50', '0.00'], ['Weekly Allowance', '06-0115-0324910-00', '0.00'],
+        ['Allowance Storage', '06-0115-0324910-57', '0.00'],
+      ].map(([name, number, amount]) => ({ name, number, balance: { amount, label: 'Balance' }, available: { amount, label: 'Available' } })),
+    },
+  };
+  const reply = { candidates: [{ finishReason: 'STOP', content: { parts: [{ text: JSON.stringify(screen) }] } }] };
+  const accounts = [['rent', 'Rent', '53'], ['bills', 'Misc bills', '54'], ['car', 'Car maintenance', '56'], ['foodgas', 'Food and gas', '55'], ['miscsave', 'Misc savings', '50'], ['weekly', 'Weekly allowance', '00'], ['storage', 'Allowance storage', '57']];
+  function bank(withNumbers: boolean): Budget {
+    const b = budget();
+    for (const [id, name, suffix] of accounts) {
+      b.accounts.push({ id, name, kind: 'bank', color: '#000', groupId: b.groups[0].id, ...(withNumbers ? { number: `06-0115-0324910-${suffix}` } : {}) });
+      b.balances = { ...(b.balances ?? {}), [id]: { amount: 5000, asOf: '2026-11-10' } };
+    }
+    return b;
+  }
+
+  it('updates every account on it, matched by number, as at today', () => {
+    const b = bank(true);
+    const ex = parseReply(reply);
+    expect(ex.kind).toBe('balances');
+    const d = toDraft(ex, b, 'gemini', seq(), '2026-11-18');
+    expect(d.balances.rows.map((r) => [r.accountId, r.matchedBy])).toEqual(accounts.map(([id]) => [id, 'number']));
+    const r = review(d, b, '2026-11-18');
+    expect(r.issues.filter((i) => i.level === 'block')).toEqual([]);
+    const after = applyProposal(structuredClone(b), r.proposal!, '2026-11-18');
+    expect(after.balances!.rent).toEqual({ amount: 27800, asOf: '2026-11-18' });
+    expect(after.balances!.bills).toEqual({ amount: 6, asOf: '2026-11-18' });
+    expect(after.balances!.storage).toEqual({ amount: 0, asOf: '2026-11-18' });
+    expect(preview(b, r.proposal!, '2026-11-18').lines[0]).toBe("Rent: balance $50 → $278, as at 18 Nov");
+  });
+
+  it('without saved numbers, matches by name ("Food / Gas" is Food and gas) and keeps the numbers for next time', () => {
+    const b = bank(false);
+    const d = toDraft(parseReply(reply), b, 'gemini', seq(), '2026-11-18');
+    expect(d.balances.rows.map((r) => [r.accountId, r.matchedBy])).toEqual(accounts.map(([id]) => [id, 'name']));
+    const after = applyProposal(structuredClone(b), review(d, b, '2026-11-18').proposal!, '2026-11-18');
+    expect(after.accounts.find((a) => a.id === 'foodgas')!.number).toBe('06-0115-0324910-55');
+  });
+
+  it('an account it can’t match is asked about, and can be left out', () => {
+    const b = bank(true);
+    b.accounts = b.accounts.filter((a) => a.id !== 'car');
+    const d = toDraft(parseReply(reply), b, 'gemini', seq(), '2026-11-18');
+    expect(d.balances.rows[2].accountId).toBe('');
+    expect(review(d, b, '2026-11-18').proposal).toBeNull();
+    d.balances.rows[2].accountId = NOT_MINE;
+    const r = review(d, b, '2026-11-18');
+    expect(r.proposal).toMatchObject({ kind: 'balances' });
+    expect(r.ignored).toEqual(['Car Maintenance: left out.']);
   });
 });

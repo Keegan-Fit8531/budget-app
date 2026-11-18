@@ -166,7 +166,7 @@ export function bankSync(b: Budget, link: string): { linked: boolean; at?: strin
 export const sinceFor = (conf: BankConfig): ISODate | undefined => (conf.lastSync ? addDays(conf.lastSync.slice(0, 10), -7) : undefined);
 
 /** An account number as numbers (bank, branch, account, suffix), so 06-0115-0324910-055 and -55 are the same. */
-const numberKey = (n: string): string | undefined => {
+export const numberKey = (n: string): string | undefined => {
   const m = n.match(/(\d{2})\D?(\d{4})\D?(\d{7})\D?(\d{2,3})/);
   return m ? m.slice(1).map((x) => String(Number(x))).join('-') : undefined;
 };
