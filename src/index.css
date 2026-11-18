@@ -355,8 +355,8 @@ button.sync-pill:disabled { cursor: default; }
 .list-row { display: flex; align-items: center; gap: var(--s-3); padding: 10px 0; border-bottom: 1px solid var(--line); font-size: var(--fs-md); }
 .list-row:last-child { border-bottom: 0; }
 .list-row.small { font-size: var(--fs-sm); padding: var(--s-2) 0; }
-button.list-row { width: 100%; background: none; border: 0; border-bottom: 1px solid var(--line); cursor: pointer; text-align: left; }
-button.list-row:hover { background: color-mix(in srgb, var(--soft) 60%, transparent); }
+button.list-row, a.list-row { width: 100%; background: none; border: 0; border-bottom: 1px solid var(--line); cursor: pointer; text-align: left; color: inherit; text-decoration: none; }
+button.list-row:hover, a.list-row:hover { background: color-mix(in srgb, var(--soft) 60%, transparent); }
 .list-row.picked { background: var(--soft); border-radius: var(--r-sm); padding-inline: var(--s-2); border-bottom-color: transparent; }
 .table { width: 100%; border-collapse: collapse; font-size: var(--fs-sm); font-variant-numeric: tabular-nums; }
 .table th { font-weight: 500; color: var(--muted); text-align: right; padding: 6px var(--s-1); }

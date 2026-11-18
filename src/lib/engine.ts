@@ -1,5 +1,5 @@
 import {
-  addDays, dateInMonth, diffDays, toDate, todayISO, weekday, type ISODate,
+  addDays, dateInMonth, diffDays, ordinal, toDate, todayISO, weekday, type ISODate,
 } from './dates';
 import { balanceOn, depositFor, exactNeed, modeOf, topsUp } from './balances';
 import { accountHasPlans, debtPaymentsIn, heldDebtPaymentsIn, isHoldDisplayAccount } from './debts';
@@ -321,9 +321,25 @@ export function planFor(b: Budget, period: Period, today: ISODate = todayISO()):
       ? heldDebtPaymentsIn(b, account.id, period.start, period.end)
       : debtPaymentsIn(b, account.id, period.start, period.end);
     for (const p of debtPays) {
+      // Hold account (e.g. Misc bills): list under that account's costs as the debt (Gem Visa), with a note.
+      // Debt's own display account: keep plan names so opening Gem still shows what the payment covers.
+      const heldHere = !!p.debt.holdAccountId && p.debt.holdAccountId === account.id;
       const item: Item = {
-        id: `${p.plan.id}@${p.date}`, name: p.plan.name, amount: p.amount,
-        frequency: 'once', start: p.date, accountId: account.id,
+        id: `${p.plan.id}@${p.date}`,
+        name: heldHere ? p.debt.name : p.plan.name,
+        amount: p.amount,
+        frequency: 'once',
+        start: p.date,
+        accountId: account.id,
+        ...(heldHere
+          ? {
+              note: [
+                p.debt.statementDay ? `Stored until the ${ordinal(p.debt.statementDay)}` : 'Stored until statement day',
+                `set on ${p.debt.name}`,
+                p.plan.name !== p.debt.name ? p.plan.name : undefined,
+              ].filter(Boolean).join(' · '),
+            }
+          : {}),
       };
       dues.push({ item, date: p.date });
       breakdown.push({ item, count: 1 });

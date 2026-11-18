@@ -512,10 +512,11 @@ export function Planner() {
             const amountClass = funded < 0 && (known || !isPay) ? 'neg' : '';
             const icon = <AccIcon color={a.account.color} name={a.account.kind === 'external' ? 'send' : isPay ? 'wallet' : 'bank'} />;
             // Each cost this pay (e.g. food, car gas, scooter gas, or every bill in Misc bills).
-            const byName = new Map<string, { name: string; amount: Cents; dates: string[]; aside: boolean }>();
+            const byName = new Map<string, { name: string; amount: Cents; dates: string[]; aside: boolean; note?: string }>();
             if (!longRun) for (const d of a.dues) {
-              const r = byName.get(`${isSetAside(d.item)}|${d.item.name}`) ?? { name: d.item.name, amount: 0, dates: [], aside: isSetAside(d.item) };
+              const r = byName.get(`${isSetAside(d.item)}|${d.item.name}`) ?? { name: d.item.name, amount: 0, dates: [], aside: isSetAside(d.item), note: d.item.note };
               r.amount += d.item.amount; r.dates.push(d.date);
+              if (!r.note && d.item.note) r.note = d.item.note;
               byName.set(`${r.aside}|${d.item.name}`, r);
             }
             const rows = [...byName.values()];
@@ -604,6 +605,7 @@ export function Planner() {
                                     {r.aside ? 'Put aside on payday, stays in the account' : same ? `${r.dates.length} × ${cash(each, { whole: each % 100 === 0 })}` : r.dates.length === 1 ? fmtShort(r.dates[0]) : `${r.dates.length} payments`}
                                     {/* Week / Fortnight: say what the whole pay is, since the amount on the right is per week */}
                                     {split ? `${same ? ' =' : ' ·'} ${cash(r.amount)} this pay` : ''}
+                                    {r.note ? ` · ${r.note}` : ''}
                                   </span>
                                 </span>
                                 <b className="num">{cash(v(r.amount))}{split && <small className="muted" style={{ fontWeight: 500 }}> /{mode === 'week' ? 'wk' : 'fn'}</small>}</b>
