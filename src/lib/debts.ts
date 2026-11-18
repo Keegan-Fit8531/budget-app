@@ -287,19 +287,25 @@ export function debtPerPay(b: Budget, debt: Debt): Cents | undefined {
   if (debt.payroll) return debt.payroll.perPay; // taken from salary each payday
   const line = b.split.find((l) => l.accountId === debt.accountId);
   const mode = line?.mode ?? (line?.auto ? 'exact' : 'fixed');
-  return mode === 'fixed' ? (line?.amount ?? 0) : undefined;
+  if (mode !== 'fixed') return undefined;
+  const amount = line?.amount ?? 0;
+  // Held in another account with no set figure on the debt card: pay what's due into the hold account.
+  if (amount <= 0 && debt.holdAccountId) return undefined;
+  return amount;
 }
 
 /**
  * What payday sends a debt, with any one-pay amounts (Optimise's "this pay only" extra, or an amount
  * changed for one pay): use this for forecasts, so extra paid in a pay comes off what's owed.
+ * When the payment is stored in another account until statement day, one-pay amounts are on that account.
  */
 export function debtPay(b: Budget, debt: Debt): PerPay {
   const usual = debtPerPay(b, debt);
   if (debt.payroll) return usual;
+  const fundId = fundingAccountId(debt);
   const byPeriod: Record<ISODate, Cents> = {};
   for (const [start, o] of Object.entries(b.overrides ?? {})) {
-    const v = o?.[debt.accountId];
+    const v = o?.[fundId] ?? (fundId !== debt.accountId ? o?.[debt.accountId] : undefined);
     if (v !== undefined) byPeriod[start] = v;
   }
   return Object.keys(byPeriod).length ? { usual, byPeriod } : usual;
