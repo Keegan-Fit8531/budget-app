@@ -1,5 +1,5 @@
 import { addDays, todayISO, type ISODate } from './dates';
-import { accountHasPlans, debtPaymentsIn, debtPay, projectedOwed } from './debts';
+import { accountHasPlans, debtPaymentsIn, debtPay, heldDebtPaymentsIn, isHoldDisplayAccount, projectedOwed } from './debts';
 import {
   averageNeed, firstBudgetPay, hasSetAsides, isSetAside, itemDates, periodContaining, setAsideOn, setAsidesOn, shiftPeriod, type Period,
 } from './engine';
@@ -252,6 +252,10 @@ export function depositFor(b: Budget, accountId: string, p: Period, today: ISODa
   if (goals.length && goals.every((g) => g.targetDate && g.targetDate <= p.start)) return 0;
   const line = b.split.find((l) => l.accountId === accountId);
   const mode = modeOf(line);
+  // Debt card whose money is held elsewhere (e.g. Gem → Misc bills): still show this pay's send amount.
+  if (isHoldDisplayAccount(b, accountId)) {
+    return heldDebtPaymentsIn(b, accountId, p.start, p.end).reduce((t, x) => t + x.amount, 0);
+  }
   if (mode === 'exact') return topsUp(b, accountId) ? exactTopUp(b, accountId, p, today) : exactNeed(b, accountId, p);
   if (mode === 'smooth') return steadyFor(b, accountId, p, today);
   const amount = line?.amount ?? 0;
@@ -283,6 +287,9 @@ function depositSansBalance(b: Budget, accountId: string, p: Period): Cents {
   }
   const goals = (b.savings ?? []).filter((g) => g.accountId === accountId);
   if (goals.length && goals.every((g) => g.targetDate && g.targetDate <= p.start)) return 0;
+  if (isHoldDisplayAccount(b, accountId)) {
+    return heldDebtPaymentsIn(b, accountId, p.start, p.end).reduce((t, x) => t + x.amount, 0);
+  }
   const line = b.split.find((l) => l.accountId === accountId);
   const mode = modeOf(line);
   if (mode === 'exact') return exactNeed(b, accountId, p);

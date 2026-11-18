@@ -1,4 +1,4 @@
-import { addDays, addMonths, dateInMonth, fmtDay, ordinal, todayISO, type ISODate } from './dates';
+import { addDays, addMonths, dateInMonth, fmtDay, gemEndsFromMonthsLeft, ordinal, todayISO, type ISODate } from './dates';
 import { periodContaining, shiftPeriod, type Period } from './engine';
 import type { Budget, Cents, Debt, DebtPlan, PaidPayment, PlanType, Settings } from './types';
 
@@ -328,14 +328,26 @@ export function paidIn(debt: Debt, from: ISODate, to: ISODate): PaidPayment[] {
   return (debt.paid ?? []).filter((x) => x.date >= from && x.date <= to);
 }
 
+/** Where this debt's payday money sits and its statement-day payment leaves from. */
+export function fundingAccountId(debt: Debt): string {
+  return debt.holdAccountId || debt.accountId;
+}
+
+/** True when this payday account only displays a debt whose money is held in another account. */
+export function isHoldDisplayAccount(b: Budget, accountId: string): boolean {
+  const mine = (b.debts ?? []).filter((d) => d.accountId === accountId && !d.payroll);
+  return mine.length > 0 && mine.every((d) => !!d.holdAccountId);
+}
+
 /**
- * Debt payments from an account (via its debts) within a date range: the ones still to come, and the
- * ones already counted as paid, so a pay keeps its payments (and its total) after they've gone out.
+ * Debt payments that leave `accountId` within a date range: the ones still to come, and the ones
+ * already counted as paid, so a pay keeps its payments (and its total) after they've gone out.
+ * When a debt stores its payment in another account (`holdAccountId`), payments leave that account.
  */
 export function debtPaymentsIn(b: Budget, accountId: string, from: ISODate, to: ISODate): { debt: Debt; plan: DebtPlan; date: ISODate; amount: Cents }[] {
   const out: { debt: Debt; plan: DebtPlan; date: ISODate; amount: Cents }[] = [];
   for (const debt of b.debts ?? []) {
-    if (debt.accountId !== accountId) continue;
+    if (fundingAccountId(debt) !== accountId) continue;
     (debt.paid ?? []).forEach((x, i) => {
       if (x.date < from || x.date > to) return;
       // Stands in for the plan it went to (which may be paid off and gone by now).
@@ -350,7 +362,17 @@ export function debtPaymentsIn(b: Budget, accountId: string, from: ISODate, to: 
 }
 
 export function accountHasPlans(b: Budget, accountId: string): boolean {
-  return (b.debts ?? []).some((d) => d.accountId === accountId && d.plans.some((p) => p.remaining > 0));
+  return (b.debts ?? []).some((d) => fundingAccountId(d) === accountId && d.plans.some((p) => p.remaining > 0));
+}
+
+/** What payday shows for a debt whose money is held in another account (display amount only). */
+export function heldDebtPaymentsIn(b: Budget, accountId: string, from: ISODate, to: ISODate): { debt: Debt; plan: DebtPlan; date: ISODate; amount: Cents }[] {
+  const out: { debt: Debt; plan: DebtPlan; date: ISODate; amount: Cents }[] = [];
+  for (const debt of b.debts ?? []) {
+    if (debt.accountId !== accountId || !debt.holdAccountId) continue;
+    out.push(...debtPaymentsIn(b, debt.holdAccountId, from, to).filter((x) => x.debt.id === debt.id));
+  }
+  return out;
 }
 
 /** A debt's first plan switches its payday amount to "pay exactly what's due". Call after adding the plan. */
@@ -365,6 +387,22 @@ export function suggestPlan(debt: Debt, amount: Cents): { type: PlanType; months
   if (debt.rules === 'mastercard') return { type: 'interest-free', months: 3 };
   if (debt.rules === 'gem') return amount >= 25000 ? { type: 'interest-free', months: 6 } : { type: 'balance' };
   return { type: 'balance' };
+}
+
+/** Gem plan lengths you can pick (interest-free 6 months, or equal-payment deals). */
+export const GEM_PLAN_MONTHS = [6, 12, 24, 36, 60] as const;
+
+/** Gem: 6 months is interest-free any payments; 12+ is equal monthly payments. */
+export function gemPlanType(months: number): PlanType {
+  return months <= 6 ? 'interest-free' : 'equal';
+}
+
+/**
+ * End date for a Gem plan from how many months are left (or the full length for a brand-new one),
+ * using Gem's 20th-of-month cycle.
+ */
+export function gemPlanEnds(today: ISODate, monthsLeft: number): ISODate {
+  return gemEndsFromMonthsLeft(today, monthsLeft);
 }
 
 /** What a debt is forecast to owe at the end of `date`, from its plans (unplanned balance stays as it is). */

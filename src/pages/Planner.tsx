@@ -12,7 +12,7 @@ import { WeeksView } from '../components/WeeksView';
 import { PayNav, useViewPeriod, ViewModes } from '../lib/period';
 import { clearOptimiseUndo, OptimiseModal, readOptimiseUndo, type OptimiseUndo } from '../components/OptimiseModal';
 import { existingExtras, undoAllocation } from '../lib/allocate';
-import { addDays, fmtDay, fmtShort, monthName, todayISO } from '../lib/dates';
+import { addDays, fmtDay, fmtShort, monthName, ordinal, todayISO } from '../lib/dates';
 import {
   averageSplit, convert, firstBudgetPay, isAuto, isSetAside, planFor, plannedAverage, shiftPeriod, upcomingPayPeriod, type View,
 } from '../lib/engine';
@@ -21,7 +21,7 @@ import { useBudget } from '../lib/store';
 import type { Cents, PaydayMode } from '../lib/types';
 
 // Loaded only when a document is chosen.
-const UploadFlow = lazy(() => import('../components/UploadFlow').then((m) => ({ default: m.UploadFlow })));
+const UploadQueue = lazy(() => import('../components/UploadFlow').then((m) => ({ default: m.UploadQueue })));
 
 const MODES_KEY = 'paydays.balance.modes';
 
@@ -41,7 +41,7 @@ export function Planner() {
   const [openCard, setOpenCard] = useState<string | null>(null);
   const [payEdit, setPayEdit] = useState<string | null>(null);
   // A payslip or other document being read (the same flow as the Add button), and the pay to show once it's saved.
-  const [job, setJob] = useState<ReadJob | null>(null);
+  const [jobs, setJobs] = useState<ReadJob[] | null>(null);
   const [jumpTo, setJumpTo] = useState<string | null>(null);
   // Last "Balance this pay": what changed and why, plus what to restore on Undo.
   const [optimiseOpen, setOptimiseOpen] = useState(false);
@@ -315,8 +315,12 @@ export function Planner() {
                   </span>
                 )}
               </div>
-              <input ref={slipRef} type="file" accept="application/pdf,image/*,.csv,text/csv" hidden
-                onChange={(e) => { const f = e.target.files?.[0]; if (f) setJob(startRead(f, budget)); e.target.value = ''; }} />
+              <input ref={slipRef} type="file" accept="application/pdf,image/*,.csv,text/csv" multiple hidden
+                onChange={(e) => {
+                  const files = [...(e.target.files ?? [])].slice(0, 12);
+                  if (files.length) setJobs(files.map((f) => startRead(f, budget)));
+                  e.target.value = '';
+                }} />
               {payEdit === null ? (
                 <b className={known ? '' : 'muted'}>{known ? cash(v(plan.pay)) : 'Not in yet'}</b>
               ) : (
@@ -337,10 +341,10 @@ export function Planner() {
               <b>{cash(totalBudgeted)}</b>
             </div>
           </div>
-          {job && (
-            <ErrorBoundary key={job.file.name + job.file.lastModified} onClose={() => { job.cancel(); setJob(null); }}>
+          {jobs && (
+            <ErrorBoundary key={jobs.map((j) => j.file.name + j.file.lastModified).join('|')} onClose={() => { jobs.forEach((j) => j.cancel()); setJobs(null); }}>
               <Suspense fallback={null}>
-                <UploadFlow job={job} onClose={() => setJob(null)} onPayslip={setJumpTo} />
+                <UploadQueue jobs={jobs} onClose={() => setJobs(null)} onPayslip={setJumpTo} />
               </Suspense>
             </ErrorBoundary>
           )}
@@ -521,6 +525,11 @@ export function Planner() {
               ? 0 : leftoverBeforeBudget(budget, a.account.id);
             const why = notes.find((n) => n.a.account.id === a.account.id)?.why ?? [];
             const isDebt = debtAccounts.has(a.account.id);
+            const debt = (budget.debts ?? []).find((d) => d.accountId === a.account.id);
+            const holdAcc = debt?.holdAccountId ? budget.accounts.find((x) => x.id === debt.holdAccountId) : undefined;
+            const holdNote = debt?.holdAccountId && holdAcc && debt.statementDay
+              ? `Stored in ${holdAcc.name} until the ${ordinal(debt.statementDay)}`
+              : undefined;
             const isGoal = goalAccounts.has(a.account.id);
             const isOpen = openCard === a.account.id;
             return (
@@ -529,6 +538,7 @@ export function Planner() {
                 aria-label={`${a.account.name}: details`} onClick={() => setOpenCard(a.account.id)}>
                 <div className="between nowrap">{icon}{pill}</div>
                 <p className="acc-name">{a.account.name}</p>
+                {holdNote && <p className="xs muted" style={{ margin: '2px 0 0' }}>{holdNote}</p>}
                 <div className="between nowrap bottom">
                   <p className={`amt ${amountClass}`}>{amount}</p>
                   <span className="acc-more" aria-hidden="true"><Icon name="info" size={18} /></span>
@@ -555,6 +565,12 @@ export function Planner() {
                       </div>
                       <b className={`fig ${amountClass}`}>{amount}</b>
                       <span className="small muted">{detail}</span>
+                      {holdNote && debt && (
+                        <span className="small">
+                          Held in <b>{holdAcc!.name}</b> until the {ordinal(debt.statementDay!)}
+                          {debt.statementDay ? ` — send to ${a.account.name} on or after that day, not on payday` : ''}.
+                        </span>
+                      )}
                       {adjusted && <span className="small">Adjusted this pay · usually {cash(a.usual!)}</span>}
                       {carry !== 0 && (
                         <span className={`small ${carry < 0 ? 'neg' : 'pos'}`}>

@@ -9,7 +9,7 @@ import { PaydayControl } from '../components/PaydayControl';
 import { TransactionList } from '../components/Transactions';
 import { nextColor } from '../lib/colors';
 import { addDays, fmtDay, fmtShort, monthName, ordinal, todayISO, type ISODate } from '../lib/dates';
-import { applyPayment, beforeStatement, debtAdvice, debtPay, debtPerPay, debtSchedules, exactForFirstPlan, gemPlan, historyOwed, offRecommended as isOffRecommended, owed, type DebtAdvice, PLAN_LABEL, plannedOwed, planSchedule, projectedOwed, recordHistory, suggestPlan, unplanned } from '../lib/debts';
+import { applyPayment, beforeStatement, debtAdvice, debtPay, debtPerPay, debtSchedules, exactForFirstPlan, GEM_PLAN_MONTHS, gemPlan, gemPlanEnds, gemPlanType, historyOwed, offRecommended as isOffRecommended, owed, type DebtAdvice, PLAN_LABEL, plannedOwed, planSchedule, projectedOwed, recordHistory, suggestPlan, unplanned } from '../lib/debts';
 import { periodContaining, planFor, upcomingPayPeriod } from '../lib/engine';
 import { DayPicker, useDayView } from '../components/DayPicker';
 import { cash, centsToInput, parseMoney } from '../lib/money';
@@ -150,7 +150,10 @@ export function Debts() {
               <AccIcon color={acc?.color} name={d.kind === 'person' || d.payroll ? 'send' : 'card'} />
               <div className="grow min0">
                 <h2 className="h2 clip">{d.name}</h2>
-                <p className="small muted clip">{KIND_LABEL[d.kind]}{d.rate ? ` · ${d.rate}% p.a.` : ''}</p>
+                <p className="small muted clip">
+                  {KIND_LABEL[d.kind]}{d.rate ? ` · ${d.rate}% p.a.` : ''}
+                  {d.holdAccountId ? ` · stored in ${budget.accounts.find((a) => a.id === d.holdAccountId)?.name ?? 'another account'} until the ${d.statementDay ? ordinal(d.statementDay) : 'statement'}` : ''}
+                </p>
               </div>
               <div className="acct-side">
                 {sourcePill(d)}
@@ -266,6 +269,11 @@ export function Debts() {
             <TransactionList items={d.transactions ?? []} card />
 
             {!d.payroll && <div style={{ borderTop: '1px solid var(--line)', paddingTop: 12 }}>
+              {d.holdAccountId && d.statementDay && (
+                <p className="small muted" style={{ marginBottom: 8 }}>
+                  Payday shows {cash(funded?.funded ?? 0)} for {d.name}; it’s stored in <b>{budget.accounts.find((a) => a.id === d.holdAccountId)?.name ?? 'another account'}</b> until the {ordinal(d.statementDay)}. Change that under Edit → details.
+                </p>
+              )}
               <PaydayControl accountId={d.accountId} sends={funded?.funded ?? 0} needs={funded?.need ?? 0}
                 autoLabel="Pay exactly what's due each payday"
                 autoHint="Adds up this pay's plan payments and Afterpay instalments." />
@@ -335,6 +343,17 @@ function PlanModal({ debt, plan, prefill, onClose, embedded }: { debt: Debt; pla
       if (sug.months) setMonths(String(sug.months));
     }
   }
+  function onMonths(v: string) {
+    setMonths(v);
+    const n = Number(v);
+    if (!Number.isFinite(n) || n <= 0) return;
+    if (debt.rules === 'gem') {
+      setType(gemPlanType(n));
+      setTypeTouched(true);
+      // Gem months end on the 20th: treat the chosen length as months still left from today.
+      setEnds(gemPlanEnds(today, n));
+    }
+  }
 
   const draft: DebtPlan | null = orig !== null && orig > 0 && rem !== null ? {
     id: plan?.id ?? 'draft', name: name || 'Purchase', type, original: orig, remaining: rem,
@@ -401,13 +420,15 @@ function PlanModal({ debt, plan, prefill, onClose, embedded }: { debt: Debt; pla
           </label>
           {(type === 'interest-free' || type === 'equal') && (
             <label className="field">Months
-              <select value={months} onChange={(e) => setMonths(e.target.value)}>
-                {[3, 6, 12, 18, 24, 36, 48, 60].map((m) => <option key={m} value={m}>{m} months</option>)}
+              <select value={months} onChange={(e) => onMonths(e.target.value)}>
+                {(debt.rules === 'gem' ? [...GEM_PLAN_MONTHS] : [3, 6, 12, 18, 24, 36, 48, 60]).map((m) => (
+                  <option key={m} value={m}>{m} months{debt.rules === 'gem' ? (m <= 6 ? ' · interest-free' : ' · equal payments') : ''}</option>
+                ))}
               </select>
             </label>
           )}
           {(type === 'interest-free' || type === 'equal') && (
-            <label className="field">Interest-free ends (optional)
+            <label className="field">{debt.rules === 'gem' ? 'Ends (Gem cycle on the 20th)' : 'Interest-free ends (optional)'}
               <input type="date" value={ends} onChange={(e) => setEnds(e.target.value)} />
             </label>
           )}
@@ -420,7 +441,7 @@ function PlanModal({ debt, plan, prefill, onClose, embedded }: { debt: Debt; pla
         <label className="field">Still owed today {plan ? '' : '(leave blank if nothing paid yet)'}
           <input inputMode="decimal" value={remaining} onChange={(e) => setRemaining(e.target.value)} placeholder={amount || '0.00'} />
         </label>
-        {debt.rules === 'gem' && <p className="small muted">Gem: purchases of $250 or more are 6 months interest-free. Some deals are 12, 24 or 36 months with equal payments.</p>}
+        {debt.rules === 'gem' && <p className="small muted">Gem: $250+ purchases are 6 months interest-free. Deals can be 12, 24, 36 or 60 months with equal payments. Pick the length to match the Gem app; the end date follows Gem’s month reset on the 20th.</p>}
         {debt.rules === 'mastercard' && <p className="small muted">Mastercard: every purchase is 3 months interest-free.</p>}
 
         {preview && (
@@ -452,14 +473,17 @@ function PlanModal({ debt, plan, prefill, onClose, embedded }: { debt: Debt; pla
 }
 
 export function DebtModal({ debt, onClose, onDelete, embedded }: { debt?: Debt; onClose: () => void; onDelete: (d: Debt) => void; embedded?: boolean }) {
-  const { update } = useBudget();
+  const { budget, update } = useBudget();
   const [name, setName] = useState(debt?.name ?? '');
   const [kind, setKind] = useState<Debt['kind']>(debt?.kind ?? 'card');
   const [rules, setRules] = useState<string>(debt?.rules ?? '');
   const [limit, setLimit] = useState(debt?.limit ? centsToInput(debt.limit) : '');
   const [rate, setRate] = useState(debt?.rate !== undefined ? String(debt.rate) : '');
   const [stmt, setStmt] = useState(debt?.statementDay ? String(debt.statementDay) : '');
+  const [hold, setHold] = useState(debt?.holdAccountId ?? '');
   const [err, setErr] = useState('');
+  // Bank accounts that can hold a card payment until statement day (not this debt's own payday account).
+  const holdOptions = budget.accounts.filter((a) => !a.archived && a.kind === 'bank' && a.id !== budget.settings.payAccountId && a.id !== debt?.accountId);
 
   function save() {
     if (!name.trim()) return setErr('Enter a name.');
@@ -470,13 +494,16 @@ export function DebtModal({ debt, onClose, onDelete, embedded }: { debt?: Debt; 
     const r = kind === 'bnpl' ? debt?.rate : rate.trim() === '' ? undefined : Number(rate);
     const sd = kind !== 'card' || stmt.trim() === '' ? undefined : Number(stmt);
     const rl = (kind === 'card' || kind === 'bnpl' ? rules || undefined : undefined) as Debt['rules'];
+    const holdId = kind === 'card' && sd && hold ? hold : undefined;
     if (sd !== undefined && (!Number.isInteger(sd) || sd < 1 || sd > 28)) return setErr('Statement day should be a day of the month from 1 to 28.');
     if (r !== undefined && (Number.isNaN(r) || r < 0 || r > 100)) return setErr('Interest rate should be between 0 and 100%.');
+    if (hold && !sd) return setErr('Set a statement day to store the payment in another account until then.');
     update((b) => {
       b.debts = b.debts ?? [];
       if (debt) {
         const d = b.debts.find((x) => x.id === debt.id)!;
-        Object.assign(d, { name: name.trim(), kind, rules: rl, limit: lim, rate: r, statementDay: sd });
+        Object.assign(d, { name: name.trim(), kind, rules: rl, limit: lim, rate: r, statementDay: sd, holdAccountId: holdId });
+        if (!holdId) delete d.holdAccountId;
         const a = b.accounts.find((x) => x.id === d.accountId);
         if (a) a.name = name.trim();
       } else {
@@ -484,7 +511,7 @@ export function DebtModal({ debt, onClose, onDelete, embedded }: { debt?: Debt; 
         const groupId = b.groups.find((g) => g.id === 'debt')?.id ?? b.groups.find((g) => g.bucket === 'savings')?.id ?? b.groups[0]?.id ?? '';
         b.accounts.push({ id, name: name.trim(), kind: 'external', color: nextColor(b.accounts.map((x) => x.color)), groupId });
         b.split.push({ accountId: id, amount: 0, mode: 'exact' });
-        b.debts.push({ id, name: name.trim(), kind, rules: rl, accountId: id, limit: lim, rate: r, statementDay: sd, plans: [] });
+        b.debts.push({ id, name: name.trim(), kind, rules: rl, accountId: id, limit: lim, rate: r, statementDay: sd, ...(holdId ? { holdAccountId: holdId } : {}), plans: [] });
       }
       return b;
     });
@@ -509,7 +536,10 @@ export function DebtModal({ debt, onClose, onDelete, embedded }: { debt?: Debt; 
           </label>
           {(kind === 'card' || kind === 'bnpl') && (
             <label className="field">Purchase rules
-              <select value={rules} onChange={(e) => setRules(e.target.value)}>
+              <select value={rules} onChange={(e) => {
+                setRules(e.target.value);
+                if (e.target.value === 'gem' && !stmt.trim()) setStmt('21');
+              }}>
                 <option value="">None</option>
                 <option value="gem">Gem ($250+ is 6 months interest-free)</option>
                 <option value="mastercard">3 months interest-free on everything</option>
@@ -535,7 +565,15 @@ export function DebtModal({ debt, onClose, onDelete, embedded }: { debt?: Debt; 
             </label>
           )}
         </div>
-        {kind === 'card' && <p className="small muted">With a statement day, payments are planned for that day each month (Gem: the 21st). Paying earlier can go on the oldest plan instead of being split.</p>}
+        {kind === 'card' && (
+          <label className="field">Store payment in until statement day
+            <select value={hold} onChange={(e) => setHold(e.target.value)} disabled={!stmt.trim()}>
+              <option value="">Send on payday (no holding account)</option>
+              {holdOptions.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+            </select>
+          </label>
+        )}
+        {kind === 'card' && <p className="small muted">With a statement day, payments are planned for that day each month (Gem: the 21st). Store the payment in Misc bills (or similar) so payday still shows this card’s amount, but the money sits there until the {stmt.trim() || '21'}st — paying Gem earlier can go on the oldest plan instead of this month’s payment.</p>}
         {err && <p className="error" role="alert">{err}</p>}
         <div className="between">
           {debt ? <button className="btn ghost danger" onClick={() => { if (confirm(`Remove ${debt.name} and its plans?`)) onDelete(debt); }}>Remove debt</button> : <span />}

@@ -44,6 +44,27 @@ export function addMonths(iso: ISODate, n: number): ISODate {
   return dateInMonth(d.getUTCFullYear(), d.getUTCMonth() + n, d.getUTCDate());
 }
 
+/**
+ * Gem Visa's billing cycle ends on the 20th. The next cycle-end on or after `from`
+ * (the 20th of this month if `from` is on or before the 20th, otherwise next month's).
+ */
+export function gemCycleEndOnOrAfter(from: ISODate): ISODate {
+  const d = toDate(from);
+  const y = d.getUTCFullYear(), m = d.getUTCMonth(), day = d.getUTCDate();
+  return day <= 20 ? dateInMonth(y, m, 20) : dateInMonth(y, m + 1, 20);
+}
+
+/**
+ * When a Gem plan with `monthsLeft` remaining months ends: the Nth Gem cycle-end
+ * on or after today (Gem resets its month on the 20th).
+ */
+export function gemEndsFromMonthsLeft(today: ISODate, monthsLeft: number): ISODate {
+  const n = Math.max(1, Math.round(monthsLeft));
+  let end = gemCycleEndOnOrAfter(today);
+  for (let i = 1; i < n; i++) end = addMonths(end, 1);
+  return end;
+}
+
 /** 1st, 2nd, 3rd, 4th … 21st, 22nd … */
 export function ordinal(n: number): string {
   const t = n % 100;

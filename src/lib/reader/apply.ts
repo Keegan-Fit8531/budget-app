@@ -157,6 +157,8 @@ export function applyStatement(b: Budget, debtId: string, s: Pick<Extract<Propos
     plan.remaining = u.remaining;
     plan.asOf = asOf;
     if (u.ends) plan.ends = u.ends;
+    if (u.months) plan.months = u.months;
+    if (u.type) plan.type = u.type;
   }
   for (const np of s.newPlans) {
     if (debt.plans.some((x) => x.id === np.id)) continue;
