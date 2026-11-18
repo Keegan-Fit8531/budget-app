@@ -1,6 +1,6 @@
 import { nextColor } from '../colors';
 import { fmtDay, fmtShort, fmtSpan, monthName, type ISODate } from '../dates';
-import { debtPay, exactForFirstPlan, owed, planEnds, recordHistory, settleDue } from '../debts';
+import { applyPayment, debtPay, exactForFirstPlan, owed, planEnds, recordHistory, settleDue } from '../debts';
 import { recordPayslip } from '../documents';
 import { paydayFor, planFor, recordPayday } from '../engine';
 import { cash } from '../money';
@@ -166,7 +166,13 @@ export function applyStatement(b: Budget, debtId: string, s: Pick<Extract<Propos
   const hist = (debt.history ?? []).filter((h) => h.asOf !== asOf);
   hist.push({ amount: owed(debt), asOf });
   debt.history = hist.sort((x, y) => x.asOf.localeCompare(y.asOf)).slice(-500);
-  if (asOf < today) settleDue(debt, b.settings, today, debtPay(b, debt));
+  if (asOf < today) {
+    settleDue(debt, b.settings, today, debtPay(b, debt));
+    // Payments seen leaving your bank after this statement's date aren't in it: what they paid over the
+    // plan comes off again, so the statement and the bank together give the latest figure.
+    const extra = (debt.bankPayments ?? []).filter((x) => x.date > asOf && x.counted > 0);
+    for (const x of extra) applyPayment(debt, x.counted, b.settings, x.date <= today ? x.date : today);
+  }
   return debt;
 }
 

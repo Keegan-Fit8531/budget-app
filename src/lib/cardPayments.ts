@@ -54,16 +54,44 @@ export function knownSince(debt: Debt): ISODate | undefined {
   return debt.plans.map((p) => p.purchaseDate).filter((d): d is ISODate => !!d).sort()[0];
 }
 
+/** The most payments kept on a card. */
+const KEPT = 500;
+
+/**
+ * The transactions among `txns` that pay a card but aren't noted on it yet. Every stored transaction can
+ * be given (not only ones just added): a payment that was already in the account before payments were
+ * looked for, or before the account's history was trimmed, is still found once. Same-day, same-amount
+ * payments count separately.
+ */
+function unseen(b: Budget, accountId: string, txns: Txn[]): Txn[] {
+  const have = new Map<string, number>();
+  for (const d of watched(b)) for (const p of d.bankPayments ?? []) {
+    const k = `${d.id}|${p.date}|${p.amount}|${p.from}`;
+    have.set(k, (have.get(k) ?? 0) + 1);
+  }
+  return txns.filter((t) => {
+    const debt = cardPaid(b, t);
+    if (!debt) return false;
+    // A card's oldest noted payments are dropped once it has many: don't note those again.
+    const kept = debt.bankPayments ?? [];
+    if (kept.length >= KEPT && t.date < kept[0].date) return false;
+    const k = `${debt.id}|${t.date}|${-t.amount}|${accountId}`;
+    const n = have.get(k) ?? 0;
+    if (n > 0) { have.set(k, n - 1); return false; }
+    return true;
+  });
+}
+
 export interface SeenPayment { debt: string; amount: Cents; date: ISODate; from: string; counted: Cents }
 
 /**
- * Note each payment to a card among a bank account's new transactions, and take what it pays over
- * the planned payments around its date off what the card owes. Call with only the transactions just
- * added (so a payment is never counted twice).
+ * Note each payment to a card among a bank account's transactions that isn't noted yet, and take what
+ * it pays over the planned payments around its date off what the card owes (only if it was paid after
+ * what's owed was last checked). A payment already noted is never counted twice.
  */
-export function recordCardPayments(b: Budget, accountId: string, added: Txn[], today: ISODate): SeenPayment[] {
+export function recordCardPayments(b: Budget, accountId: string, txns: Txn[], today: ISODate): SeenPayment[] {
   const out: SeenPayment[] = [];
-  for (const t of added) {
+  for (const t of unseen(b, accountId, [...txns].sort((x, y) => x.date.localeCompare(y.date)))) {
     const debt = cardPaid(b, t);
     if (!debt) continue;
     const amount = -t.amount;
@@ -91,7 +119,7 @@ export function recordCardPayments(b: Budget, accountId: string, added: Txn[], t
     if (since && since >= t.date) counted = 0;
     if (counted > 0) applyPayment(debt, counted, b.settings, t.date <= today ? t.date : today);
     debt.bankPayments = [...(debt.bankPayments ?? []), { date: t.date, amount, from: accountId, counted, ...(planned.length ? { planned } : {}) }]
-      .sort((x, y) => x.date.localeCompare(y.date)).slice(-200);
+      .sort((x, y) => x.date.localeCompare(y.date)).slice(-KEPT);
     out.push({ debt: debt.name, amount, date: t.date, from: accountId, counted });
   }
   return out;
