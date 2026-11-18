@@ -243,7 +243,10 @@ export function asideNames(b: Budget, accountId: string): string {
   return names.length <= 1 ? names[0] ?? 'later costs' : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
 }
 
-/** The pays automatic balancing covers: from the next payday on (a pay already split is left as it is). */
+/**
+ * The pays automatic balancing covers: today's pay while it is still payday, then the next ones.
+ * From the day after payday that pay is left as it is (already split).
+ */
 export function autoPays(b: Budget, today: ISODate = todayISO()): Period[] {
   const out: Period[] = [];
   let p = upcomingPayPeriod(b, today);

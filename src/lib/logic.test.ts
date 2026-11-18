@@ -4,9 +4,9 @@ import { applyAllocation, existingExtras, undoAllocation } from './allocate';
 import { addDays } from './dates';
 import { applyPayment, debtPay, debtPaymentsIn, debtPerPay, debtSchedules, owed, projectedOwed, paidIn, planSchedule, recordHistory, settleDue } from './debts';
 import { classifyText, matchDebt, parseDate, parseStatementText, recordStatement } from './documents';
-import { averageNeed, clearPaydayMove, periodContaining, planFor, recordPayday, setAsidePerPay, shiftPeriod } from './engine';
+import { averageNeed, clearPaydayMove, periodContaining, planFor, recordPayday, setAsidePerPay, shiftPeriod, upcomingPayPeriod } from './engine';
 import { projectedAt, removeSpend, spendFromGoal } from './goalcosts';
-import { autoBalance, balancedMode, balancePay } from './rebalance';
+import { autoBalance, autoPays, balancedMode, balancePay } from './rebalance';
 import { accountHistory, recordCost, removeCost, setBalance } from './history';
 import { parseMoney } from './money';
 import { forecast } from './savings';
@@ -60,6 +60,15 @@ describe('pay periods', () => {
     const s = { paydayDay: 31, saturday: 'monday' as const, sunday: 'monday' as const };
     expect(periodContaining('2025-06-01', s)).toMatchObject({ start: '2025-04-30', end: '2025-06-01', nextPayday: '2025-06-02' });
     expect(periodContaining('2025-06-02', s).start).toBe('2025-06-02');
+  });
+
+  it('on payday the current pay is still upcoming (pay can land late); the day after it is not', () => {
+    const b = budget();
+    expect(upcomingPayPeriod(b, '2026-11-18').start).toBe('2026-11-19');
+    expect(upcomingPayPeriod(b, '2026-11-19').start).toBe('2026-11-19');
+    expect(upcomingPayPeriod(b, '2026-11-20').start).toBe('2026-12-18');
+    expect(autoPays(b, '2026-11-19')[0].start).toBe('2026-11-19');
+    expect(autoPays(b, '2026-11-20')[0].start).toBe('2026-12-18');
   });
 });
 
