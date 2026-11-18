@@ -494,8 +494,8 @@ export function Planner() {
                 {ends !== undefined && (
                   <span className={`pill ${ends < 0 ? 'bad' : ''}`} title={endTip}>
                     {ends < 0
-                      ? `${cash(-ends, { whole: true })} short`
-                      : steadyMode ? `Buffer ${cash(ends, { whole: true })}` : `Ends ${cash(ends, { whole: true })}`}
+                      ? `${cash(-ends)} short`
+                      : steadyMode ? `Buffer ${cash(ends)}` : `Ends ${cash(ends)}`}
                   </span>
                 )}
               </>

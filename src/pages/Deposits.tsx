@@ -231,7 +231,7 @@ function AccountSection({ account: a, open, bare, onToggle, periodNeed, periodSe
                     <div className="tip wrap" style={{ alignItems: 'center' }}>
                       <Icon name="bulb" />
                       <span style={{ flex: '1 1 220px' }}>
-                        A fixed amount goes short in 5-week pays and builds up in 4-week ones. <b>Same each pay</b> evens it out: about <b>{cash(Math.ceil(avgNeed / 100) * 100)}</b> every pay, with 4-week pays leaving enough over for the 5th week.
+                        A fixed amount goes short in 5-week pays and builds up in 4-week ones. <b>Same each pay</b> evens it out: about <b>{cash(avgNeed)}</b> every pay, with 4-week pays leaving enough over for the 5th week.
                       </span>
                       <button className="btn small primary" onClick={() => setMode('smooth')}>Even it out</button>
                     </div>
@@ -243,9 +243,9 @@ function AccountSection({ account: a, open, bare, onToggle, periodNeed, periodSe
                 <div className="tip">
                   <Icon name="bulb" />
                   <span>
-                    {steady === Math.ceil(avgNeed / 100) * 100
+                    {steady === avgNeed
                       ? <>Sends <b>{cash(steady)}</b> every payday.</>
-                      : <>Sends <b>{cash(steady)}</b> next payday, then usually <b>{cash(Math.ceil(avgNeed / 100) * 100)}</b>. {steady > avgNeed ? 'The extra covers earlier transfers and leaves enough for the next 5-week pay, so later pays stay level.' : 'A little less while there\u2019s extra in the account.'}</>}
+                      : <>Sends <b>{cash(steady)}</b> next payday, then usually <b>{cash(avgNeed)}</b>. {steady > avgNeed ? 'The extra covers earlier transfers and leaves enough for the next 5-week pay, so later pays stay level.' : 'A little less while there\u2019s extra in the account.'}</>}
                     {' '}4-week periods leave a little over that covers the 5th week, so the account never goes below $0.
                     {hasBalance
                       ? ' Worked out from the balance in Accounts, and it updates when you change it.'
