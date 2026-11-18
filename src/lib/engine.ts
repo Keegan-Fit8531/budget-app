@@ -221,17 +221,70 @@ function paydayFrom(date: ISODate, s: PayRules): ISODate {
   return p.start === date ? date : p.nextPayday;
 }
 
+/**
+ * Spare in an account for put-aside money, without calling depositFor (avoids recursion).
+ * Entered balance, less bills still to come this pay. Undefined when no balance is entered.
+ */
+export function asideSpareNow(b: Budget, accountId: string, today: ISODate = todayISO()): Cents | undefined {
+  const entry = b.balances?.[accountId];
+  if (!entry || entry.asOf > today) return undefined;
+  let bal = entry.amount;
+  if (entry.asOf < today) {
+    // Roll forward by bills only (deposits would recurse through set-asides).
+    bal -= b.items
+      .filter((i) => i.accountId === accountId && !isSetAside(i))
+      .reduce((t, i) => t + i.amount * itemDates(i, addDays(entry.asOf, 1), addDays(today, -1), b.settings).length, 0);
+    bal -= debtPaymentsIn(b, accountId, addDays(entry.asOf, 1), addDays(today, -1)).reduce((t, x) => t + x.amount, 0);
+  }
+  const period = periodContaining(today, b.settings);
+  const toCome = b.items
+    .filter((i) => i.accountId === accountId && !isSetAside(i))
+    .reduce((t, i) => t + i.amount * itemDates(i, today, period.end, b.settings).filter((d) => d >= today).length, 0)
+    + debtPaymentsIn(b, accountId, today, period.end).reduce((t, x) => t + x.amount, 0);
+  return Math.max(0, bal - toCome);
+}
+
 /** What a payday puts aside in an account: each set-aside from the first payday on or after its start, up to its end. */
-export function setAsidesOn(b: Pick<Budget, 'items' | 'settings'>, accountId: string, payday: ISODate): { item: Item; amount: Cents }[] {
-  return b.items
+export function setAsidesOn(
+  b: Budget,
+  accountId: string,
+  payday: ISODate,
+  opts?: { spare?: Cents; today?: ISODate },
+): { item: Item; amount: Cents }[] {
+  const list = b.items
     .filter((i) => i.accountId === accountId && isSetAside(i) && i.start <= payday && (!i.end || payday <= i.end)
       && (i.frequency !== 'once' || paydayFrom(i.start, b.settings) === payday))
     .map((item) => ({ item, amount: setAsidePerPay(item) }));
+  if (!list.some((x) => x.item.maxSaved && x.item.maxSaved > 0)) return list;
+
+  // Cap each maxSaved item so payday stops topping up once spare is at the cap.
+  let spare = opts?.spare;
+  if (spare === undefined) spare = asideSpareNow(b, accountId, opts?.today ?? todayISO());
+  if (spare === undefined) return list; // no balance entered: keep putting aside
+
+  const capped = list.filter((x) => x.item.maxSaved && x.item.maxSaved > 0);
+  const uncapped = list.filter((x) => !(x.item.maxSaved && x.item.maxSaved > 0));
+  // Attribute current spare to capped items in name order, each up to its max.
+  let left = spare;
+  const built = new Map<string, Cents>();
+  for (const x of [...capped].sort((a, b) => a.item.name.localeCompare(b.item.name))) {
+    const take = Math.min(left, x.item.maxSaved!);
+    built.set(x.item.id, take);
+    left -= take;
+  }
+  return [
+    ...capped.map((x) => {
+      const have = built.get(x.item.id) ?? 0;
+      const room = Math.max(0, x.item.maxSaved! - have);
+      return { item: x.item, amount: Math.min(x.amount, room) };
+    }),
+    ...uncapped,
+  ];
 }
 
 /** The total a payday puts aside in an account. */
-export function setAsideOn(b: Pick<Budget, 'items' | 'settings'>, accountId: string, payday: ISODate): Cents {
-  return setAsidesOn(b, accountId, payday).reduce((t, x) => t + x.amount, 0);
+export function setAsideOn(b: Budget, accountId: string, payday: ISODate, opts?: { spare?: Cents; today?: ISODate }): Cents {
+  return setAsidesOn(b, accountId, payday, opts).reduce((t, x) => t + x.amount, 0);
 }
 
 export function hasSetAsides(b: Pick<Budget, 'items'>, accountId: string): boolean {
@@ -351,7 +404,8 @@ export function planFor(b: Budget, period: Period, today: ISODate = todayISO()):
       breakdown.push({ item, count: 1 });
     }
     // Money put aside on payday (a WOF, tyres): part of what the account needs, though nothing is paid out.
-    for (const x of setAsidesOn(b, account.id, period.start)) {
+    for (const x of setAsidesOn(b, account.id, period.start, { today })) {
+      if (x.amount <= 0) continue;
       const item: Item = { ...x.item, id: `aside-${x.item.id}`, amount: x.amount, frequency: 'once', start: period.start, end: undefined };
       dues.push({ item, date: period.start });
       breakdown.push({ item, count: 1 });

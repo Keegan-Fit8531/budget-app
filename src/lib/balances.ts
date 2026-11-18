@@ -1,7 +1,7 @@
 import { addDays, todayISO, type ISODate } from './dates';
 import { accountHasPlans, debtPaymentsIn, debtPay, heldDebtPaymentsIn, isHoldDisplayAccount, projectedOwed } from './debts';
 import {
-  averageNeed, firstBudgetPay, hasSetAsides, isSetAside, itemDates, periodContaining, setAsideOn, setAsidesOn, shiftPeriod, type Period,
+  asideSpareNow, averageNeed, firstBudgetPay, hasSetAsides, isSetAside, itemDates, periodContaining, setAsideOn, setAsidesOn, shiftPeriod, type Period,
 } from './engine';
 import { accountHasGoals, savingsNeedIn } from './savings';
 import type { Budget, Cents, PaydayMode, SplitLine } from './types';
@@ -46,8 +46,15 @@ export function fundedOut(b: Budget, accountId: string, from: ISODate, to: ISODa
   const s = b.settings;
   let p = periodContaining(from, s);
   if (p.start < from) p = shiftPeriod(p, 1, s);
+  // Running spare so maxSaved caps apply across several pays without re-reading the same balance.
+  let spare = asideSpareNow(b, accountId, from);
   for (; p.start <= to; p = shiftPeriod(p, 1, s)) {
-    for (const x of setAsidesOn(b, accountId, p.start)) out.push({ date: p.start, amount: x.amount, name: x.item.name });
+    const asides = setAsidesOn(b, accountId, p.start, spare === undefined ? undefined : { spare });
+    for (const x of asides) {
+      if (x.amount <= 0) continue;
+      out.push({ date: p.start, amount: x.amount, name: x.item.name });
+      if (spare !== undefined) spare += x.amount;
+    }
   }
   return out.sort((x, y) => x.date.localeCompare(y.date) || y.amount - x.amount);
 }

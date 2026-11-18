@@ -532,6 +532,25 @@ describe('automatic balancing', () => {
   });
 });
 
+describe('max saved on money put aside', () => {
+  it('stops adding once spare after bills reaches the cap (e.g. Haircut $60)', () => {
+    const b = budget();
+    b.accounts.push({ id: 'bills', name: 'Misc bills', kind: 'bank', color: '#000', groupId: 'needs' });
+    b.split.push({ accountId: 'bills', amount: 0, mode: 'exact' });
+    b.items.push(
+      { id: 'power', name: 'Power', amount: 10000, frequency: 'monthly', start: '2026-11-25', accountId: 'bills' },
+      { id: 'cut', name: 'Haircut', amount: 2000, frequency: 'monthly', start: '2026-11-01', accountId: 'bills', setAside: true, maxSaved: 6000 },
+    );
+    // $100 bill still to come + $60 already aside → spare for Haircut is $60 → add nothing.
+    b.balances = { bills: { amount: 16000, asOf: '2026-11-14' } };
+    const p = periodContaining('2026-11-19', b.settings);
+    expect(depositFor(b, 'bills', p, '2026-11-14')).toBe(10000);
+    // Only $40 aside so far → still room for $20.
+    b.balances = { bills: { amount: 14000, asOf: '2026-11-14' } };
+    expect(depositFor(b, 'bills', p, '2026-11-14')).toBe(12000);
+  });
+});
+
 describe('money put aside (a car fund)', () => {
   const today = '2026-11-14';
   /** A car account: $130 a month for maintenance and tyres, and $70 a month for the WOF, both put aside. */

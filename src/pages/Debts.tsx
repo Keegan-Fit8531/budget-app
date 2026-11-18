@@ -215,10 +215,10 @@ export function Debts() {
                 <div className="row top gap-8">
                   <Icon name="bulb" />
                   <span>
-                    Gem splits each payment itself:{' '}
-                    {gem.instalmentsDue > 0 && <><b>equal-payment plans' monthly amounts first</b> ({cash(gem.instalmentsDue)}), then </>}
-                    other purchases{unplanned(d) > 0 ? ` (${cash(unplanned(d))})` : ''}, then <b>interest-free plans in order of expiry date</b>, soonest first.
-                    You can't choose which plan a payment goes to.
+                    <b>{cash(gem.recommended)}</b> a pay clears interest-free purchases before they end.
+                    Gem’s own minimum is only {cash(gem.minimum)}
+                    {gem.instalmentsDue > 0 ? ` (including ${cash(gem.instalmentsDue)} for equal-payment plans)` : ''}.
+                    Gem applies each payment itself — you can’t pick which plan it goes to.
                   </span>
                 </div>
                 <div className="trio">
@@ -227,7 +227,7 @@ export function Debts() {
                   <div className="stat" style={{ background: 'var(--card)' }}><span className="small muted">You pay</span><b className={gem.perPay < gem.recommended ? 'neg' : ''}>{cash(gem.perPay)}</b><span className="xs muted">a pay</span></div>
                 </div>
                 {gem.perPay < gem.recommended && (
-                  <span className="small error">At {cash(gem.perPay)} a pay, some interest-free plans won't be cleared in time. See the warnings below.</span>
+                  <span className="small error">At {cash(gem.perPay)} a pay, some interest-free plans won’t clear in time.</span>
                 )}
               </div>
             )}

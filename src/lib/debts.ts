@@ -568,6 +568,18 @@ function gemBuckets(debt: Debt, start: ISODate): Bucket[] {
   return out;
 }
 
+/** Copy of buckets with leftovers scaled to the card balance (for the recommended pay only). */
+function gemBucketsForRecommend(debt: Debt, start: ISODate): Bucket[] {
+  const out = gemBuckets(debt, start).map((b) => ({ ...b, plan: { ...b.plan } }));
+  const total = out.reduce((t, b) => t + b.left, 0);
+  const bal = owed(debt);
+  if (total > bal && total > 0 && bal >= 0) {
+    const scale = bal / total;
+    for (const b of out) b.left = Math.round(b.left * scale);
+  }
+  return out;
+}
+
 /** Split one payment across the buckets in Gem's order. Mutates `left`; returns the amount each bucket got. */
 function gemSplit(buckets: Bucket[], amount: Cents, date: ISODate): Map<Bucket, Cents> {
   const got = new Map<Bucket, Cents>();
@@ -609,7 +621,10 @@ export function gemPlan(debt: Debt, s: Settings, perPayIn?: PerPay): GemPlanResu
   const buckets = gemBuckets(debt, start);
   const inst = buckets.filter((b) => b.kind === 'instalment');
   const instalmentsDue = inst.reduce((t, b) => t + Math.min(b.left, b.monthly), 0);
-  const rest = buckets.filter((b) => b.kind !== 'instalment').reduce((t, b) => t + b.left, 0);
+  // Minimum uses the real card balance when plans are overstated.
+  const bal = owed(debt);
+  const planRest = buckets.filter((b) => b.kind !== 'instalment').reduce((t, b) => t + b.left, 0);
+  const rest = Math.min(planRest, Math.max(0, bal - instalmentsDue));
   const minimum = instalmentsDue + (rest < 2000 ? rest : Math.max(2000, Math.round(rest * 0.03)));
 
   // Payment dates: each statement day (paying before the statement puts it all on the oldest plan),
@@ -627,14 +642,17 @@ export function gemPlan(debt: Debt, s: Settings, perPayIn?: PerPay): GemPlanResu
   }
 
   // Recommended: instalments due + enough that, paying soonest-expiry first, each plan is clear in time.
-  let cum = buckets.filter((b) => b.kind === 'other').reduce((t, b) => t + b.left, 0);
+  // Use balance-scaled leftovers so overstated plan remainings don't inflate the figure.
+  const forRec = gemBucketsForRecommend(debt, start);
+  const instRec = forRec.filter((b) => b.kind === 'instalment').reduce((t, b) => t + Math.min(b.left, b.monthly), 0);
+  let cum = forRec.filter((b) => b.kind === 'other').reduce((t, b) => t + b.left, 0);
   let need = cum; // other purchases: clear them on the first payment
-  for (const b of buckets.filter((b) => b.kind === 'promo').sort((a, b) => a.end.localeCompare(b.end))) {
+  for (const b of forRec.filter((b) => b.kind === 'promo').sort((a, b) => a.end.localeCompare(b.end))) {
     cum += b.left;
     const n = paydays.filter((d) => d < b.end).length;
     need = Math.max(need, n > 0 ? Math.ceil(cum / n) : cum);
   }
-  const recommended = Math.ceil(Math.max(instalmentsDue + need, minimum) / 100) * 100;
+  const recommended = Math.ceil(Math.max(instRec + need, minimum) / 100) * 100;
   const amount = usualPay(perPayIn) ?? recommended;
   const more = lastOneOff(perPayIn);
 
@@ -761,9 +779,10 @@ export function debtAdvice(b: Budget, debt: Debt, period: Period): DebtAdvice {
 
   if (debt.rules === 'gem') {
     const g = gemPlan(debt, s);
+    const plansHigh = plannedOwed(debt) > owed(debt) + 100;
     return {
       ...base, recommended: g.recommended, minimum: g.minimum, apply: { mode: 'exact' },
-      reason: `The steady amount that clears every interest-free plan before it expires, since Gem pays the soonest-expiring plan first.${debt.statementDay ? ` Pay it on or after the ${ordinal(debt.statementDay)} (statement day), not before.` : ''} Gem's minimum is ${fmt(g.minimum)}.`,
+      reason: `Clears every interest-free purchase before it ends (minimum is only ${fmt(g.minimum)}).${debt.statementDay ? ` Send on/after the ${ordinal(debt.statementDay)}.` : ''}${plansHigh ? ' Plan amounts still owed look higher than the card balance — update them to sharpen this figure.' : ''}`,
     };
   }
 

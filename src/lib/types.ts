@@ -66,6 +66,11 @@ export interface Item {
    * It starts on the first payday on or after `start`.
    */
   setAside?: boolean;
+  /**
+   * Cap for money put aside (e.g. Haircut $60): once the account already has this much spare after
+   * covering bills, payday stops adding more for this cost until some is spent.
+   */
+  maxSaved?: Cents;
 }
 
 /** How much of each pay is sent to each account on payday. */

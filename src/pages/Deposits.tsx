@@ -326,7 +326,7 @@ function AccountSection({ account: a, open, bare, onToggle, periodNeed, periodSe
                       {i.name}
                       <span className="small muted block">
                         {kept
-                          ? `${FREQ_LABEL[i.frequency]} · put aside, ${cash(setAsidePerPay(i))} a pay${i.end && i.end < today ? ' · stopped' : i.start > today ? ` · from ${fmtShort(i.start)}` : ''}`
+                          ? `${FREQ_LABEL[i.frequency]} · put aside, ${cash(setAsidePerPay(i))} a pay${i.maxSaved ? ` · max ${cash(i.maxSaved)}` : ''}${i.end && i.end < today ? ' · stopped' : i.start > today ? ` · from ${fmtShort(i.start)}` : ''}`
                           : <>
                             {FREQ_LABEL[i.frequency]}{next ? ` · next ${fmtShort(next)}` : ' · finished'}
                             {i.frequency !== 'once' && i.frequency !== 'monthly' ? ` · ${cash(convert(i.amount, i.frequency, 'month'))}/mo avg` : ''}
