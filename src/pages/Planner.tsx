@@ -1,7 +1,7 @@
 import { Fragment, lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { startRead, type ReadJob } from '../lib/reader/job';
 import { applyBalance, autoPays, balancePay, restoreOverrides, type BalanceResult } from '../lib/rebalance';
-import { accountMode, leftoverBeforeBudget, topsUp } from '../lib/balances';
+import { accountMode, leftoverBeforeBudget, nextBufferUse, topsUp } from '../lib/balances';
 import { Donut, Legend } from '../components/Donut';
 import { Icon } from '../components/Icon';
 import { ErrorBoundary } from '../components/ErrorBoundary';
@@ -449,6 +449,9 @@ export function Planner() {
             // With a balance entered, the pill shows what the account ends the period with.
             const ends = !avg ? a.endBalance : undefined;
             const diff = ends !== undefined ? null : a.diff === null || auto ? null : funded - need;
+            // Steady (e.g. rent): what's left is buffer for a 5-week pay, not spare cash.
+            const bufferFor = ends !== undefined && ends > 0 && steadyMode
+              ? nextBufferUse(budget, a.account.id, period, 13, today) : undefined;
             // Money put aside on payday (a WOF, tyres) isn't a payment: it's counted on its own.
             const paying = a.dues.filter((d) => !isSetAside(d.item));
             const asideTotal = a.need - paying.reduce((t, d) => t + d.item.amount, 0);
@@ -477,6 +480,11 @@ export function Planner() {
             // Everything about the account beyond its amount lives in a pop-up, opened by tapping the card.
             const adjusted = a.usual !== undefined && a.usual !== a.funded;
             // Only a problem (short) or something to act on (spare) is coloured; the rest stays quiet.
+            const endTip = ends === undefined ? ''
+              : ends < 0 ? 'Estimated balance at the end of this pay period'
+              : bufferFor
+                ? `Buffer for the ${fmtShort(bufferFor.period.start)} pay: that pay needs ${cash(bufferFor.need)}, gets ${cash(bufferFor.deposit)}`
+                : steadyMode ? 'Buffer for pays with an extra week' : 'Estimated balance at the end of this pay period';
             const pill = (
               <>
                 {diff !== null && diff !== 0 && (
@@ -484,8 +492,10 @@ export function Planner() {
                 )}
                 {diff === 0 && <span className="pill">Exactly right</span>}
                 {ends !== undefined && (
-                  <span className={`pill ${ends < 0 ? 'bad' : ''}`} title="Estimated balance at the end of this pay period">
-                    {ends < 0 ? `${cash(-ends, { whole: true })} short` : `Ends ${cash(ends, { whole: true })}`}
+                  <span className={`pill ${ends < 0 ? 'bad' : ''}`} title={endTip}>
+                    {ends < 0
+                      ? `${cash(-ends, { whole: true })} short`
+                      : steadyMode ? `Buffer ${cash(ends, { whole: true })}` : `Ends ${cash(ends, { whole: true })}`}
                   </span>
                 )}
               </>
