@@ -1177,7 +1177,8 @@ describe('reading documents: card app screenshots', () => {
       { date: '2026-11-14', description: 'Harvey Norman Westgate', amount: '499.00' },
       { date: '2026-11-12', description: 'Countdown Henderson', amount: '82.13' },
     ]), '2026-11-16');
-    expect(r.proposal).toMatchObject({ newPlans: [{ name: 'Harvey Norman Westgate', type: 'interest-free', months: 6, original: 49900, remaining: 49900, purchaseDate: '2026-11-14', ends: '2027-05-14' }] });
+    // Gem months end on the 20th: 6 months from 14 Nov → 20 Apr 2027.
+    expect(r.proposal).toMatchObject({ newPlans: [{ name: 'Harvey Norman Westgate', type: 'interest-free', months: 6, original: 49900, remaining: 49900, purchaseDate: '2026-11-14', ends: '2027-04-20' }] });
     expect(r.ignored).toContain('A purchase on the screenshot: already in what’s owed.');
     expect(debt(b, 'gem').plans.map((p) => p.name)).toContain('Harvey Norman Westgate');
     expect(owed(debt(b, 'gem'))).toBe(361240);
@@ -1620,6 +1621,32 @@ describe('telling cards and accounts apart', () => {
     b.accounts.push({ id: 'rent', name: 'Rent', kind: 'bank', color: '#000', groupId: 'g', number: '06-0115-0324910-055' });
     expect(transferTo(b, 'To: 06-0115-0324910-55 Debit Transfer 083615')).toEqual({ dir: 'to', name: 'Rent' });
     expect(transferTo(b, 'From: 06-0115-0324910-00 Credit Transfer 071301')).toBeUndefined();
+  });
+});
+
+describe('Gem payment held in Misc bills until statement day', () => {
+  it('Planner still funds Gem’s amount, but the money is in the hold account and only counted once in the payday total', () => {
+    const b = budget();
+    b.accounts.push(
+      { id: 'gem', name: 'Gem Visa', kind: 'external', color: '#000', groupId: b.groups[0].id },
+      { id: 'bills', name: 'Misc bills', kind: 'bank', color: '#000', groupId: b.groups[0].id },
+    );
+    b.split.push({ accountId: 'gem', amount: 0, mode: 'exact' }, { accountId: 'bills', amount: 0, mode: 'exact' });
+    b.debts = [{
+      id: 'gem', name: 'Gem Visa', kind: 'card', rules: 'gem', accountId: 'gem', holdAccountId: 'bills', statementDay: 21,
+      balance: { amount: 180000, asOf: '2026-11-01' },
+      plans: [{ id: 'g1', name: 'Purchases', type: 'interest-free', original: 180000, remaining: 180000, asOf: '2026-11-01', purchaseDate: '2026-07-09', ends: '2027-01-20' }],
+    }];
+    const p = periodContaining('2026-11-19', b.settings);
+    const plan = planFor(b, p, '2026-11-19');
+    const gem = plan.accounts.find((a) => a.account.id === 'gem')!;
+    const bills = plan.accounts.find((a) => a.account.id === 'bills')!;
+    expect(gem.funded).toBeGreaterThan(0);
+    expect(bills.funded).toBe(gem.funded);
+    // Payday total includes Misc bills once, not Gem again.
+    expect(plan.totalSplit).toBe(bills.funded);
+    expect(debtPaymentsIn(b, 'bills', p.start, p.end).reduce((t, x) => t + x.amount, 0)).toBe(gem.funded);
+    expect(debtPaymentsIn(b, 'gem', p.start, p.end)).toEqual([]);
   });
 });
 

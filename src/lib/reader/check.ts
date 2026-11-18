@@ -1,5 +1,5 @@
 import { addDays, addMonths, diffDays, fmtShort, toDate, todayISO, toISO, type ISODate } from '../dates';
-import { owed, planEnds, suggestPlan } from '../debts';
+import { gemPlanEnds, gemPlanType, owed, planEnds, suggestPlan } from '../debts';
 import { periodContaining, recordPayday, shiftPeriod } from '../engine';
 import { cash } from '../money';
 import type { Payslip } from '../payslip';
@@ -27,7 +27,14 @@ const ENDS_SLACK_DAYS = 5;
 
 export interface DraftFig { value: string; label?: string }
 
-export interface DraftPlanRow { planId: string; description: string; remaining: DraftFig; ends: string; addAsNew: boolean; newId: string }
+export interface DraftPlanRow {
+  planId: string; description: string; remaining: DraftFig; ends: string; addAsNew: boolean; newId: string;
+  /** Total months when shown (Gem 6/12/24/36/60). */
+  months?: number;
+  /** Months still left (Gem “X of Y months remaining”). */
+  monthsLeft?: number;
+  type?: 'interest-free' | 'equal';
+}
 export interface DraftOrder {
   planId: string;
   merchant: string;
@@ -111,7 +118,10 @@ export interface DraftTransactions {
   eventId: string;
 }
 
-export interface PlanUpdate { planId: string; remaining: Cents; ends?: ISODate }
+export interface PlanUpdate {
+  planId: string; remaining: Cents; ends?: ISODate;
+  months?: number; type?: 'interest-free' | 'equal';
+}
 export interface OrderUpdate { planId: string; instalments: { date: ISODate; amount: Cents; label?: string }[] }
 
 export type Proposal =
@@ -241,7 +251,12 @@ export function toDraft(ex: Extraction, b: Budget, source: ReaderSource, makeId:
       date: s.statementDate ?? (s.appScreen || loan ? today : ''),
       limit: fig(s.limit),
       minimum: fig(s.minimum),
-      plans: (s.plans ?? []).map((r) => ({ planId: r.planId ?? '', description: r.description ?? '', remaining: fig(r.remaining), ends: r.ends ?? '', addAsNew: false, newId: makeId() })),
+      plans: (s.plans ?? []).map((r) => ({
+        planId: r.planId ?? '', description: r.description ?? '', remaining: fig(r.remaining), ends: r.ends ?? '', addAsNew: false, newId: makeId(),
+        ...(typeof r.months === 'number' && r.months > 0 ? { months: r.months } : {}),
+        ...(typeof r.monthsLeft === 'number' && r.monthsLeft > 0 ? { monthsLeft: r.monthsLeft } : {}),
+        ...(r.type === 'interest-free' || r.type === 'equal' ? { type: r.type } : {}),
+      })),
       purchases: (s.purchases ?? []).map((x) => ({ date: x.date ?? '', description: x.description ?? '', amount: x.amount?.amount ?? '', add: null, newId: makeId() })),
       payments: (s.paymentsShown ?? []).map((x) => ({ date: x.date ?? '', amount: x.amount?.amount ?? '' })),
     },
@@ -744,13 +759,28 @@ function reviewStatement(d: Draft, b: Budget, today: ISODate): Review {
       if (plan) {
         if (used.has(plan.id)) { block(`Two plans on the statement matched ${plan.name}. Check them.`); continue; }
         used.set(plan.id, what);
-        const ends = validDate(row.ends);
-        plans.push({ planId: plan.id, remaining: rem.credit ? 0 : rem.cents, ...(ends && ends !== planEnds(plan) ? { ends } : {}) });
+        const asOfRow = date && date <= today ? date : today;
+        const ends = validDate(row.ends) ?? (row.monthsLeft ? gemPlanEnds(asOfRow, row.monthsLeft) : undefined);
+        const months = row.months && row.months > 0 ? row.months : undefined;
+        const type = row.type ?? (months ? (debt.rules === 'gem' ? gemPlanType(months) : plan.type) : undefined);
+        plans.push({
+          planId: plan.id, remaining: rem.credit ? 0 : rem.cents,
+          ...(ends && ends !== planEnds(plan) ? { ends } : {}),
+          ...(months && months !== plan.months ? { months } : {}),
+          ...(type && type !== plan.type ? { type } : {}),
+        });
       } else if (row.addAsNew) {
-        const ends = validDate(row.ends);
-        if (!ends) { block(`Enter when “${what}” stops being interest-free, to add it as a new plan.`); continue; }
         const asOf = date && date <= today ? date : today;
-        newPlans.push({ id: row.newId, name: row.description || `Interest-free until ${fmtShort(ends)}`, type: 'interest-free', original: rem.cents, remaining: rem.cents, asOf, purchaseDate: asOf, ends });
+        const ends = validDate(row.ends) ?? (row.monthsLeft ? gemPlanEnds(asOf, row.monthsLeft) : undefined);
+        if (!ends) { block(`Enter when “${what}” stops being interest-free, or how many months are left, to add it as a new plan.`); continue; }
+        const months = row.months && row.months > 0 ? row.months : row.monthsLeft && row.monthsLeft > 0 ? row.monthsLeft : undefined;
+        const type = row.type ?? (months && debt.rules === 'gem' ? gemPlanType(months) : 'interest-free');
+        newPlans.push({
+          id: row.newId, name: row.description || `Interest-free until ${fmtShort(ends)}`, type,
+          original: rem.cents, remaining: rem.cents, asOf, purchaseDate: asOf, ends,
+          ...(months ? { months } : {}),
+          ...(type === 'equal' && months ? { payment: Math.round(rem.cents / Math.max(1, row.monthsLeft ?? months)) } : {}),
+        });
       } else {
         unmatched++;
         ignored.push(`${what}: ${cash(rem.cents)}${validDate(row.ends) ? `, ends ${fmtShort(row.ends)}` : ''}. It didn’t match one of your plans (tick it to add it as a new one).`);
@@ -773,7 +803,8 @@ function reviewStatement(d: Draft, b: Budget, today: ISODate): Review {
     if (!row.months) continue;
     if (row.existing) { ignored.push(`${what}: already your plan “${row.existing.name}”.`); continue; }
     if (!row.add) { ignored.push(`${what}: not added as a plan (tick it to add it).`); continue; }
-    const ends = addMonths(row.date, row.months);
+    // Gem months end on the 20th; other cards keep calendar months from the purchase date.
+    const ends = debt?.rules === 'gem' ? gemPlanEnds(row.date, row.months) : addMonths(row.date, row.months);
     newPlans.push({ id: s.purchases[row.index].newId, name: row.description || `Purchase on ${fmtShort(row.date)}`, type: 'interest-free', months: row.months, original: row.cents, remaining: row.cents, asOf, purchaseDate: row.date, ends });
   }
   const added = newPlans.filter((x) => s.purchases.some((y) => y.newId === x.id));

@@ -143,8 +143,15 @@ export interface Debt {
   kind: 'card' | 'bnpl' | 'person' | 'loan';
   /** Card rules used to suggest the plan type for new purchases. */
   rules?: 'gem' | 'mastercard' | 'afterpay';
-  /** The payday-split account that payments are sent to. */
+  /** The payday-split account shown for this debt (e.g. Gem Visa): Planner still shows how much is sent. */
   accountId: string;
+  /**
+   * Bank account that holds the payment until statement day (e.g. Misc bills). Payday still lists the
+   * debt with its amount; the money sits here so you don't send it to the card before the statement
+   * (Gem would treat an early transfer as an extra payment). Payments leave this account on/after
+   * statement day. When unset, money is planned against `accountId` as usual.
+   */
+  holdAccountId?: string;
   limit?: Cents;
   /** Standard interest rate, % per year. */
   rate?: number;

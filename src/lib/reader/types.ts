@@ -36,10 +36,24 @@ export interface RawStatement {
   statementDate?: string;
   limit?: Fig;
   minimum?: Fig;
-  /** Plans shown on the statement (Gem's interest-free plans), matched to the debt's plans by id. */
-  plans?: { planId?: string | null; description?: string; remaining?: Fig; ends?: string }[];
-  /** Purchases listed on a card app screen. They're inside its balance, so they're never added again (a Gem one of $250 or more becomes a plan). */
-  purchases?: { date?: string; description?: string; amount?: Fig }[];
+  /** Plans shown on the statement or My plans screen (Gem interest-free / equal-payment plans), matched by id or expiry. */
+  plans?: {
+    planId?: string | null;
+    description?: string;
+    remaining?: Fig;
+    ends?: string;
+    /** Total plan length in months when shown (6, 12, 24, 36, 60). */
+    months?: number | null;
+    /** Months still left, as printed (e.g. "8 of 12 months remaining" → 8). */
+    monthsLeft?: number | null;
+    /** interest-free (any payments) or equal (fixed monthly instalments). */
+    type?: 'interest-free' | 'equal' | null;
+  }[];
+  /**
+   * Purchases listed on a card app screen, including pending ones. They're inside its balance, so
+   * they're never added to what's owed again; a Gem one of $250 or more becomes a 6-month plan.
+   */
+  purchases?: { date?: string; description?: string; amount?: Fig; pending?: boolean | null }[];
   /** Payments listed on the statement. They're counted automatically on their due dates, so they're ignored. */
   paymentsShown?: { date?: string; amount?: Fig }[];
 }

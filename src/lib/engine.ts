@@ -2,7 +2,7 @@ import {
   addDays, dateInMonth, diffDays, toDate, todayISO, weekday, type ISODate,
 } from './dates';
 import { balanceOn, depositFor, exactNeed, modeOf, topsUp } from './balances';
-import { accountHasPlans, debtPaymentsIn } from './debts';
+import { accountHasPlans, debtPaymentsIn, heldDebtPaymentsIn, isHoldDisplayAccount } from './debts';
 import { accountHasGoals, savingsNeedIn } from './savings';
 import type { Account, Budget, Cents, Frequency, Item, Settings } from './types';
 
@@ -316,7 +316,11 @@ export function planFor(b: Budget, period: Period, today: ISODate = todayISO()):
       return { item, count: dates.length };
     }).filter((x) => x.count > 0);
     // Debt plan payments and savings goals linked to this account count as its costs too.
-    for (const p of debtPaymentsIn(b, account.id, period.start, period.end)) {
+    // Held-elsewhere debts (Gem in Misc bills) still list their payments on the debt card for display.
+    const debtPays = isHoldDisplayAccount(b, account.id)
+      ? heldDebtPaymentsIn(b, account.id, period.start, period.end)
+      : debtPaymentsIn(b, account.id, period.start, period.end);
+    for (const p of debtPays) {
       const item: Item = {
         id: `${p.plan.id}@${p.date}`, name: p.plan.name, amount: p.amount,
         frequency: 'once', start: p.date, accountId: account.id,
@@ -342,11 +346,15 @@ export function planFor(b: Budget, period: Period, today: ISODate = todayISO()):
     const need = dues.reduce((s, d) => s + d.item.amount, 0);
     // …then what payday sends: the same amount the balance projections use (one source of truth).
     const funded = account.id === payId ? 0 : depositFor(b, account.id, period, today);
-    const hasCosts = items.length > 0 || accountHasPlans(b, account.id) || accountHasGoals(b, account.id);
+    const hasCosts = items.length > 0 || accountHasPlans(b, account.id) || accountHasGoals(b, account.id)
+      || isHoldDisplayAccount(b, account.id);
     return { account, items, dues, breakdown, need, funded, hasCosts };
   });
 
-  const totalSplit = base.filter((x) => x.account.id !== payId).reduce((s, x) => s + x.funded, 0);
+  // Debts that store their payment in another account (e.g. Gem → Misc bills) still show a funded
+  // amount on the debt card, but that money is already in the hold account's deposit — don't count twice.
+  const totalSplit = base.filter((x) => x.account.id !== payId && !isHoldDisplayAccount(b, x.account.id))
+    .reduce((s, x) => s + x.funded, 0);
   const leftover = pay - totalSplit;
 
   const accounts = base.map(({ account, dues, breakdown, need, funded, hasCosts }): AccountPlan => {
@@ -383,12 +391,13 @@ export function averageNeed(b: Budget, accountId: string): Cents {
   // Debts: average of the next 12 pays' plan payments. Savings: the per-pay amount goals need.
   let extra = 0;
   // (A card balance with no payment plans still gets paid off, e.g. a Mastercard balance.)
-  const hasDebt = (b.debts ?? []).some((d) => d.accountId === accountId && !d.payroll);
+  const hasDebt = (b.debts ?? []).some((d) => (d.accountId === accountId || d.holdAccountId === accountId) && !d.payroll);
   if (hasDebt || accountHasPlans(b, accountId) || accountHasGoals(b, accountId)) {
     let p = periodContaining(todayISO(), b.settings);
     let total = 0;
     for (let i = 0; i < 12; i++) {
       total += debtPaymentsIn(b, accountId, p.start, p.end).reduce((s, x) => s + x.amount, 0);
+      total += heldDebtPaymentsIn(b, accountId, p.start, p.end).reduce((s, x) => s + x.amount, 0);
       total += savingsNeedIn(b, accountId, p.start);
       p = shiftPeriod(p, 1, b.settings);
     }
