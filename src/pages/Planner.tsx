@@ -493,9 +493,13 @@ export function Planner() {
             // With a balance entered, the pill shows what the account ends the period with.
             const ends = !avg ? a.endBalance : undefined;
             const diff = ends !== undefined ? null : a.diff === null || auto ? null : funded - need;
-            // Steady (e.g. rent): what's left is buffer for a 5-week pay, not spare cash.
+            // Steady (e.g. rent): only the cushion for the next 5-week pay is "Buffer" — not the whole
+            // ending balance (which was reading as a massive spare pile).
             const bufferFor = ends !== undefined && ends > 0 && steadyMode
               ? nextBufferUse(budget, a.account.id, period, 13, today) : undefined;
+            const bufferCushion = bufferFor ? Math.max(0, bufferFor.need - bufferFor.deposit) : 0;
+            const bufferShown = bufferFor && bufferCushion > 0 && ends !== undefined
+              ? Math.min(ends, bufferCushion) : undefined;
             // Money put aside on payday (a WOF, tyres) isn't a payment: it's counted on its own.
             const paying = a.dues.filter((d) => !isSetAside(d.item));
             const asideTotal = a.need - paying.reduce((t, d) => t + d.item.amount, 0);
@@ -526,9 +530,10 @@ export function Planner() {
             // Only a problem (short) or something to act on (spare) is coloured; the rest stays quiet.
             const endTip = ends === undefined ? ''
               : ends < 0 ? 'Estimated balance at the end of this pay period'
-              : bufferFor
-                ? `Buffer for the ${fmtShort(bufferFor.period.start)} pay: that pay needs ${cash(bufferFor.need)}, gets ${cash(bufferFor.deposit)}`
-                : steadyMode ? 'Buffer for pays with an extra week' : 'Estimated balance at the end of this pay period';
+              : bufferShown !== undefined && bufferFor
+                ? `${cash(bufferShown)} kept for the ${fmtShort(bufferFor.period.start)} pay (${cash(bufferFor.need)} needed, ${cash(bufferFor.deposit)} sent). Account ends this pay with about ${cash(ends)}.`
+                : steadyMode ? `Estimated balance at the end of this pay (level amount evenings out 4- and 5-week pays)`
+                : 'Estimated balance at the end of this pay period';
             const pill = (
               <>
                 {diff !== null && diff !== 0 && (
@@ -539,7 +544,9 @@ export function Planner() {
                   <span className={`pill ${ends < 0 ? 'bad' : ''}`} title={endTip}>
                     {ends < 0
                       ? `${cash(-ends)} short`
-                      : steadyMode ? `Buffer ${cash(ends)}` : `Ends ${cash(ends)}`}
+                      : bufferShown !== undefined
+                        ? `Buffer ${cash(bufferShown)}`
+                        : `Ends ${cash(ends)}`}
                   </span>
                 )}
               </>
@@ -548,11 +555,15 @@ export function Planner() {
             const amountClass = funded < 0 && (known || !isPay) ? 'neg' : '';
             const icon = <AccIcon color={a.account.color} name={a.account.kind === 'external' ? 'send' : isPay ? 'wallet' : 'bank'} />;
             // Each cost this pay (e.g. food, car gas, scooter gas, or every bill in Misc bills).
-            const byName = new Map<string, { name: string; amount: Cents; dates: string[]; aside: boolean; note?: string }>();
+            const byName = new Map<string, { name: string; amount: Cents; dates: string[]; aside: boolean; note?: string; maxSaved?: Cents }>();
             if (!longRun) for (const d of a.dues) {
-              const r = byName.get(`${isSetAside(d.item)}|${d.item.name}`) ?? { name: d.item.name, amount: 0, dates: [], aside: isSetAside(d.item), note: d.item.note };
+              const r = byName.get(`${isSetAside(d.item)}|${d.item.name}`) ?? {
+                name: d.item.name, amount: 0, dates: [], aside: isSetAside(d.item), note: d.item.note,
+                maxSaved: d.item.maxSaved && d.item.maxSaved > 0 ? d.item.maxSaved : undefined,
+              };
               r.amount += d.item.amount; r.dates.push(d.date);
               if (!r.note && d.item.note) r.note = d.item.note;
+              if (!r.maxSaved && d.item.maxSaved && d.item.maxSaved > 0) r.maxSaved = d.item.maxSaved;
               byName.set(`${r.aside}|${d.item.name}`, r);
             }
             const rows = [...byName.values()];
@@ -638,7 +649,9 @@ export function Planner() {
                                 <span className="min0">
                                   <span className="cost-name">{r.name}</span>
                                   <span className="cost-meta muted">
-                                    {r.aside ? 'Put aside on payday, stays in the account' : same ? `${r.dates.length} × ${cash(each, { whole: each % 100 === 0 })}` : r.dates.length === 1 ? fmtShort(r.dates[0]) : `${r.dates.length} payments`}
+                                    {r.aside
+                                      ? `Put aside on payday, stays in the account${r.maxSaved ? ` · max ${cash(r.maxSaved)}` : ''}`
+                                      : same ? `${r.dates.length} × ${cash(each, { whole: each % 100 === 0 })}` : r.dates.length === 1 ? fmtShort(r.dates[0]) : `${r.dates.length} payments`}
                                     {/* Week / Fortnight: say what the whole pay is, since the amount on the right is per week */}
                                     {split ? `${same ? ' =' : ' ·'} ${cash(r.amount)} this pay` : ''}
                                     {r.note ? ` · ${r.note}` : ''}

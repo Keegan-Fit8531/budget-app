@@ -2,7 +2,7 @@ import { accountMode, levelAmount, paySplitLocked, spareInfo } from './balances'
 import { fmtShort } from './dates';
 import { debtAdvice, fundingAccountId } from './debts';
 import { todayISO } from './dates';
-import { hasSetAsides, isSetAside, periodContaining, planFor, setAsideOn, shiftPeriod, upcomingPayPeriod, type Period } from './engine';
+import { asideMaxSaved, asideSpareNow, hasSetAsides, isSetAside, periodContaining, planFor, setAsideOn, shiftPeriod, upcomingPayPeriod, type Period } from './engine';
 import type { ISODate } from './dates';
 import type { Budget, Cents } from './types';
 
@@ -124,8 +124,31 @@ export function balancePay(input: Budget, period: Period, today: ISODate = today
       if (id === b.settings.payAccountId || debtIds.has(id) || a.account.kind !== 'bank' || savingGroupIds.has(a.account.groupId)) continue;
       if (!b.items.some((i) => i.accountId === id)) continue;
       const name = a.account.name;
-      // What's built up in a car fund (a WOF, tyres) is waiting for those costs, whenever they come.
-      if (hasSetAsides(b, id)) { notSpare.push({ accountId: id, name, reason: `Its balance is money put aside for ${asideNames(b, id)}, so none of it is spare.` }); continue; }
+      // What's built up in a car fund (a WOF, tyres) is waiting for those costs — unless every
+      // set-aside has a max (Haircut $60) and the account is already over it: the excess is spare,
+      // and this pay's send can be trimmed when there's still a send to trim.
+      if (hasSetAsides(b, id)) {
+        const maxAside = asideMaxSaved(b, id);
+        if (maxAside === undefined) {
+          notSpare.push({ accountId: id, name, reason: `Its balance is money put aside for ${asideNames(b, id)}, so none of it is spare.` });
+          continue;
+        }
+        const spareNow = asideSpareNow(b, id, today);
+        if (spareNow === undefined) {
+          notSpare.push({ accountId: id, name, reason: 'No balance entered in Accounts, so the app can\u2019t tell if it has spare money.' });
+          continue;
+        }
+        const excess = Math.max(0, spareNow - maxAside);
+        if (excess <= 0) {
+          notSpare.push({ accountId: id, name, reason: `Put aside for ${asideNames(b, id)} is at its max (${fmt(maxAside)}), so none of it is spare.` });
+          continue;
+        }
+        if (funded(id) > 0) {
+          cut(id, name, excess,
+            `${asideNames(b, id)} is at its max (${fmt(maxAside)}); the rest after bills is spare.`);
+        }
+        continue;
+      }
       const info = spareInfo(b, id, period, 12, today);
       if (!info) { notSpare.push({ accountId: id, name, reason: 'No balance entered in Accounts, so the app can\u2019t tell if it has spare money.' }); continue; }
       if (protectedIds.has(id)) { notSpare.push({ accountId: id, name, reason: 'It\u2019s short this pay, so it was topped up instead.' }); continue; }

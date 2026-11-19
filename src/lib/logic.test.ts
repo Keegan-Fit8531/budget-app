@@ -7,7 +7,7 @@ import { applyAllocation, existingExtras, undoAllocation } from './allocate';
 import { addDays } from './dates';
 import { applyPayment, debtPay, debtPaymentsIn, debtPerPay, debtSchedules, owed, projectedOwed, paidIn, planSchedule, recordHistory, settleDue } from './debts';
 import { classifyText, matchDebt, parseDate, parseStatementText, recordStatement } from './documents';
-import { averageNeed, clearPaydayMove, periodContaining, planFor, recordPayday, setAsidePerPay, shiftPeriod, upcomingPayPeriod } from './engine';
+import { asideMaxSaved, averageNeed, clearPaydayMove, periodContaining, planFor, recordPayday, setAsidePerPay, shiftPeriod, upcomingPayPeriod } from './engine';
 import { projectedAt, removeSpend, spendFromGoal } from './goalcosts';
 import { autoBalance, autoPays, balancedMode, balancePay } from './rebalance';
 import { accountHistory, recordCost, removeCost, setBalance } from './history';
@@ -715,6 +715,37 @@ describe('max saved on money put aside', () => {
     // Only $40 aside so far → still room for $20.
     b.balances = { bills: { amount: 14000, asOf: '2026-11-14' } };
     expect(depositFor(b, 'bills', p, '2026-11-14')).toBe(12000);
+  });
+
+  it('exposes the account max so Accounts can show it (Haircut max $60)', () => {
+    const b = budget();
+    b.accounts.push({ id: 'bills', name: 'Misc bills', kind: 'bank', color: '#000', groupId: 'needs' });
+    b.items.push(
+      { id: 'cut', name: 'Haircut', amount: 2000, frequency: 'monthly', start: '2026-11-01', accountId: 'bills', setAside: true, maxSaved: 6000 },
+    );
+    expect(asideMaxSaved(b, 'bills')).toBe(6000);
+    // Uncapped set-aside on the same account → no single account max.
+    b.items.push({ id: 'tyres', name: 'Tyres', amount: 5000, frequency: 'monthly', start: '2026-11-01', accountId: 'bills', setAside: true });
+    expect(asideMaxSaved(b, 'bills')).toBeUndefined();
+  });
+
+  it('does not treat an over-max Haircut account as having no spare at all', () => {
+    const b = budget();
+    b.settings.expectedPay = 500000;
+    b.accounts.push(
+      { id: 'bills', name: 'Misc bills', kind: 'bank', color: '#000', groupId: 'needs' },
+      { id: 'short', name: 'Short', kind: 'bank', color: '#000', groupId: 'needs' },
+    );
+    b.split.push({ accountId: 'bills', amount: 0, mode: 'exact' }, { accountId: 'short', amount: 0, mode: 'exact' });
+    b.items.push(
+      { id: 'cut', name: 'Haircut', amount: 2000, frequency: 'monthly', start: '2026-11-01', accountId: 'bills', setAside: true, maxSaved: 6000 },
+      { id: 'bill', name: 'Power', amount: 50000, frequency: 'monthly', start: '2026-11-25', accountId: 'short' },
+    );
+    // $189.73 left → $60 for Haircut, $129.73 above the max (already in the account).
+    b.balances = { bills: { amount: 18973, asOf: '2026-11-14' } };
+    const p = periodContaining('2026-11-19', b.settings);
+    const r = balancePay(b, p, '2026-11-14');
+    expect(r.notSpare.find((x) => x.accountId === 'bills')?.reason ?? '').not.toMatch(/none of it is spare/);
   });
 });
 

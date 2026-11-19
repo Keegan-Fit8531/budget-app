@@ -291,6 +291,17 @@ export function hasSetAsides(b: Pick<Budget, 'items'>, accountId: string): boole
   return b.items.some((i) => i.accountId === accountId && isSetAside(i));
 }
 
+/**
+ * Account-level cap for money put aside: the sum of each set-aside's maxSaved, only when every
+ * set-aside on the account has a max (e.g. Haircut $60). Undefined when any set-aside is uncapped —
+ * those can keep building without a ceiling.
+ */
+export function asideMaxSaved(b: Pick<Budget, 'items'>, accountId: string): Cents | undefined {
+  const asides = b.items.filter((i) => i.accountId === accountId && isSetAside(i));
+  if (!asides.length || !asides.every((i) => i.maxSaved && i.maxSaved > 0)) return undefined;
+  return asides.reduce((t, i) => t + (i.maxSaved ?? 0), 0);
+}
+
 // ---------- Frequency conversion ----------
 
 export type View = 'week' | 'fortnight' | 'month' | 'year';
