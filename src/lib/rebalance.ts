@@ -1,4 +1,4 @@
-import { accountMode, levelAmount, spareInfo } from './balances';
+import { accountMode, levelAmount, paySplitLocked, spareInfo } from './balances';
 import { fmtShort } from './dates';
 import { debtAdvice, fundingAccountId } from './debts';
 import { todayISO } from './dates';
@@ -247,12 +247,14 @@ export function asideNames(b: Budget, accountId: string): string {
 }
 
 /**
- * The pays automatic balancing covers: today's pay while it is still payday, then the next ones.
- * From the day after payday that pay is left as it is (already split).
+ * The pays automatic balancing covers: the next open pay, then the ones after.
+ * From the day after payday that pay is left as it is (already split). Once this payday’s payslip
+ * (or pay amount) is in, that pay is locked too — balancing only moves future pays.
  */
 export function autoPays(b: Budget, today: ISODate = todayISO()): Period[] {
   const out: Period[] = [];
   let p = upcomingPayPeriod(b, today);
+  if (paySplitLocked(b, p, today)) p = shiftPeriod(p, 1, b.settings);
   for (let i = 0; i < AUTO_PAYS; i++) { out.push(p); p = shiftPeriod(p, 1, b.settings); }
   return out;
 }

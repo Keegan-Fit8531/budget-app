@@ -1,7 +1,7 @@
 import {
   addDays, dateInMonth, diffDays, ordinal, toDate, todayISO, weekday, type ISODate,
 } from './dates';
-import { balanceOn, depositFor, exactNeed, modeOf, topsUp } from './balances';
+import { balanceOn, depositFor, exactNeed, freezePaySplit, modeOf, topsUp } from './balances';
 import { accountHasPlans, debtPaymentsIn, heldDebtPaymentsIn, isHoldDisplayAccount } from './debts';
 import { accountHasGoals, savingsNeedIn } from './savings';
 import type { Account, Budget, Cents, Frequency, Item, Settings } from './types';
@@ -112,7 +112,7 @@ const MOVE_DAYS = 6;
 /** Move everything kept for one pay (its pay, payslip and one-pay adjustments) to that pay's new start date. */
 function rekeyPay(b: Budget, from: ISODate, to: ISODate): void {
   if (from === to) return;
-  for (const map of [b.payActuals, b.payslips, b.overrides, b.autoBalanced] as (Record<ISODate, unknown> | undefined)[]) {
+  for (const map of [b.payActuals, b.payslips, b.overrides, b.autoBalanced, b.splitSent] as (Record<ISODate, unknown> | undefined)[]) {
     if (!map || !(from in map)) continue;
     if (!(to in map)) map[to] = map[from];
     delete map[from];
@@ -355,6 +355,8 @@ export function planFor(b: Budget, period: Period, today: ISODate = todayISO()):
   // No payslip for this period yet: plan with the most recent pay received before it.
   const prevKey = actual === undefined ? Object.keys(b.payActuals).filter((k) => k < period.start).sort().pop() : undefined;
   const pay = actual ?? (prevKey ? b.payActuals[prevKey] : b.settings.expectedPay);
+  // Once this pay is locked (payslip in / payday passed), freeze the split so later changes don’t rewrite it.
+  freezePaySplit(b, period, today);
   const live = b.accounts.filter((a) => !a.archived);
   const payId = b.settings.payAccountId;
 

@@ -395,6 +395,12 @@ export interface Budget {
   /** One-pay adjustments: pay period start → account id → amount sent that pay instead of the usual. */
   overrides?: Record<ISODate, Record<string, Cents>>;
   /**
+   * What payday actually sent to each account once that pay is locked (payslip in, or payday has
+   * passed). The Planner keeps these figures for that cycle so later debt/cost changes don’t rewrite
+   * the split you already made. Future pays still recalculate.
+   */
+  splitSent?: Record<ISODate, Record<string, Cents>>;
+  /**
    * What automatic balancing changed: pay start → account id → the amount before (null = none), the
    * amount it set, and why. Lets it redo a pay from scratch when something changes, without touching
    * changes you made yourself.
