@@ -1,5 +1,7 @@
+import type { ReactNode } from 'react';
 import { accountMode, balanceOn, billTracker, nextBufferUse, payProjection } from '../lib/balances';
-import { fmtDay, fmtShort, monthName, todayISO } from '../lib/dates';
+import { fmtDay, fmtShort, monthName, ordinal, todayISO } from '../lib/dates';
+import { debtAdvice } from '../lib/debts';
 import { accountEnvelopes, envelopeHeld } from '../lib/envelope';
 import { asideMaxSaved, hasSetAsides, isHeldInAccount, type Period } from '../lib/engine';
 import { asideNames } from '../lib/rebalance';
@@ -65,6 +67,19 @@ export function MonthTracker({ budget, account, today = todayISO(), open }: { bu
     : steady ? 'this pay after bills'
     : 'this pay after bills';
   const color = tone(account.color);
+  // Gem Visa held in this account until statement day — note the amount from Latitude's allocation.
+  const gemHolds = (budget.debts ?? []).filter((d) => d.holdAccountId === account.id && d.rules === 'gem' && !d.payroll);
+  const gemNotes = gemHolds.map((d) => {
+    const adv = debtAdvice(budget, d, t.period);
+    const due = t.rows.filter((r) => r.name === d.name && r.status !== 'paid');
+    const held = due.reduce((s, r) => s + r.amount, 0);
+    if (held <= 0 && adv.recommended <= 0) return null;
+    const dayLabel = d.statementDay ? `the ${ordinal(d.statementDay)}` : 'statement day';
+    return {
+      id: d.id,
+      text: <>{d.name} {cash(held || adv.recommended)} held for {dayLabel} — Gem’s allocation (instalments first, then interest-free by expiry; min {cash(adv.minimum ?? 0)}).</>,
+    };
+  }).filter(Boolean) as { id: string; text: ReactNode }[];
 
   return (
     <>
@@ -185,6 +200,9 @@ export function MonthTracker({ budget, account, today = todayISO(), open }: { bu
               Put aside {cash(asideHeld)} for {names} (max {cash(maxAside!)}); the rest after bills is spare.
             </p>
           )}
+          {gemNotes.map((n) => (
+            <p className="small muted" key={n.id}>{n.text}</p>
+          ))}
         </div>
       )}
 

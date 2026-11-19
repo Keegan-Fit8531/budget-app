@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState, ty
 import { freezeLockedPays, freezePaySplitFrom, paySplitLocked } from './balances';
 import { pullBudget, pushBudget, readSyncConfig, SyncError, takePairingFromUrl, writeSyncConfig, type SyncConfig } from './sync';
 import { todayISO } from './dates';
-import { debtPay, settleDue } from './debts';
+import { debtPay, settleDue, syncGemToRecommended } from './debts';
 import { periodContaining } from './engine';
 import { autoBalance } from './rebalance';
 import { seedBudget } from './seed';
@@ -74,6 +74,8 @@ function bringUpToDate(b: Budget): Budget {
   // Snapshot locked pays before settleDue, so a live debt figure can’t collapse before we freeze it.
   freezeLockedPays(b);
   settleAll(b);
+  // Gem Visa: always follow Latitude's recommended allocation into Misc bills (statement day).
+  syncGemToRecommended(b);
   return autoBalance(b);
 }
 

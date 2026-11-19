@@ -360,11 +360,44 @@ export function debtPaymentsIn(b: Budget, accountId: string, from: ISODate, to: 
       const plan: DebtPlan = { id: `${debt.id}-paid-${i}`, name: x.name, type: 'balance', original: x.amount, remaining: 0, asOf: x.date, purchaseDate: x.date };
       out.push({ debt, plan, date: x.date, amount: x.amount });
     });
+    // Usual per-pay figure only: a hold account's one-pay override is its whole deposit (Misc bills),
+    // not this debt's payment. Optimise extras on the debt card are applied via debtPay in forecasts.
     for (const sch of debtSchedules(debt, b.settings, debtPerPay(b, debt))) {
       for (const p of sch.payments) if (p.date >= from && p.date <= to) out.push({ debt, plan: sch.plan, date: p.date, amount: p.amount });
     }
   }
   return out;
+}
+
+/**
+ * Put every Gem Visa on "this pay's costs" so statement-day amounts follow Latitude's own allocation
+ * (instalments first, then interest-free by expiry — see gemPlan / gemSplit). Returns each debt that
+ * changed, for a one-line note on Accounts.
+ */
+export function syncGemToRecommended(b: Budget, period?: Period): { debt: Debt; from: Cents; to: Cents }[] {
+  const p = period ?? periodContaining(todayISO(), b.settings);
+  const changed: { debt: Debt; from: Cents; to: Cents }[] = [];
+  for (const debt of b.debts ?? []) {
+    if (debt.rules !== 'gem' || debt.payroll) continue;
+    if (!debt.balance && !debt.plans.length) continue;
+    const adv = debtAdvice(b, debt, p);
+    if (adv.recommended <= 0) continue;
+    const line = b.split.find((l) => l.accountId === debt.accountId);
+    if (!line) continue;
+    const already = line.mode === 'exact' && (debtPerPay(b, debt) === undefined) && adv.sending === adv.recommended;
+    if (already) continue;
+    const from = adv.sending;
+    line.mode = 'exact';
+    delete line.auto;
+    line.amount = 0;
+    // Clear a one-pay figure on the debt card that was holding it below recommended.
+    if (b.overrides?.[p.start]?.[debt.accountId] !== undefined && (b.overrides[p.start][debt.accountId] ?? 0) < adv.recommended) {
+      delete b.overrides[p.start][debt.accountId];
+      if (!Object.keys(b.overrides[p.start]).length) delete b.overrides[p.start];
+    }
+    changed.push({ debt, from, to: adv.recommended });
+  }
+  return changed;
 }
 
 export function accountHasPlans(b: Budget, accountId: string): boolean {

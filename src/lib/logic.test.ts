@@ -5,7 +5,7 @@ import {
 } from './balances';
 import { applyAllocation, existingExtras, undoAllocation } from './allocate';
 import { addDays } from './dates';
-import { applyPayment, debtPay, debtPaymentsIn, debtPerPay, debtSchedules, owed, projectedOwed, paidIn, planSchedule, recordHistory, settleDue } from './debts';
+import { applyPayment, debtAdvice, debtPay, debtPaymentsIn, debtPerPay, debtSchedules, owed, projectedOwed, paidIn, planSchedule, recordHistory, settleDue, syncGemToRecommended } from './debts';
 import { classifyText, matchDebt, parseDate, parseStatementText, recordStatement } from './documents';
 import { asideMaxSaved, averageNeed, clearPaydayMove, monthEnvelopeOn, monthEnvelopePerPay, periodContaining, planFor, recordPayday, setAsidePerPay, shiftPeriod, upcomingPayPeriod } from './engine';
 import { accountEnvelopes, envelopeHeld, envelopeStatus, matchesEnvelope } from './envelope';
@@ -1937,6 +1937,31 @@ describe('card payments seen in a bank account', () => {
     b.bankLinks = { c1: 'debt:qcard' };
     expect(cardPaid(b, { date: '2026-11-16', description: 'Q Mastercard', amount: -100 })).toBeUndefined();
   });
+
+  it('a $50 Q Mastercard transfer is not swallowed by a larger nearby planned payment', () => {
+    const b = debtBudget();
+    const q = debt(b, 'qcard');
+    // Payday already planned $200 for Q; an ad-hoc $50 from ANZ is a separate payment.
+    q.paid = [{ date: '2026-11-14', amount: 20000, name: 'Other purchases', synthetic: true }];
+    q.balance = { amount: 50000, asOf: '2026-11-10' };
+    applyBank(b, { accounts: [go], transactions: [tx('t1', '2026-11-15', 'Q Mastercard Fitzgerald Id1105532418', -50)] }, links, '2026-11-16');
+    // Must count the full $50 (a $200 planned nearby must not cover it).
+    expect(q.bankPayments?.[0]).toMatchObject({ amount: 5000, counted: 5000 });
+    expect((q.bankPayments?.[0].planned ?? []).some((k) => k.includes('|20000|'))).toBe(false);
+    expect(owed(q)).toBe(45000);
+  });
+
+  it('a pending ANZ transfer to Q Mastercard still reduces what Q owes', () => {
+    const b = debtBudget();
+    debt(b, 'qcard').balance = { amount: 50000, asOf: '2026-11-10' };
+    applyBank(b, {
+      accounts: [go],
+      transactions: [],
+      pending: [{ account: 'a1', date: '2026-11-16', description: 'Q Mastercard Fitzgerald Id1105532418', amount: -50, merchant: null }],
+    }, links, '2026-11-16');
+    expect(debt(b, 'qcard').bankPayments?.[0]).toMatchObject({ amount: 5000, counted: 5000, date: '2026-11-16' });
+    expect(owed(debt(b, 'qcard'))).toBe(45000);
+  });
 });
 
 describe('moving things up and down', () => {
@@ -2040,6 +2065,38 @@ describe('Gem payment held in Misc bills until statement day', () => {
     const plan = planFor(b, p, '2026-11-19');
     const gem = plan.accounts.find((a) => a.account.id === 'gem')!;
     expect(gem.funded).toBeGreaterThan(0);
+  });
+
+  it('auto-updates Gem to Latitude’s recommended allocation and reserves that in Misc bills', () => {
+    const b = budget();
+    b.accounts.push(
+      { id: 'gem', name: 'Gem Visa', kind: 'external', color: '#000', groupId: b.groups[0].id },
+      { id: 'bills', name: 'Misc bills', kind: 'bank', color: '#000', groupId: b.groups[0].id },
+    );
+    // Fixed below recommended — used to leave false spare in Misc bills above Haircut max.
+    b.split.push({ accountId: 'gem', amount: 50000, mode: 'fixed' }, { accountId: 'bills', amount: 0, mode: 'exact' });
+    b.debts = [{
+      id: 'gem', name: 'Gem Visa', kind: 'card', rules: 'gem', accountId: 'gem', holdAccountId: 'bills', statementDay: 21,
+      balance: { amount: 180000, asOf: '2026-11-01' },
+      plans: [{ id: 'g1', name: 'Purchases', type: 'interest-free', original: 180000, remaining: 180000, asOf: '2026-11-01', purchaseDate: '2026-07-09', ends: '2027-01-20' }],
+    }];
+    b.items.push({ id: 'cut', name: 'Haircut', amount: 2000, frequency: 'monthly', start: '2026-11-01', accountId: 'bills', setAside: true, maxSaved: 6000 });
+    const p = periodContaining('2026-11-19', b.settings);
+    const adv = debtAdvice(b, b.debts[0], p);
+    expect(adv.recommended).toBeGreaterThan(50000);
+    // Before sync: outflows still reserve at least recommended (so spare isn’t overstated).
+    const gemOut = outflows(b, 'bills', p.start, p.end).filter((o) => o.name === 'Gem Visa').reduce((t, o) => t + o.amount, 0);
+    expect(gemOut).toBe(adv.recommended);
+    const changed = syncGemToRecommended(b, p);
+    expect(changed).toHaveLength(1);
+    expect(changed[0].to).toBe(adv.recommended);
+    expect(b.split.find((l) => l.accountId === 'gem')).toMatchObject({ mode: 'exact', amount: 0 });
+    // On a day in the pay that includes the 21st (not the pay before payday).
+    b.balances = { bills: { amount: adv.recommended + 6000 + 5000, asOf: '2026-11-20' } }; // recommended + Haircut max + $50
+    const t = billTracker(b, 'bills', '2026-11-20');
+    expect(t.toCome).toBeGreaterThanOrEqual(adv.recommended);
+    // After Gem and Haircut max, only the $50 above is spare.
+    expect(Math.max(0, t.spare - 6000)).toBe(5000);
   });
 });
 
