@@ -1,7 +1,7 @@
 import { accountMode, balanceOn, billTracker, nextBufferUse, payProjection } from '../lib/balances';
 import { fmtDay, fmtShort, monthName, todayISO } from '../lib/dates';
-import { accountEnvelopes } from '../lib/envelope';
-import { asideMaxSaved, hasSetAsides, isSetAside, type Period } from '../lib/engine';
+import { accountEnvelopes, envelopeHeld } from '../lib/envelope';
+import { asideMaxSaved, hasSetAsides, isHeldInAccount, type Period } from '../lib/engine';
 import { asideNames } from '../lib/rebalance';
 import { tone } from '../lib/colors';
 import { cash } from '../lib/money';
@@ -20,43 +20,51 @@ export function MonthTracker({ budget, account, today = todayISO(), open }: { bu
   const toCome = t.rows.filter((r) => r.status !== 'paid');
   const paid = t.rows.filter((r) => r.status === 'paid');
   const total = t.paid + t.toCome;
+  const envelopes = accountEnvelopes(budget, account.id, today);
+  // Unspent month-envelope budget (Gas left this month) is assumed spent — reserved until month end.
+  const gasHeld = envelopeHeld(budget, account.id, today);
+  // After bills and reserved gas: negative = short for this pay + this month's gas.
+  const afterReserved = t.spare - gasHeld;
   // A steady account (e.g. rent) builds a buffer for pays with an extra week; what's left isn't spare.
   // Money put aside here (a car fund: WOF, tyres) builds up until it's needed; it isn't spare either —
   // unless every set-aside has a max (Haircut $60) and the account is already over it.
   const aside = hasSetAsides(budget, account.id);
-  const paysBills = budget.items.some((i) => i.accountId === account.id && !isSetAside(i));
+  const paysBills = budget.items.some((i) => i.accountId === account.id && !isHeldInAccount(i));
   const steady = !aside && accountMode(budget, account.id) === 'smooth';
   const bufferFor = steady ? nextBufferUse(budget, account.id, t.period, 13, today) : undefined;
   const names = aside ? asideNames(budget, account.id) : '';
   const maxAside = aside ? asideMaxSaved(budget, account.id) : undefined;
-  const spareAmt = Math.max(0, t.spare);
+  const spareAmt = Math.max(0, afterReserved);
   const overAsideMax = maxAside !== undefined && spareAmt > maxAside;
   const asideHeld = maxAside !== undefined ? Math.min(spareAmt, maxAside) : spareAmt;
-  // Only the cushion for the next 5-week pay is "Buffer" — not the whole leftover.
+  // Only the cushion for the next 5-week pay is "Buffer" — and only from what's left after gas.
   const bufferCushion = bufferFor ? Math.max(0, bufferFor.need - bufferFor.deposit) : 0;
   const bufferShown = steady && bufferCushion > 0 && spareAmt > 0 ? Math.min(spareAmt, bufferCushion) : undefined;
-  const leftAmount = t.spare < 0 ? Math.abs(t.spare)
+  const short = afterReserved < 0;
+  const leftAmount = short ? Math.abs(afterReserved)
     : overAsideMax ? spareAmt - maxAside!
     : aside && maxAside !== undefined ? asideHeld
     : bufferShown !== undefined ? bufferShown
     : spareAmt;
-  const leftWord = overAsideMax ? 'spare' : aside ? 'put aside' : bufferShown !== undefined ? 'buffer' : steady ? 'ends' : 'spare';
-  const leftLabel = t.spare < 0 ? 'Short'
+  const leftWord = short ? 'short' : overAsideMax ? 'spare' : aside ? 'put aside' : bufferShown !== undefined ? 'buffer' : steady ? 'ends' : 'spare';
+  const leftLabel = short ? 'Short'
     : overAsideMax ? 'Spare'
     : aside ? 'Put aside'
     : bufferShown !== undefined ? 'Buffer'
     : steady ? 'Ends'
     : 'Spare';
+  const envNames = envelopes.map((e) => e.item.name).join(' and ');
   // Accounts = this pay with what's in the account now. Planner's "Buffer" is often the *next* pay's end.
-  const leftNote = t.spare < 0 ? 'this pay after bills'
+  const leftNote = short
+    ? (gasHeld > 0 ? `after bills and ${envNames || 'month budgets'}` : 'this pay after bills')
     : overAsideMax ? `above ${names} max ${cash(maxAside!)}`
     : aside && maxAside !== undefined ? `for ${names} · max ${cash(maxAside)}`
     : aside ? `for ${names}`
     : bufferShown !== undefined && bufferFor ? `for ${fmtShort(bufferFor.period.start)}`
+    : gasHeld > 0 ? `after bills and ${envNames}`
     : steady ? 'this pay after bills'
     : 'this pay after bills';
   const color = tone(account.color);
-  const envelopes = accountEnvelopes(budget, account.id, today);
 
   return (
     <>
@@ -90,8 +98,8 @@ export function MonthTracker({ budget, account, today = todayISO(), open }: { bu
               )}
               <p className="small muted">
                 {e.over
-                  ? <>Over by {cash(-e.left)} this month — next month's {cash(e.budget)} budget starts fresh.</>
-                  : <>Leftover at month end is yours (doesn't roll over). Matched from synced purchases{e.item.name.match(/gas|fuel|petrol/i) ? ' (fuel shops)' : ''}.</>}
+                  ? <>Over by {cash(-e.left)} this month — next month’s {cash(e.budget)} budget starts fresh.</>
+                  : <>Assumed spent this month (reserved in the account). Anything left at month end is yours — it doesn’t roll over. Matched from synced purchases{e.item.name.match(/gas|fuel|petrol/i) ? ' (fuel shops)' : ''}.</>}
               </p>
             </div>
           ))}
@@ -135,11 +143,13 @@ export function MonthTracker({ budget, account, today = todayISO(), open }: { bu
 
       {t.balanceKnown && !(aside && !paysBills) && (
         <div className="stack gap-8">
-          {total > 0 && (
-            <div className="parts" role="img" aria-label={`${cash(t.paid)} paid, ${cash(t.toCome)} still to come, ${cash(leftAmount)} ${leftWord}`}>
+          {(total > 0 || gasHeld > 0) && (
+            <div className="parts" role="img" aria-label={`${cash(t.paid)} paid, ${cash(t.toCome)} still to come${gasHeld ? `, ${cash(gasHeld)} reserved for ${envNames}` : ''}, ${cash(leftAmount)} ${leftWord}`}>
               {t.paid > 0 && <div title={`Paid ${cash(t.paid)}`} style={{ flex: t.paid, background: 'var(--line)' }} />}
               {t.toCome > 0 && <div title={`Still to come ${cash(t.toCome)}`} style={{ flex: t.toCome, background: color }} />}
-              {leftAmount > 0 && <div title={`${leftLabel} ${cash(leftAmount)}`} style={{ flex: leftAmount, background: 'var(--good)' }} />}
+              {gasHeld > 0 && !short && <div title={`Reserved for ${envNames} ${cash(gasHeld)}`} style={{ flex: gasHeld, background: 'var(--warn, #C4A35A)' }} />}
+              {leftAmount > 0 && !short && <div title={`${leftLabel} ${cash(leftAmount)}`} style={{ flex: leftAmount, background: 'var(--good)' }} />}
+              {short && <div title={`Short ${cash(leftAmount)}`} style={{ flex: leftAmount, background: 'var(--bad)' }} />}
             </div>
           )}
           <div className="trio">
@@ -155,10 +165,21 @@ export function MonthTracker({ budget, account, today = todayISO(), open }: { bu
             </div>
             <div className="stat">
               <span className="small muted">{leftLabel}</span>
-              <b className={t.spare < 0 ? 'neg' : ''}>{cash(leftAmount)}</b>
+              <b className={short ? 'neg' : ''}>{cash(leftAmount)}</b>
               <span className="xs muted">{leftNote}</span>
             </div>
           </div>
+          {short && gasHeld > 0 && (
+            <p className="small muted">
+              Needs {cash(t.toCome)} for bills and {cash(gasHeld)} still budgeted for {envNames} this month
+              ({cash(t.toCome + gasHeld)} total) against {cash(t.balance)} in the account.
+            </p>
+          )}
+          {!short && gasHeld > 0 && spareAmt > 0 && bufferShown === undefined && (
+            <p className="small muted">
+              {cash(gasHeld)} reserved for {envNames} this month (assumed spent). Anything left at month end is yours.
+            </p>
+          )}
           {overAsideMax && (
             <p className="small muted">
               Put aside {cash(asideHeld)} for {names} (max {cash(maxAside!)}); the rest after bills is spare.
@@ -172,7 +193,8 @@ export function MonthTracker({ budget, account, today = todayISO(), open }: { bu
           {steady && t.balanceKnown && bufferShown !== undefined && bufferFor && (
             <p className="small muted">
               Buffer {cash(bufferShown)} is for the {fmtShort(bufferFor.period.start)} pay: it needs {cash(bufferFor.need)}, gets {cash(bufferFor.deposit)}.
-              {spareAmt > bufferShown ? <> Account has about {cash(spareAmt)} left after bills this pay.</> : null}
+              {gasHeld > 0 ? <> After bills and {cash(gasHeld)} reserved for {envNames}.</> : null}
+              {spareAmt > bufferShown ? <> About {cash(spareAmt)} left after that.</> : null}
             </p>
           )}
 
