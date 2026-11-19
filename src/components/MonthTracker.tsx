@@ -1,6 +1,6 @@
 import { accountMode, balanceOn, billTracker, nextBufferUse, payProjection } from '../lib/balances';
 import { fmtDay, fmtShort, monthName, todayISO } from '../lib/dates';
-import { hasSetAsides, isSetAside, type Period } from '../lib/engine';
+import { asideMaxSaved, hasSetAsides, isSetAside, type Period } from '../lib/engine';
 import { asideNames } from '../lib/rebalance';
 import { tone } from '../lib/colors';
 import { cash } from '../lib/money';
@@ -20,16 +20,39 @@ export function MonthTracker({ budget, account, today = todayISO(), open }: { bu
   const paid = t.rows.filter((r) => r.status === 'paid');
   const total = t.paid + t.toCome;
   // A steady account (e.g. rent) builds a buffer for pays with an extra week; what's left isn't spare.
-  // Money put aside here (a car fund: WOF, tyres) builds up until it's needed; it isn't spare either.
+  // Money put aside here (a car fund: WOF, tyres) builds up until it's needed; it isn't spare either —
+  // unless every set-aside has a max (Haircut $60) and the account is already over it.
   const aside = hasSetAsides(budget, account.id);
   const paysBills = budget.items.some((i) => i.accountId === account.id && !isSetAside(i));
   const steady = !aside && accountMode(budget, account.id) === 'smooth';
   const bufferFor = steady ? nextBufferUse(budget, account.id, t.period, 13, today) : undefined;
-  const leftWord = aside ? 'put aside' : steady ? 'buffer' : 'spare';
-  const leftLabel = t.spare < 0 ? 'Short' : aside ? 'Put aside' : steady ? 'Buffer' : 'Spare';
+  const names = aside ? asideNames(budget, account.id) : '';
+  const maxAside = aside ? asideMaxSaved(budget, account.id) : undefined;
+  const spareAmt = Math.max(0, t.spare);
+  const overAsideMax = maxAside !== undefined && spareAmt > maxAside;
+  const asideHeld = maxAside !== undefined ? Math.min(spareAmt, maxAside) : spareAmt;
+  // Only the cushion for the next 5-week pay is "Buffer" — not the whole leftover.
+  const bufferCushion = bufferFor ? Math.max(0, bufferFor.need - bufferFor.deposit) : 0;
+  const bufferShown = steady && bufferCushion > 0 && spareAmt > 0 ? Math.min(spareAmt, bufferCushion) : undefined;
+  const leftAmount = t.spare < 0 ? Math.abs(t.spare)
+    : overAsideMax ? spareAmt - maxAside!
+    : aside && maxAside !== undefined ? asideHeld
+    : bufferShown !== undefined ? bufferShown
+    : spareAmt;
+  const leftWord = overAsideMax ? 'spare' : aside ? 'put aside' : bufferShown !== undefined ? 'buffer' : steady ? 'ends' : 'spare';
+  const leftLabel = t.spare < 0 ? 'Short'
+    : overAsideMax ? 'Spare'
+    : aside ? 'Put aside'
+    : bufferShown !== undefined ? 'Buffer'
+    : steady ? 'Ends'
+    : 'Spare';
   // Accounts = this pay with what's in the account now. Planner's "Buffer" is often the *next* pay's end.
-  const leftNote = t.spare < 0 ? 'this pay after bills' : aside ? `for ${asideNames(budget, account.id)}` : steady
-    ? (bufferFor ? `for ${fmtShort(bufferFor.period.start)}` : 'for extra weeks')
+  const leftNote = t.spare < 0 ? 'this pay after bills'
+    : overAsideMax ? `above ${names} max ${cash(maxAside!)}`
+    : aside && maxAside !== undefined ? `for ${names} · max ${cash(maxAside)}`
+    : aside ? `for ${names}`
+    : bufferShown !== undefined && bufferFor ? `for ${fmtShort(bufferFor.period.start)}`
+    : steady ? 'this pay after bills'
     : 'this pay after bills';
   const color = tone(account.color);
 
@@ -47,27 +70,36 @@ export function MonthTracker({ budget, account, today = todayISO(), open }: { bu
 
       {/* Money put aside (a car fund): nothing comes out on a date, so what matters is what's built up and what's next. */}
       {t.balanceKnown && aside && !paysBills && (
-        <div className="trio">
-          <div className="stat">
-            <span className="small muted">Put aside</span>
-            <b>{t.balanceSource === 'entered' ? cash(Math.max(0, t.balance)) : '—'}</b>
-            <span className="xs muted">for {asideNames(budget, account.id)}</span>
+        <div className="stack gap-8">
+          <div className="trio">
+            <div className="stat">
+              <span className="small muted">Put aside</span>
+              <b>{t.balanceSource === 'entered'
+                ? cash(maxAside !== undefined ? Math.min(Math.max(0, t.balance), maxAside) : Math.max(0, t.balance))
+                : '—'}</b>
+              <span className="xs muted">for {names}{maxAside !== undefined ? ` · max ${cash(maxAside)}` : ''}</span>
+            </div>
+            <div className="stat">
+              <span className="small muted">Next pay adds</span>
+              <b>+{cash(t.next.deposit)}</b>
+              <span className="xs muted">on {fmtShort(t.next.period.start)}</span>
+            </div>
           </div>
-          <div className="stat">
-            <span className="small muted">Next pay adds</span>
-            <b>+{cash(t.next.deposit)}</b>
-            <span className="xs muted">on {fmtShort(t.next.period.start)}</span>
-          </div>
+          {maxAside !== undefined && t.balanceSource === 'entered' && t.balance > maxAside && (
+            <p className="small muted">
+              {cash(t.balance - maxAside)} spare above the {cash(maxAside)} max.
+            </p>
+          )}
         </div>
       )}
 
       {t.balanceKnown && !(aside && !paysBills) && (
         <div className="stack gap-8">
           {total > 0 && (
-            <div className="parts" role="img" aria-label={`${cash(t.paid)} paid, ${cash(t.toCome)} still to come, ${cash(Math.max(0, t.spare))} ${leftWord}`}>
+            <div className="parts" role="img" aria-label={`${cash(t.paid)} paid, ${cash(t.toCome)} still to come, ${cash(leftAmount)} ${leftWord}`}>
               {t.paid > 0 && <div title={`Paid ${cash(t.paid)}`} style={{ flex: t.paid, background: 'var(--line)' }} />}
               {t.toCome > 0 && <div title={`Still to come ${cash(t.toCome)}`} style={{ flex: t.toCome, background: color }} />}
-              {t.spare > 0 && <div title={`${leftLabel} ${cash(t.spare)}`} style={{ flex: t.spare, background: 'var(--good)' }} />}
+              {leftAmount > 0 && <div title={`${leftLabel} ${cash(leftAmount)}`} style={{ flex: leftAmount, background: 'var(--good)' }} />}
             </div>
           )}
           <div className="trio">
@@ -83,20 +115,24 @@ export function MonthTracker({ budget, account, today = todayISO(), open }: { bu
             </div>
             <div className="stat">
               <span className="small muted">{leftLabel}</span>
-              <b className={t.spare < 0 ? 'neg' : ''}>{cash(Math.abs(t.spare))}</b>
+              <b className={t.spare < 0 ? 'neg' : ''}>{cash(leftAmount)}</b>
               <span className="xs muted">{leftNote}</span>
             </div>
           </div>
+          {overAsideMax && (
+            <p className="small muted">
+              Put aside {cash(asideHeld)} for {names} (max {cash(maxAside!)}); the rest after bills is spare.
+            </p>
+          )}
         </div>
       )}
 
       <Collapse open={open} stacked><FlatDetails.Provider value>
         <div className="stack gap-12">
-          {steady && t.balanceKnown && t.spare > 0 && (
+          {steady && t.balanceKnown && bufferShown !== undefined && bufferFor && (
             <p className="small muted">
-              {bufferFor
-                ? <>Buffer is for the {fmtShort(bufferFor.period.start)} pay: it needs {cash(bufferFor.need)}, gets {cash(bufferFor.deposit)}.</>
-                : 'Buffer is for pays with an extra week.'}
+              Buffer {cash(bufferShown)} is for the {fmtShort(bufferFor.period.start)} pay: it needs {cash(bufferFor.need)}, gets {cash(bufferFor.deposit)}.
+              {spareAmt > bufferShown ? <> Account has about {cash(spareAmt)} left after bills this pay.</> : null}
             </p>
           )}
 
