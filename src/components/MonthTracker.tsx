@@ -1,5 +1,6 @@
 import { accountMode, balanceOn, billTracker, nextBufferUse, payProjection } from '../lib/balances';
 import { fmtDay, fmtShort, monthName, todayISO } from '../lib/dates';
+import { accountEnvelopes } from '../lib/envelope';
 import { asideMaxSaved, hasSetAsides, isSetAside, type Period } from '../lib/engine';
 import { asideNames } from '../lib/rebalance';
 import { tone } from '../lib/colors';
@@ -55,9 +56,48 @@ export function MonthTracker({ budget, account, today = todayISO(), open }: { bu
     : steady ? 'this pay after bills'
     : 'this pay after bills';
   const color = tone(account.color);
+  const envelopes = accountEnvelopes(budget, account.id, today);
 
   return (
     <>
+      {envelopes.length > 0 && (
+        <div className="stack gap-8">
+          {envelopes.map((e) => (
+            <div key={e.item.id} className="stack gap-8">
+              <div className="trio">
+                <div className="stat">
+                  <span className="small muted">{e.item.name} · {e.label}</span>
+                  <b>{cash(e.budget)}</b>
+                  <span className="xs muted">month budget</span>
+                </div>
+                <div className="stat">
+                  <span className="small muted">Spent</span>
+                  <b>{cash(e.spent)}</b>
+                  <span className="xs muted">{e.txns.length ? `${e.txns.length} purchase${e.txns.length === 1 ? '' : 's'}` : 'none yet'}</span>
+                </div>
+                <div className="stat">
+                  <span className="small muted">{e.over ? 'Over' : 'Left'}</span>
+                  <b className={e.over ? 'neg' : e.left > 0 ? 'pos' : ''}>{cash(Math.abs(e.left))}</b>
+                  <span className="xs muted">{e.over ? 'over budget' : 'this month'}</span>
+                </div>
+              </div>
+              {(e.budget > 0 || e.spent > 0) && (
+                <div className="parts" role="img" aria-label={`${cash(e.spent)} spent of ${cash(e.budget)}`}>
+                  {e.spent > 0 && <div title={`Spent ${cash(e.spent)}`} style={{ flex: Math.min(e.spent, e.budget || e.spent), background: e.over ? 'var(--bad)' : color }} />}
+                  {e.left > 0 && <div title={`Left ${cash(e.left)}`} style={{ flex: e.left, background: 'var(--good)' }} />}
+                  {e.over && e.budget > 0 && <div title={`Over ${cash(-e.left)}`} style={{ flex: -e.left, background: 'var(--bad)' }} />}
+                </div>
+              )}
+              <p className="small muted">
+                {e.over
+                  ? <>Over by {cash(-e.left)} this month — next month's {cash(e.budget)} budget starts fresh.</>
+                  : <>Leftover at month end is yours (doesn't roll over). Matched from synced purchases{e.item.name.match(/gas|fuel|petrol/i) ? ' (fuel shops)' : ''}.</>}
+              </p>
+            </div>
+          ))}
+        </div>
+      )}
+
       {!t.balanceKnown && (
         <div className="tip small stack gap-4">
           <b>Enter this account's balance to check {t.toCome ? fmtShort(toCome[0].date) : 'it'}</b>
@@ -135,6 +175,20 @@ export function MonthTracker({ budget, account, today = todayISO(), open }: { bu
               {spareAmt > bufferShown ? <> Account has about {cash(spareAmt)} left after bills this pay.</> : null}
             </p>
           )}
+
+          {envelopes.map((e) => e.txns.length > 0 && (
+            <Disclosure key={`env-${e.item.id}`} title={`${e.item.name} purchases · ${e.label}`} meta={cash(e.spent)}>
+              <ShortList>
+                {e.txns.map((t, i) => (
+                  <div className="list-row small" key={`${t.date}-${t.amount}-${i}`}>
+                    <span style={{ flex: '0 0 72px' }} className="muted">{fmtShort(t.date)}</span>
+                    <span className="grow clip">{t.merchant || t.description}</span>
+                    <span className="num">{cash(-t.amount)}</span>
+                  </div>
+                ))}
+              </ShortList>
+            </Disclosure>
+          ))}
 
           {/* Bills still to come this pay */}
           {toCome.length > 0 && <div>

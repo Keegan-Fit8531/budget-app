@@ -1,7 +1,8 @@
 import { addDays, todayISO, type ISODate } from './dates';
 import { accountHasPlans, debtPaymentsIn, debtPay, heldDebtPaymentsIn, isHoldDisplayAccount, projectedOwed } from './debts';
 import {
-  asideSpareNow, averageNeed, firstBudgetPay, hasSetAsides, isSetAside, itemDates, periodContaining, setAsideOn, setAsidesOn, shiftPeriod, type Period,
+  asideSpareNow, averageNeed, firstBudgetPay, hasMonthEnvelopes, hasSetAsides, isHeldInAccount, itemDates,
+  monthEnvelopeOn, monthEnvelopesOn, periodContaining, setAsideOn, setAsidesOn, shiftPeriod, type Period,
 } from './engine';
 import { accountHasGoals, savingsNeedIn } from './savings';
 import type { Budget, Cents, PaydayMode, SplitLine } from './types';
@@ -18,13 +19,14 @@ export interface Outflow { date: ISODate; amount: Cents; name: string }
 
 /**
  * Money leaving an account between two dates (inclusive): its costs and debt plan payments. Money put
- * aside (a WOF, tyres) stays in the account, so it isn't here; see `fundedOut`.
+ * aside (a WOF, tyres) or held in a month envelope (Gas) stays in the account, so it isn't here; see
+ * `fundedOut`.
  */
 export function outflows(b: Budget, accountId: string, from: ISODate, to: ISODate): Outflow[] {
   if (from > to) return [];
   const out: Outflow[] = [];
   for (const item of b.items) {
-    if (item.accountId !== accountId || isSetAside(item)) continue;
+    if (item.accountId !== accountId || isHeldInAccount(item)) continue;
     for (const date of itemDates(item, from, to, b.settings)) out.push({ date, amount: item.amount, name: item.name });
   }
   for (const p of debtPaymentsIn(b, accountId, from, to)) out.push({ date: p.date, amount: p.amount, name: p.plan.name });
@@ -37,12 +39,12 @@ export function outflows(b: Budget, accountId: string, from: ISODate, to: ISODat
 
 /**
  * What payday has to fund between two dates: the payments (`outflows`), plus what each payday in that
- * time puts aside, as if it were paid out on payday. Working out the payday amounts this way means money
- * put aside is never counted as free to pay the bills (or as spare), however much has built up.
+ * time puts aside or funds into a month envelope, as if it were paid out on payday. Working out the
+ * payday amounts this way means that money is never counted as free to pay the bills (or as spare).
  */
 export function fundedOut(b: Budget, accountId: string, from: ISODate, to: ISODate): Outflow[] {
   const out = outflows(b, accountId, from, to);
-  if (from > to || !hasSetAsides(b, accountId)) return out;
+  if (from > to || (!hasSetAsides(b, accountId) && !hasMonthEnvelopes(b, accountId))) return out;
   const s = b.settings;
   let p = periodContaining(from, s);
   if (p.start < from) p = shiftPeriod(p, 1, s);
@@ -54,6 +56,9 @@ export function fundedOut(b: Budget, accountId: string, from: ISODate, to: ISODa
       if (x.amount <= 0) continue;
       out.push({ date: p.start, amount: x.amount, name: x.item.name });
       if (spare !== undefined) spare += x.amount;
+    }
+    for (const x of monthEnvelopesOn(b, accountId, p.start)) {
+      out.push({ date: p.start, amount: x.amount, name: x.item.name });
     }
   }
   return out.sort((x, y) => x.date.localeCompare(y.date) || y.amount - x.amount);
@@ -69,7 +74,7 @@ export function exactNeed(b: Budget, accountId: string, p: Period): Cents {
  * pay puts aside is simply put aside less, not money the account is owed, so later pays don't catch it up.
  */
 const pausedAside = (b: Budget, accountId: string, date: ISODate, usual: Cents, sent: Cents): Cents =>
-  sent >= usual ? 0 : Math.min(setAsideOn(b, accountId, date), usual - sent);
+  sent >= usual ? 0 : Math.min(setAsideOn(b, accountId, date) + monthEnvelopeOn(b, accountId, date), usual - sent);
 
 const HORIZON = 24;
 const RUN_PAYS = 40;
@@ -396,8 +401,8 @@ function liveDepositFor(b: Budget, accountId: string, p: Period, today: ISODate)
     const since = (debt.paid ?? []).reduce((t, x) => t + (x.date >= p.start ? x.amount : 0), 0);
     return Math.min(amount, Math.max(0, projectedOwed(debt, b.settings, addDays(p.start, -1), debtPay(b, debt)) + since));
   }
-  // A cost put aside here (moved to a savings account, say) is always sent, even with a fixed amount below it.
-  return Math.max(amount, setAsideOn(b, accountId, p.start));
+  // A cost put aside or held in a month envelope is always sent, even with a fixed amount below it.
+  return Math.max(amount, setAsideOn(b, accountId, p.start) + monthEnvelopeOn(b, accountId, p.start));
 }
 
 /**
@@ -423,7 +428,7 @@ function depositSansBalance(b: Budget, accountId: string, p: Period): Cents {
   const mode = modeOf(line);
   if (mode === 'exact') return exactNeed(b, accountId, p);
   if (mode === 'smooth') return usualSteady(b, accountId);
-  return Math.max(line?.amount ?? 0, setAsideOn(b, accountId, p.start));
+  return Math.max(line?.amount ?? 0, setAsideOn(b, accountId, p.start) + monthEnvelopeOn(b, accountId, p.start));
 }
 
 /**

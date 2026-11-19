@@ -71,6 +71,12 @@ export interface Item {
    * covering bills, payday stops adding more for this cost until some is spent.
    */
   maxSaved?: Cents;
+  /**
+   * Calendar-month envelope (e.g. Gas $200/month): amount is this month's budget. Synced purchases
+   * that match (fuel for Gas) count against it. What's left at month end is yours — it does not roll
+   * into next month. Mutually exclusive with `setAside`.
+   */
+  monthEnvelope?: boolean;
 }
 
 /** How much of each pay is sent to each account on payday. */
