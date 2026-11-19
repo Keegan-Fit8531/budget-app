@@ -160,13 +160,29 @@ export function Planner() {
   // The chart follows the view: this pay, this pay per week / fortnight, or the average of the next 12 pays
   // per month / added up for the year (the same amounts the cards and Total budgeted show). It's by group;
   // each account's own amount is on its card below, and its share is on Insights.
-  // Hold-display cards are shown for clarity but their money is already in the hold account — don't count twice.
+  // Hold-display debts (Gem in Misc bills): count under Debt, and take that slice out of the hold account
+  // so Essentials isn't double-counting the same money.
   const sentOf = (a: (typeof plan.accounts)[number]) => Math.max(0, longRun ? v(planned?.get(a.account.id)?.sent ?? 0) : v(a.funded));
-  const split_ = plan.accounts.filter((a) => a.account.id !== budget.settings.payAccountId && !isHoldDisplayAccount(budget, a.account.id));
+  const holdOut = new Map<string, number>();
+  for (const a of plan.accounts) {
+    if (a.account.id === budget.settings.payAccountId || !isHoldDisplayAccount(budget, a.account.id)) continue;
+    const amt = sentOf(a);
+    if (amt <= 0) continue;
+    for (const d of budget.debts ?? []) {
+      if (d.accountId !== a.account.id || !d.holdAccountId) continue;
+      holdOut.set(d.holdAccountId, (holdOut.get(d.holdAccountId) ?? 0) + amt);
+    }
+  }
+  const chartOf = (a: (typeof plan.accounts)[number]) => {
+    if (a.account.id === budget.settings.payAccountId) return 0;
+    if (isHoldDisplayAccount(budget, a.account.id)) return sentOf(a);
+    return Math.max(0, sentOf(a) - (holdOut.get(a.account.id) ?? 0));
+  };
+  const chartAccounts = plan.accounts.filter((a) => a.account.id !== budget.settings.payAccountId);
   const grouped = new Set(budget.groups.map((g) => g.id));
   const slices = [
-    ...budget.groups.map((g) => ({ label: g.name, color: g.color, value: split_.filter((a) => a.account.groupId === g.id).reduce((t, a) => t + sentOf(a), 0) })),
-    { label: 'Other', color: 'var(--muted)', value: split_.filter((a) => !grouped.has(a.account.groupId)).reduce((t, a) => t + sentOf(a), 0) },
+    ...budget.groups.map((g) => ({ label: g.name, color: g.color, value: chartAccounts.filter((a) => a.account.groupId === g.id).reduce((t, a) => t + chartOf(a), 0) })),
+    { label: 'Other', color: 'var(--muted)', value: chartAccounts.filter((a) => !grouped.has(a.account.groupId)).reduce((t, a) => t + chartOf(a), 0) },
   ].filter((x) => x.value > 0);
 
   const debtAccounts = new Set((budget.debts ?? []).map((d) => d.accountId));
