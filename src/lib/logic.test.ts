@@ -388,6 +388,36 @@ describe('bill tracker', () => {
     expect(billTracker(b, 'bills', '2026-11-20').balance).toBe(31000);
   });
 
+  it("payday deposit then today's weekly transfer: balance $800 is enough for the 4 weeks left", () => {
+    // $1,000 put in on payday, $200 transferred to weekly allowance today → $800 left for 4 Thursdays.
+    const b = budget();
+    b.accounts.push({ id: 'storage', name: 'Allowance storage', kind: 'bank', color: '#000', groupId: 'lifestyle' });
+    b.split.push({ accountId: 'storage', amount: 100000, mode: 'fixed' });
+    b.items.push({ id: 'wa', name: 'Weekly allowance transfer', amount: 20000, frequency: 'weekly', start: '2026-01-01', accountId: 'storage' });
+    b.balances = { storage: { amount: 80000, asOf: '2026-11-19' } };
+    b.accountTransactions = { storage: [{ date: '2026-11-19', amount: -20000, description: 'Weekly allowance' }] };
+
+    const t = billTracker(b, 'storage', '2026-11-19');
+    expect(t.paid).toBe(20000);
+    expect(t.toCome).toBe(80000);
+    expect(t.spare).toBe(0);
+    expect(t.rows.find((r) => r.date === '2026-11-19')?.status).toBe('paid');
+    expect(t.rows.filter((r) => r.status !== 'paid').every((r) => r.covered)).toBe(true);
+  });
+
+  it("same after a bank balance sync with no matching transaction line", () => {
+    const b = budget();
+    b.accounts.push({ id: 'storage', name: 'Allowance storage', kind: 'bank', color: '#000', groupId: 'lifestyle' });
+    b.split.push({ accountId: 'storage', amount: 100000, mode: 'fixed' });
+    b.items.push({ id: 'wa', name: 'Weekly allowance transfer', amount: 20000, frequency: 'weekly', start: '2026-01-01', accountId: 'storage' });
+    // Synced balance today is post-transfer; payday sent $1,000.
+    b.balances = { storage: { amount: 80000, asOf: '2026-11-19' } };
+    b.overrides = { '2026-11-19': { storage: 100000 } };
+    const t = billTracker(b, 'storage', '2026-11-19');
+    expect(t.spare).toBe(0);
+    expect(t.toCome).toBe(80000);
+  });
+
   it('on a day a payment is due, the card headline and "In the account" are the same amount', () => {
     // Rent of $415 every Monday; $705 was in the account on Sat 14 Nov, and Mon 16 Nov is rent day.
     const b = budget();
