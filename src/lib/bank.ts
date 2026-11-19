@@ -172,9 +172,10 @@ export function applyBank(b: Budget, data: BankData, links: Record<string, strin
       b.pendingTransactions = all;
     }
     // Payments from this account to cards that can't be linked themselves (Gem Visa, Q Mastercard).
-    // Every stored transaction is looked at, not only new ones, so a payment already in the account is still noted once.
+    // Settled and pending: a $50 Q Mastercard debit still counts once when ANZ shows it as pending.
     const stored = type === 'account' ? b.accountTransactions?.[id] ?? [] : [];
-    const cardPayments = type === 'account' ? recordCardPayments(b, id, stored, today) : [];
+    const pending = type === 'account' ? b.pendingTransactions?.[id] ?? [] : [];
+    const cardPayments = type === 'account' ? recordCardPayments(b, id, [...stored, ...pending], today) : [];
     // Money paid into or taken out of a savings goal's fund (ANZ → Kernel).
     if (type === 'account') seenMoves.push(...recordGoalMoves(b, id, stored));
     // The account behind a savings goal: the goal's balance is the bank's.

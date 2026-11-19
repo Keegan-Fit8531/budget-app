@@ -20,7 +20,10 @@ function matcher(debt: Debt): (description: string) => boolean {
   const name = norm(debt.name).trim();
   const tests: RegExp[] = [];
   if (debt.rules === 'gem' || /\bgem\b/.test(name)) tests.push(/ gem (visa |card )?|latitude/);
-  if (/^q\b/.test(name)) tests.push(/ q ?(mastercard|card|mc) /);
+  // ANZ often shows "Q Mastercard …", "BP Q Mastercard …", "Q Card …", or "Latitude Q …".
+  if (debt.rules === 'mastercard' || /^q\b/.test(name) || /\bq (mastercard|card|mc)\b/.test(name)) {
+    tests.push(/ q ?(mastercard|card|mc) /, / latitude q /, /\bqcard\b/);
+  }
   return (d) => {
     const text = norm(d);
     if (tests.some((t) => t.test(text))) return true;
@@ -109,6 +112,9 @@ export function recordCardPayments(b: Budget, accountId: string, txns: Txn[], to
     let covered = 0;
     for (const x of near) {
       if (covered >= amount) break;
+      // A $50 transfer must not be swallowed by a nearby $200 planned payday amount — only match
+      // planned payments this transfer is large enough to stand for.
+      if (x.amount > amount - covered) continue;
       planned.push(x.key);
       covered += x.amount;
     }
