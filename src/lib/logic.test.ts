@@ -1138,6 +1138,39 @@ describe('reading documents: Afterpay', () => {
     upload(b, { kind: 'afterpay', afterpay: { orders: [{ merchant: 'Kmart', purchaseDate: '2026-11-01', total: { amount: '40.00' }, instalments: [{ date: '2026-11-01', amount: '10.00' }, { date: '2026-11-15', amount: '10.00' }, { date: '2026-11-29', amount: '10.00' }, { date: '2026-12-13', amount: '10.00' }] }] } }, '2026-11-16');
     expect(debt(b, 'afterpay').plans.find((p) => p.name === 'Kmart')!.instalments!.map((i) => i.date)).toEqual(['2026-11-29', '2026-12-13']);
   });
+
+  it('Upcoming payments: only what’s still due stays; other orders are marked paid off', () => {
+    const b = debtBudget();
+    // Screen like Afterpay’s Upcoming payments: only PHOTOGEAR $37.25 left (4 of 4).
+    const upcoming: Extraction = {
+      kind: 'afterpay',
+      afterpay: {
+        listsAllDue: true,
+        orders: [{
+          merchant: 'PHOTOGEAR',
+          instalments: [{ date: '2026-12-31', amount: '37.25', label: '4 of 4', paid: false }],
+        }],
+      },
+    };
+    // Existing orders that should clear, plus Photogear still owing more than one instalment.
+    const ap = debt(b, 'afterpay');
+    ap.plans.push({
+      id: 'ap-photo', name: 'Photogear', type: 'afterpay', original: 14900, remaining: 7450, asOf: '2026-11-01', purchaseDate: '2026-10-01',
+      instalments: [
+        { date: '2026-11-19', amount: 3725, label: '3 of 4' },
+        { date: '2026-12-31', amount: 3725, label: '4 of 4' },
+      ],
+    });
+    const before = ap.plans.length;
+    expect(before).toBeGreaterThan(1);
+    const r = upload(b, upcoming, '2026-11-19');
+    expect(r.issues.filter((i) => i.level === 'block')).toEqual([]);
+    const after = debt(b, 'afterpay');
+    expect(after.plans.map((p) => p.name)).toEqual(['Photogear']);
+    expect(after.plans[0].instalments).toEqual([{ date: '2026-12-31', amount: 3725, label: '4 of 4' }]);
+    expect(after.plans[0].remaining).toBe(3725);
+    expect(r.issues.some((i) => i.level === 'note' && /paid off/i.test(i.text))).toBe(true);
+  });
 });
 
 describe('reading documents: payslips', () => {

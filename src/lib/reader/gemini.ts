@@ -130,7 +130,15 @@ export function mergeReads(list: Extraction[]): Extraction {
   const notes = [...new Set(list.map((x) => x.notes).filter(Boolean))].join(' ');
   const withNotes = (e: Extraction): Extraction => (notes ? { ...e, notes } : e);
   if (kind === 'transactions') return withNotes({ kind, transactions: joinReads(same.flatMap((x) => (x.transactions ? [x.transactions] : []))) });
-  if (kind === 'afterpay') return withNotes({ kind, afterpay: { orders: same.flatMap((x) => x.afterpay?.orders ?? []) } });
+  if (kind === 'afterpay') {
+    return withNotes({
+      kind,
+      afterpay: {
+        listsAllDue: same.some((x) => x.afterpay?.listsAllDue),
+        orders: same.flatMap((x) => x.afterpay?.orders ?? []),
+      },
+    });
+  }
   if (kind === 'balances') {
     const first = same.find((x) => x.balances)?.balances ?? {};
     return withNotes({ kind, balances: { ...first, accounts: same.flatMap((x) => x.balances?.accounts ?? []) } });

@@ -59,6 +59,11 @@ export interface RawStatement {
 }
 
 export interface RawAfterpay {
+  /**
+   * True for Afterpay’s “Upcoming payments” screen (or any list of everything still due): orders not
+   * on it are treated as paid off. False for a single order or a partial list of orders.
+   */
+  listsAllDue?: boolean | null;
   orders?: {
     planId?: string | null;
     merchant?: string;

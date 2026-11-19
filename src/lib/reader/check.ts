@@ -70,7 +70,12 @@ export interface Draft {
     purchases: DraftPurchase[];
     payments: { date: string; amount: string }[];
   };
-  afterpay: { debtId: string; orders: DraftOrder[] };
+  afterpay: {
+    debtId: string;
+    /** Upcoming-payments style: everything still due is on this list; other orders are paid off. */
+    listsAllDue: boolean;
+    orders: DraftOrder[];
+  };
   kiwisaver: DraftKiwiSaver;
   transactions: DraftTransactions;
   balances: DraftBalances;
@@ -262,6 +267,7 @@ export function toDraft(ex: Extraction, b: Budget, source: ReaderSource, makeId:
     },
     afterpay: {
       debtId: ap?.id ?? '',
+      listsAllDue: !!ex.afterpay?.listsAllDue,
       orders: (ex.afterpay?.orders ?? []).map((o) => ({
         planId: o.planId ?? '', merchant: o.merchant ?? '', purchaseDate: o.purchaseDate ?? '', total: fig(o.total), newId: makeId(),
         instalments: (o.instalments ?? []).map((i) => ({ date: i.date ?? '', amount: i.amount ?? '', label: i.label, paid: !!i.paid })),
@@ -530,10 +536,13 @@ export function resolveOrder(o: Pick<DraftOrder, 'planId' | 'merchant' | 'purcha
   const hits = debt.plans.filter((p) => {
     const name = !!o.merchant && sameName(p.name, o.merchant);
     const sameDate = !!date && p.purchaseDate === date;
-    const sameTotal = o.total !== undefined && p.original === o.total;
+    const sameTotal = o.total !== undefined && (p.original === o.total || p.remaining === o.total);
     return (name && (sameDate || sameTotal)) || (sameDate && sameTotal);
   });
-  return hits.length === 1 ? hits[0] : undefined;
+  if (hits.length === 1) return hits[0];
+  // Upcoming payments often only shows the shop name (no purchase date / order total).
+  const byName = o.merchant ? debt.plans.filter((p) => sameName(p.name, o.merchant)) : [];
+  return byName.length === 1 ? byName[0] : undefined;
 }
 
 /** How long a new purchase on this card is interest-free, if its rules make it a plan of its own (Gem: $250 or more). */
@@ -834,7 +843,10 @@ function reviewAfterpay(d: Draft, b: Budget, today: ISODate): Review {
   const note = (text: string) => issues.push({ level: 'note', text });
   const debt = afterpayDebt(b, d.afterpay.debtId);
   if (!debt) return { proposal: null, ignored, issues: [{ level: 'block', text: 'There’s no Afterpay set up in Debts yet. Add it there first.' }] };
-  if (!d.afterpay.orders.length) block('No orders were found. Try a screenshot that shows your orders and their instalments.');
+  // Upcoming payments can be empty (nothing left to pay) — that still pays off every open order.
+  if (!d.afterpay.orders.length && !d.afterpay.listsAllDue) {
+    block('No orders were found. Try a screenshot that shows your orders and their instalments.');
+  }
 
   const updates: OrderUpdate[] = [];
   const paidOff: string[] = [];
@@ -843,7 +855,6 @@ function reviewAfterpay(d: Draft, b: Budget, today: ISODate): Review {
   for (const o of d.afterpay.orders) {
     const name = o.merchant || 'An order';
     const total = toCents(o.total.value);
-    if (total === null) { block(`Check the total for ${name}.`); continue; }
     const inst: { date: ISODate; amount: Cents; label?: string; paid: boolean }[] = [];
     let bad = false;
     for (const i of o.instalments) {
@@ -858,9 +869,14 @@ function reviewAfterpay(d: Draft, b: Budget, today: ISODate): Review {
     const done = inst.length - keep.length;
     if (done) ignored.push(`${name}: ${done} instalment${done === 1 ? '' : 's'} already paid or due before today, already counted.`);
     const all = inst.reduce((t, i) => t + i.amount, 0);
+    const remainingSum = keep.reduce((t, i) => t + i.amount, 0);
+    // Upcoming payments often only shows the amount still due, not the original order total.
+    const orderTotal = total?.cents ?? (all || remainingSum);
+    if (total === null && !keep.length && !inst.length) { block(`Check the total for ${name}.`); continue; }
+    if (total === null && keep.length) note(`${name}: no order total on the screen — using the ${cash(remainingSum)} still due.`);
     if (total?.cents && inst.length >= 4 && Math.abs(all - total.cents) > 4) note(`${name}: the instalments add up to ${cash(all)}, not the total of ${cash(total.cents)}. Check them.`);
 
-    const plan = resolveOrder({ ...o, total: total?.cents }, debt);
+    const plan = resolveOrder({ ...o, total: total?.cents ?? remainingSum }, debt);
     if (plan) {
       if (used.has(plan.id)) { block(`Two orders on the screenshot matched ${plan.name}. Check them.`); continue; }
       used.add(plan.id);
@@ -871,16 +887,23 @@ function reviewAfterpay(d: Draft, b: Budget, today: ISODate): Review {
     } else {
       const purchaseDate = validDate(o.purchaseDate) ?? today;
       newPlans.push({
-        id: o.newId, name: o.merchant.trim() || 'Afterpay order', type: 'afterpay', original: total?.cents || all, remaining: keep.reduce((t, i) => t + i.amount, 0),
+        id: o.newId, name: o.merchant.trim() || 'Afterpay order', type: 'afterpay',
+        original: orderTotal || remainingSum, remaining: remainingSum,
         asOf: today, purchaseDate, instalments: keep,
       });
     }
   }
-  const others = debt.plans.filter((p) => !used.has(p.id)).length;
-  if (others && (updates.length || paidOff.length || newPlans.length)) ignored.push(`${others} other order${others === 1 ? '' : 's'} not on this screenshot: left as ${others === 1 ? 'it is' : 'they are'}.`);
+  const others = debt.plans.filter((p) => !used.has(p.id));
+  if (d.afterpay.listsAllDue) {
+    // Upcoming payments lists everything still due — anything not on it is paid off.
+    for (const p of others) paidOff.push(p.id);
+    if (others.length) note(`${others.length} other order${others.length === 1 ? '' : 's'} not on Upcoming payments: marked paid off.`);
+  } else if (others.length && (updates.length || paidOff.length || newPlans.length)) {
+    ignored.push(`${others.length} other order${others.length === 1 ? '' : 's'} not on this screenshot: left as ${others.length === 1 ? 'it is' : 'they are'}.`);
+  }
   if (issues.some((i) => i.level === 'block')) return { proposal: null, issues, ignored };
   if (!updates.length && !paidOff.length && !newPlans.length) {
-    return { proposal: null, ignored, issues: [...issues, { level: 'block', text: 'Nothing to change: every order on the screenshot is already paid.' }] };
+    return { proposal: null, ignored, issues: [...issues, { level: 'block', text: d.afterpay.listsAllDue && !debt.plans.length ? 'Nothing to change: Afterpay is already clear.' : 'Nothing to change: every order on the screenshot is already paid.' }] };
   }
   return { proposal: { kind: 'afterpay', debtId: debt.id, updates, paidOff, newPlans }, issues, ignored };
 }

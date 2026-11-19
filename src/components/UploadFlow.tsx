@@ -321,19 +321,30 @@ function Rundown({ draft, sourceLabel, onEdit, onCancel, cancelLabel, onConfirm 
       {draft.kind === 'kiwisaver' && <KiwiSaverCheck draft={draft} edit={edit} />}
       {draft.kind === 'balances' && <BalancesCheck draft={draft} edit={edit} />}
 
-      {draft.kind === 'afterpay' && ap && draft.afterpay.orders.map((o, i) => (
-        <div key={o.newId} className="inset stack gap-8" style={{ padding: 'var(--s-3)' }}>
-          <span className="small"><b>{o.merchant || 'Order'}</b>{o.purchaseDate ? `, bought ${fmtShort(o.purchaseDate)}` : ''}{toCents(o.total.value) ? `, ${cash(toCents(o.total.value)!.cents)} total` : ''}</span>
-          <span className="xs muted">{o.instalments.map((x) => `${x.label ?? ''} ${toCents(x.amount) ? cash(toCents(x.amount)!.cents) : x.amount} on ${x.date ? fmtShort(x.date) : '?'}${x.paid ? ' (paid)' : ''}`.trim()).join(' · ') || 'No instalments read'}</span>
-          <label className="field">It’s
-            <select value={o.planId && ap.plans.some((p) => p.id === o.planId) ? o.planId : o.planId === NOT_MINE ? NOT_MINE : ''} onChange={(e) => edit((d) => { d.afterpay.orders[i].planId = e.target.value; })}>
-              <option value="">Match automatically</option>
-              {ap.plans.map((p) => <option key={p.id} value={p.id}>{p.name} ({cash(p.remaining)} left)</option>)}
-              <option value={NOT_MINE}>A new order</option>
-            </select>
+      {draft.kind === 'afterpay' && ap && (
+        <>
+          <label className="check-row" style={{ alignItems: 'flex-start' }}>
+            <input type="checkbox" checked={draft.afterpay.listsAllDue} onChange={(e) => edit((d) => { d.afterpay.listsAllDue = e.target.checked; })} style={{ width: 20, height: 20, flex: 'none', marginTop: 2, accentColor: 'var(--brand)' }} />
+            <span>
+              Upcoming payments — everything still due
+              <span className="small muted block">Tick for Afterpay’s Upcoming payments screen: orders not listed are marked paid off. Leave off for a single order.</span>
+            </span>
           </label>
-        </div>
-      ))}
+          {draft.afterpay.orders.map((o, i) => (
+            <div key={o.newId} className="inset stack gap-8" style={{ padding: 'var(--s-3)' }}>
+              <span className="small"><b>{o.merchant || 'Order'}</b>{o.purchaseDate ? `, bought ${fmtShort(o.purchaseDate)}` : ''}{toCents(o.total.value) ? `, ${cash(toCents(o.total.value)!.cents)} total` : ''}</span>
+              <span className="xs muted">{o.instalments.map((x) => `${x.label ?? ''} ${toCents(x.amount) ? cash(toCents(x.amount)!.cents) : x.amount} on ${x.date ? fmtShort(x.date) : '?'}${x.paid ? ' (paid)' : ''}`.trim()).join(' · ') || 'No instalments read'}</span>
+              <label className="field">It’s
+                <select value={o.planId && ap.plans.some((p) => p.id === o.planId) ? o.planId : o.planId === NOT_MINE ? NOT_MINE : ''} onChange={(e) => edit((d) => { d.afterpay.orders[i].planId = e.target.value; })}>
+                  <option value="">Match automatically</option>
+                  {ap.plans.map((p) => <option key={p.id} value={p.id}>{p.name} ({cash(p.remaining)} left)</option>)}
+                  <option value={NOT_MINE}>A new order</option>
+                </select>
+              </label>
+            </div>
+          ))}
+        </>
+      )}
 
       {blocks.length > 0 && (
         <div className="alert small" role="alert"><Icon name="alert" /><div>{blocks.map((b) => <div key={b.text}>{b.text}</div>)}</div></div>
