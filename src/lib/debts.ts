@@ -446,16 +446,23 @@ export interface Applied { planId: string; planName: string; date: ISODate; amou
  * Changes `debt` in place and returns what each part of the payment went to. Anything left over
  * (paying more than is scheduled) reduces an entered balance only.
  */
+/** Append planned payments that have gone out, so the pay they belonged to keeps its total. */
+function rememberPaid(debt: Debt, log: PaidPayment[]): void {
+  if (!log.length) return;
+  debt.paid = [...(debt.paid ?? []), ...log].sort((a, b) => a.date.localeCompare(b.date)).slice(-PAID_KEPT);
+}
+
 export function applyPayment(debt: Debt, amount: Cents, s: Settings, date: ISODate): { applied: Applied[]; leftover: Cents } {
   if (debt.rules === 'gem') return gemApply(debt, amount, s, date);
   // Paid on a payday: that's the payday's own payment, so the next one planned is the payday after
   // (dated the day after, the same way a payslip's loan deduction is, so it isn't counted twice).
   const asOf = periodContaining(date, s).start === date ? addDays(date, 1) : date;
   const due = debtSchedules(debt, s)
-    .flatMap((sch) => sch.payments.map((p) => ({ plan: sch.plan, date: p.date, amount: p.amount })))
+    .flatMap((sch) => sch.payments.map((p) => ({ plan: sch.plan, date: p.date, amount: p.amount, synthetic: !!sch.synthetic })))
     .sort((a, b) => a.date.localeCompare(b.date) || a.plan.name.localeCompare(b.plan.name));
   let left = amount;
   const applied: Applied[] = [];
+  const log: PaidPayment[] = [];
   for (const d of due) {
     if (left <= 0) break;
     const take = Math.min(left, d.amount);
@@ -471,9 +478,15 @@ export function applyPayment(debt: Debt, amount: Cents, s: Settings, date: ISODa
       p.asOf = later(p.asOf, asOf);
     }
     applied.push({ planId: p.id, planName: p.name, date: d.date, amount: take, cleared: take === d.amount });
+    if (take > 0) {
+      log.push(d.synthetic
+        ? { date: d.date, amount: take, name: p.name, synthetic: true }
+        : { date: d.date, amount: take, name: p.name, planId: p.id });
+    }
   }
   if (debt.balance) debt.balance = { amount: Math.max(0, debt.balance.amount - amount), asOf: later(debt.balance.asOf, asOf) };
   debt.plans = debt.plans.filter((p) => p.remaining > 0);
+  rememberPaid(debt, log);
   recordPaymentHistory(debt, date, amount);
   return { applied, leftover: left };
 }
@@ -707,6 +720,12 @@ function gemApply(debt: Debt, amount: Cents, s: Settings, date: ISODate): { appl
   // With no statement day, payments are planned for paydays: one made on a payday is that payday's own,
   // so (as for other debts) it's dated the day after and that payday isn't planned again.
   const asOf = !debt.statementDay && periodContaining(date, s).start === date ? addDays(date, 1) : date;
+  const period = periodContaining(date, s);
+  // What this pay was going to send before the payment (statement-day or payday schedules in the period).
+  const beforeDue = debtSchedules(debt, s)
+    .flatMap((sch) => sch.payments.filter((p) => p.date >= period.start && p.date <= period.end).map((p) => ({
+      date: p.date, amount: p.amount, name: sch.plan.name, planId: sch.plan.id, synthetic: !!sch.synthetic,
+    })));
   const buckets = gemBuckets(debt, date);
   const got = debt.statementDay && Number(date.slice(8, 10)) < debt.statementDay
     ? oldestFirst(buckets, amount)
@@ -720,6 +739,15 @@ function gemApply(debt: Debt, amount: Cents, s: Settings, date: ISODate): { appl
   }
   if (debt.balance) debt.balance = { amount: Math.max(0, debt.balance.amount - amount), asOf: later(debt.balance.asOf, asOf) };
   debt.plans = debt.plans.filter((p) => p.remaining > 0);
+  // Early Gem payments still leave a statement-day schedule; only keep `paid` when that schedule for
+  // this pay is gone (cleared / paid off), so the Planner card doesn’t drop to $0 or double-count.
+  const stillDue = debtSchedules(debt, s)
+    .flatMap((sch) => sch.payments.filter((p) => p.date >= period.start && p.date <= period.end));
+  if (!stillDue.length && beforeDue.length) {
+    rememberPaid(debt, beforeDue.map((x) => (x.synthetic
+      ? { date: x.date, amount: x.amount, name: x.name, synthetic: true as const }
+      : { date: x.date, amount: x.amount, name: x.name, planId: x.planId })));
+  }
   recordPaymentHistory(debt, date, amount);
   return { applied, leftover: amount - used };
 }

@@ -2,7 +2,7 @@ import { nextColor } from '../colors';
 import { fmtDay, fmtShort, fmtSpan, monthName, type ISODate } from '../dates';
 import { applyPayment, debtPay, exactForFirstPlan, owed, planEnds, recordHistory, settleDue } from '../debts';
 import { recordPayslip } from '../documents';
-import { paydayFor, planFor, recordPayday } from '../engine';
+import { paydayFor, periodContaining, planFor, recordPayday } from '../engine';
 import { cash } from '../money';
 import { autoBalance, autoPays } from '../rebalance';
 import { setBalance } from '../history';
@@ -40,13 +40,35 @@ function applyProposalInner(b: Budget, p: Proposal, today: ISODate): Budget {
   }
   const debt = (b.debts ?? []).find((d) => d.id === p.debtId);
   if (!debt) return b;
+  // Instalments dropped from a pay that has started stay on that pay's total (same idea as settleDue).
+  const dropped: PaidPayment[] = [];
+  const noteDropped = (plan: { id: string; name: string }, date: ISODate, amount: Cents) => {
+    if (amount <= 0) return;
+    const pay = periodContaining(date, b.settings);
+    if (pay.start > today) return; // still in a future pay: leave it off until it's due
+    if ((debt.paid ?? []).some((x) => x.date === date && x.amount === amount && (x.planId === plan.id || x.name === plan.name))) return;
+    dropped.push({ date, amount, name: plan.name, planId: plan.id });
+  };
   for (const u of p.updates) {
     const plan = debt.plans.find((x) => x.id === u.planId);
     if (!plan) continue;
+    for (const old of plan.instalments ?? []) {
+      const kept = u.instalments.find((i) => i.date === old.date);
+      if (!kept) noteDropped(plan, old.date, old.amount);
+      else if (kept.amount < old.amount) noteDropped(plan, old.date, old.amount - kept.amount);
+    }
     // The screenshot's instalments replace the ones saved: never added on top.
     plan.instalments = u.instalments.map((i) => ({ ...i }));
     plan.remaining = u.instalments.reduce((t, i) => t + i.amount, 0);
     plan.asOf = today;
+  }
+  for (const id of p.paidOff) {
+    const plan = debt.plans.find((x) => x.id === id);
+    if (!plan) continue;
+    for (const i of plan.instalments ?? []) noteDropped(plan, i.date, i.amount);
+  }
+  if (dropped.length) {
+    debt.paid = [...(debt.paid ?? []), ...dropped].sort((a, b) => a.date.localeCompare(b.date)).slice(-300);
   }
   if (p.paidOff.length) debt.plans = debt.plans.filter((x) => !p.paidOff.includes(x.id));
   for (const np of p.newPlans) {

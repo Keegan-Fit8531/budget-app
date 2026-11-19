@@ -468,9 +468,33 @@ describe('recording a debt payment', () => {
     };
     applyPayment(debt, 20000, s, '2026-11-19');
     expect(debt.plans[0].remaining).toBe(80000);
+    expect(debt.paid).toEqual([expect.objectContaining({ date: '2026-11-19', amount: 20000, name: 'Car', planId: 'p' })]);
     expect(settleDue(debt, s, '2026-11-20')).toBe(false);
     expect(debt.plans[0].remaining).toBe(80000);
     expect(planSchedule(debt, debt.plans[0], s).payments[0].date).toBe('2026-12-18');
+  });
+
+  it('Gem payment that clears the card keeps the amount on the hold-display pay', () => {
+    const b = budget();
+    b.accounts.push(
+      { id: 'bills', name: 'Misc bills', kind: 'bank', color: '#000', groupId: 'needs' },
+      { id: 'gem', name: 'Gem Visa', kind: 'external', color: '#000', groupId: 'debt' },
+    );
+    b.split.push({ accountId: 'bills', amount: 0, mode: 'exact' }, { accountId: 'gem', amount: 0, mode: 'exact' });
+    b.debts = [{
+      id: 'gem', name: 'Gem Visa', kind: 'card', rules: 'gem', accountId: 'gem', holdAccountId: 'bills',
+      plans: [{ id: 'p1', name: 'TV', type: 'interest-free', original: 100000, remaining: 50400, asOf: '2026-10-01', purchaseDate: '2026-10-01', months: 6 }],
+      balance: { amount: 50400, asOf: '2026-11-18' },
+      statementDay: 21,
+    }];
+    const p = periodContaining('2026-11-19', b.settings);
+    const before = depositFor(b, 'gem', p, '2026-11-19');
+    expect(before).toBeGreaterThan(0);
+    // Paying off the whole card clears the Nov 21 schedule; `paid` keeps this pay’s send amount.
+    applyPayment(b.debts[0], 50400, b.settings, '2026-11-19');
+    expect(b.debts[0].plans).toEqual([]);
+    expect(b.debts[0].paid?.some((x) => x.amount === before)).toBe(true);
+    expect(depositFor(b, 'gem', p, '2026-11-19')).toBe(before);
   });
 
   it('a payment between paydays leaves the next payday\'s payment in place', () => {
@@ -1276,6 +1300,9 @@ describe('reading documents: Afterpay', () => {
     });
     const before = ap.plans.length;
     expect(before).toBeGreaterThan(1);
+    const pay = periodContaining('2026-11-19', b.settings);
+    const sentBefore = depositFor(b, ap.accountId, pay, '2026-11-19');
+    expect(sentBefore).toBeGreaterThan(0);
     const r = upload(b, upcoming, '2026-11-19');
     expect(r.issues.filter((i) => i.level === 'block')).toEqual([]);
     const after = debt(b, 'afterpay');
@@ -1283,6 +1310,9 @@ describe('reading documents: Afterpay', () => {
     expect(after.plans[0].instalments).toEqual([{ date: '2026-12-31', amount: 3725, label: '4 of 4' }]);
     expect(after.plans[0].remaining).toBe(3725);
     expect(r.issues.some((i) => i.level === 'note' && /paid off/i.test(i.text))).toBe(true);
+    // Dropped in-period instalments stay on this pay (so leftover doesn’t invent spare cash).
+    expect(after.paid?.some((x) => x.date === '2026-11-19' && x.amount === 3725)).toBe(true);
+    expect(depositFor(b, ap.accountId, pay, '2026-11-19')).toBe(sentBefore);
   });
 });
 
