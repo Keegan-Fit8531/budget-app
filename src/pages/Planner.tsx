@@ -15,7 +15,7 @@ import { clearOptimiseUndo, OptimiseModal, readOptimiseUndo, type OptimiseUndo }
 import { existingExtras, undoAllocation } from '../lib/allocate';
 import { addDays, fmtDay, fmtShort, monthName, ordinal, todayISO } from '../lib/dates';
 import {
-  averageSplit, convert, firstBudgetPay, isAuto, isSetAside, planFor, plannedAverage, shiftPeriod, upcomingPayPeriod, type View,
+  averageSplit, convert, firstBudgetPay, isAuto, isHeldInAccount, isMonthEnvelope, isSetAside, monthBudget, planFor, plannedAverage, shiftPeriod, upcomingPayPeriod, type View,
 } from '../lib/engine';
 import { cash, moneyParts, centsToInput, parseMoney } from '../lib/money';
 import { useBudget } from '../lib/store';
@@ -501,10 +501,10 @@ export function Planner() {
             const bufferShown = bufferFor && bufferCushion > 0 && ends !== undefined
               ? Math.min(ends, bufferCushion) : undefined;
             // Money put aside on payday (a WOF, tyres) isn't a payment: it's counted on its own.
-            const paying = a.dues.filter((d) => !isSetAside(d.item));
+            const paying = a.dues.filter((d) => !isHeldInAccount(d.item));
             const asideTotal = a.need - paying.reduce((t, d) => t + d.item.amount, 0);
             const asidePart = asideTotal > 0 ? `${cash(asideTotal)} put aside` : '';
-            const billBreakdown = a.breakdown.filter((x) => !isSetAside(x.item));
+            const billBreakdown = a.breakdown.filter((x) => !isHeldInAccount(x.item));
             // "5 × $275" when every cost repeats the same number of times (e.g. weekly food + gas), else a count.
             const sameCount = billBreakdown.length > 0 && billBreakdown.every((x) => x.count === billBreakdown[0].count);
             const times = [sameCount && billBreakdown[0].count > 1
@@ -555,16 +555,18 @@ export function Planner() {
             const amountClass = funded < 0 && (known || !isPay) ? 'neg' : '';
             const icon = <AccIcon color={a.account.color} name={a.account.kind === 'external' ? 'send' : isPay ? 'wallet' : 'bank'} />;
             // Each cost this pay (e.g. food, car gas, scooter gas, or every bill in Misc bills).
-            const byName = new Map<string, { name: string; amount: Cents; dates: string[]; aside: boolean; note?: string; maxSaved?: Cents }>();
+            const byName = new Map<string, { name: string; amount: Cents; dates: string[]; aside: boolean; envelope?: boolean; note?: string; maxSaved?: Cents; monthBudget?: Cents }>();
             if (!longRun) for (const d of a.dues) {
-              const r = byName.get(`${isSetAside(d.item)}|${d.item.name}`) ?? {
-                name: d.item.name, amount: 0, dates: [], aside: isSetAside(d.item), note: d.item.note,
+              const held = isHeldInAccount(d.item);
+              const r = byName.get(`${held}|${d.item.name}`) ?? {
+                name: d.item.name, amount: 0, dates: [], aside: isSetAside(d.item), envelope: isMonthEnvelope(d.item), note: d.item.note,
                 maxSaved: d.item.maxSaved && d.item.maxSaved > 0 ? d.item.maxSaved : undefined,
+                monthBudget: isMonthEnvelope(d.item) ? monthBudget(d.item) : undefined,
               };
               r.amount += d.item.amount; r.dates.push(d.date);
               if (!r.note && d.item.note) r.note = d.item.note;
               if (!r.maxSaved && d.item.maxSaved && d.item.maxSaved > 0) r.maxSaved = d.item.maxSaved;
-              byName.set(`${r.aside}|${d.item.name}`, r);
+              byName.set(`${held}|${d.item.name}`, r);
             }
             const rows = [...byName.values()];
             // The budget's first pay starts from what the pay before it left in the account (or left short).
@@ -645,11 +647,13 @@ export function Planner() {
                             const each = r.amount / r.dates.length;
                             const same = r.dates.length > 1 && Number.isInteger(each);
                             return (
-                              <span key={`${r.aside}|${r.name}`} className="cost-row">
+                              <span key={`${r.aside || r.envelope}|${r.name}`} className="cost-row">
                                 <span className="min0">
                                   <span className="cost-name">{r.name}</span>
                                   <span className="cost-meta muted">
-                                    {r.aside
+                                    {r.envelope
+                                      ? `Month envelope${r.monthBudget ? ` ${cash(r.monthBudget)}` : ''} · resets each month · leftover is yours`
+                                      : r.aside
                                       ? `Put aside on payday, stays in the account${r.maxSaved ? ` · max ${cash(r.maxSaved)}` : ''}`
                                       : same ? `${r.dates.length} × ${cash(each, { whole: each % 100 === 0 })}` : r.dates.length === 1 ? fmtShort(r.dates[0]) : `${r.dates.length} payments`}
                                     {/* Week / Fortnight: say what the whole pay is, since the amount on the right is per week */}
