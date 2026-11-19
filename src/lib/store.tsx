@@ -1,11 +1,13 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
+import { freezeLockedPays, freezePaySplitFrom, paySplitLocked } from './balances';
 import { pullBudget, pushBudget, readSyncConfig, SyncError, takePairingFromUrl, writeSyncConfig, type SyncConfig } from './sync';
 import { todayISO } from './dates';
 import { debtPay, settleDue } from './debts';
+import { periodContaining } from './engine';
 import { autoBalance } from './rebalance';
 import { seedBudget } from './seed';
 import type { Budget } from './types';
-import { keepCopy, type SavedVersion } from './versions';
+import { keepCopy, listCopies, localDay, readCopy, type SavedVersion } from './versions';
 
 const KEY = 'paydays.budget.v1';
 
@@ -64,11 +66,34 @@ function tidy(b: Budget): Budget {
 
 /**
  * Make a budget current as of today, wherever it came from (this browser, the repo, a backup, an
- * earlier version): payments due before today count as paid, then upcoming pays are balanced.
+ * earlier version): locked pays keep their split, payments due before today count as paid, then
+ * upcoming pays are balanced.
  */
 function bringUpToDate(b: Budget): Budget {
   tidy(b);
+  // Snapshot locked pays before settleDue, so a live debt figure can’t collapse before we freeze it.
+  freezeLockedPays(b);
   settleAll(b);
+  return autoBalance(b);
+}
+
+/** Once per locked pay: restore the frozen split from today’s morning copy when the Planner has drifted. */
+async function restoreSplitFromMorningCopy(current: Budget): Promise<Budget | null> {
+  const today = todayISO();
+  const p = periodContaining(today, current.settings);
+  if (!paySplitLocked(current, p, today)) return null;
+  const flag = `split-morning-${p.start}`;
+  if (current.flags?.includes(flag)) return null;
+  const infos = await listCopies();
+  const day = localDay(new Date());
+  // Prefer today’s first-edit copy; on payday itself, the newest earlier copy is “how it stood this morning”.
+  const morning = infos.find((i) => localDay(new Date(i.at)) === day) ?? (p.start === today ? infos[0] : undefined);
+  if (!morning) return null;
+  const copy = await readCopy(morning.at);
+  if (!copy?.budget) return null;
+  const b = structuredClone(current);
+  freezePaySplitFrom(b, p, copy.budget, today);
+  b.flags = [...(b.flags ?? []), flag];
   return autoBalance(b);
 }
 
@@ -181,6 +206,18 @@ export function BudgetProvider({ children }: { children: ReactNode }) {
     document.addEventListener('visibilitychange', check);
     return () => { clearInterval(t); document.removeEventListener('visibilitychange', check); };
   }, []);
+
+  // Locked pay this cycle: put back this morning’s split from the daily copy when the Planner has drifted.
+  // Re-checks after saves so the first-edit-of-day copy (taken before the change) can restore the split.
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const next = await restoreSplitFromMorningCopy(latest.current);
+      if (cancelled || !next) return;
+      setBudget(() => stamp(next));
+    })();
+    return () => { cancelled = true; };
+  }, [budget.updatedAt]);
 
   // Save your changes to the repo a moment after you make them.
   useEffect(() => {

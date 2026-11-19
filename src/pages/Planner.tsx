@@ -2,7 +2,7 @@ import { Fragment, lazy, Suspense, useEffect, useMemo, useRef, useState } from '
 import { createPortal } from 'react-dom';
 import { startRead, type ReadJob } from '../lib/reader/job';
 import { applyBalance, autoPays, balancePay, restoreOverrides, type BalanceResult } from '../lib/rebalance';
-import { accountMode, leftoverBeforeBudget, nextBufferUse, topsUp } from '../lib/balances';
+import { accountMode, freezePaySplit, leftoverBeforeBudget, nextBufferUse, topsUp, unfreezePaySplit } from '../lib/balances';
 import { isHoldDisplayAccount, owed } from '../lib/debts';
 import { Donut, Legend } from '../components/Donut';
 import { Icon } from '../components/Icon';
@@ -96,6 +96,11 @@ export function Planner() {
       if (amount === null) delete o[id]; else o[id] = amount;
       b.overrides = b.overrides ?? {};
       if (Object.keys(o).length) b.overrides[period.start] = o; else delete b.overrides[period.start];
+      // Locked cycle: keep the frozen split in step with a hand edit.
+      if (b.splitSent?.[period.start]) {
+        if (amount === null) delete b.splitSent[period.start][id];
+        else b.splitSent[period.start][id] = amount;
+      }
       return b;
     });
     setAdjEdit(null);
@@ -238,7 +243,14 @@ export function Planner() {
     const c = cleared ? null : parseMoney(payEdit ?? '');
     if (!cleared && (c === null || c < 0)) return; // not an amount: keep editing rather than wiping the pay
     update((b) => {
-      if (c === null) delete b.payActuals[period.start]; else b.payActuals[period.start] = c;
+      if (c === null) {
+        delete b.payActuals[period.start];
+        // Payday itself can be re-planned; once the day has passed the split stays locked.
+        if (!(period.start < today)) unfreezePaySplit(b, period.start);
+      } else {
+        b.payActuals[period.start] = c;
+        freezePaySplit(b, period, today);
+      }
       return b;
     });
     setPayEdit(null);
