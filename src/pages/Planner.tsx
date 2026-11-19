@@ -17,6 +17,7 @@ import { addDays, fmtDay, fmtShort, monthName, ordinal, todayISO } from '../lib/
 import {
   averageSplit, convert, firstBudgetPay, isAuto, isHeldInAccount, isMonthEnvelope, isSetAside, monthBudget, planFor, plannedAverage, shiftPeriod, upcomingPayPeriod, type View,
 } from '../lib/engine';
+import { envelopeHeld } from '../lib/envelope';
 import { cash, moneyParts, centsToInput, parseMoney } from '../lib/money';
 import { useBudget } from '../lib/store';
 import type { Cents, PaydayMode } from '../lib/types';
@@ -490,8 +491,11 @@ export function Planner() {
             const steadyMode = accountMode(budget, a.account.id) === 'smooth';
             const funded = !avg ? a.funded : isPay ? leftover : split ? v(a.funded) : v(planned?.get(a.account.id)?.sent ?? 0);
             const need = split ? v(a.need) : longRun ? v(planned?.get(a.account.id)?.need ?? 0) : a.need;
-            // With a balance entered, the pill shows what the account ends the period with.
-            const ends = !avg ? a.endBalance : undefined;
+            // With a balance entered, the pill shows what the account ends the period with —
+            // after reserving unspent month envelopes (Gas assumed spent this month).
+            const rawEnds = !avg ? a.endBalance : undefined;
+            const gasHeld = rawEnds !== undefined ? envelopeHeld(budget, a.account.id, today) : 0;
+            const ends = rawEnds !== undefined ? rawEnds - gasHeld : undefined;
             const diff = ends !== undefined ? null : a.diff === null || auto ? null : funded - need;
             // Steady (e.g. rent): only the cushion for the next 5-week pay is "Buffer" — not the whole
             // ending balance (which was reading as a massive spare pile).
@@ -529,9 +533,13 @@ export function Planner() {
             const adjusted = a.usual !== undefined && a.usual !== a.funded;
             // Only a problem (short) or something to act on (spare) is coloured; the rest stays quiet.
             const endTip = ends === undefined ? ''
-              : ends < 0 ? 'Estimated balance at the end of this pay period'
+              : ends < 0
+                ? (gasHeld > 0
+                  ? `Short after bills and ${cash(gasHeld)} still budgeted for this month’s envelopes (assumed spent)`
+                  : 'Estimated balance at the end of this pay period')
               : bufferShown !== undefined && bufferFor
-                ? `${cash(bufferShown)} kept for the ${fmtShort(bufferFor.period.start)} pay (${cash(bufferFor.need)} needed, ${cash(bufferFor.deposit)} sent). Account ends this pay with about ${cash(ends)}.`
+                ? `${cash(bufferShown)} kept for the ${fmtShort(bufferFor.period.start)} pay (${cash(bufferFor.need)} needed, ${cash(bufferFor.deposit)} sent)${gasHeld ? `, after ${cash(gasHeld)} reserved for month budgets` : ''}.`
+                : gasHeld > 0 ? `Ends about ${cash(ends)} after reserving ${cash(gasHeld)} for this month’s envelopes`
                 : steadyMode ? `Estimated balance at the end of this pay (level amount evenings out 4- and 5-week pays)`
                 : 'Estimated balance at the end of this pay period';
             const pill = (

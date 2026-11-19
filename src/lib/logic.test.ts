@@ -8,7 +8,7 @@ import { addDays } from './dates';
 import { applyPayment, debtPay, debtPaymentsIn, debtPerPay, debtSchedules, owed, projectedOwed, paidIn, planSchedule, recordHistory, settleDue } from './debts';
 import { classifyText, matchDebt, parseDate, parseStatementText, recordStatement } from './documents';
 import { asideMaxSaved, averageNeed, clearPaydayMove, monthEnvelopeOn, monthEnvelopePerPay, periodContaining, planFor, recordPayday, setAsidePerPay, shiftPeriod, upcomingPayPeriod } from './engine';
-import { accountEnvelopes, envelopeStatus, matchesEnvelope } from './envelope';
+import { accountEnvelopes, envelopeHeld, envelopeStatus, matchesEnvelope } from './envelope';
 import { projectedAt, removeSpend, spendFromGoal } from './goalcosts';
 import { autoBalance, autoPays, balancedMode, balancePay } from './rebalance';
 import { accountHistory, recordCost, removeCost, setBalance } from './history';
@@ -816,6 +816,27 @@ describe('month envelope (Gas)', () => {
     // With one payday, the whole month budget goes on that pay.
     expect(monthEnvelopePerPay(item, '2026-11-19', b.settings)).toBe(20000);
     expect(monthEnvelopePerPay(item, pays[0], b.settings)).toBe(20000);
+  });
+
+  it('treats unspent gas budget as reserved: food + gas can make the account short', () => {
+    const b = budget();
+    b.accounts.push({ id: 'food', name: 'Food and gas', kind: 'bank', color: '#000', groupId: 'needs' });
+    b.split.push({ accountId: 'food', amount: 0, mode: 'smooth' });
+    // $200/week food × 5 = $1,000 this pay; gas month budgets $271.76 + $54.35 = $326.11.
+    b.items.push(
+      { id: 'food', name: 'Food', amount: 20000, frequency: 'weekly', start: '2026-11-19', accountId: 'food' },
+      { id: 'car', name: 'Car gas', amount: 27176, frequency: 'monthly', start: '2026-11-01', accountId: 'food', monthEnvelope: true },
+      { id: 'scooter', name: 'Scooter gas', amount: 5435, frequency: 'monthly', start: '2026-11-01', accountId: 'food', monthEnvelope: true },
+    );
+    b.balances = { food: { amount: 119575, asOf: '2026-11-19' } };
+    const today = '2026-11-19';
+    const t = billTracker(b, 'food', today);
+    expect(t.toCome).toBe(100000);
+    expect(t.spare).toBe(19575); // $195.75 after food alone — looked like buffer before
+    const held = envelopeHeld(b, 'food', today);
+    expect(held).toBe(32611);
+    // Food $1,000 + gas $326.11 = $1,326.11 needed vs $1,195.75 → short $130.36
+    expect(t.spare - held).toBe(-13036);
   });
 });
 
