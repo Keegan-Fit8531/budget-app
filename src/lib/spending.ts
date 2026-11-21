@@ -19,6 +19,11 @@ export const CATEGORY_LABEL: Record<SpendCategory, string> = {
 
 /** Shop name patterns, in order (the first that matches wins), with a tidy name for the shop. */
 const RULES: [RegExp, SpendCategory, string?][] = [
+  // Money sent to an account number ("To: 12-3456-7890123-00 Rent Sep") is moving it between accounts,
+  // even when it says what it's for: the rent itself is counted when it's paid.
+  [/^to:\s|\b\d{2}-\d{4}-\d{7}-\d{2,3}\b/i, 'transfers'],
+  // Rent or board, however the bank marks it ("AP …", "BP …"): a bill, and counted in Insights.
+  [/\brent\b|\bboard\b|property manage|landlord/i, 'bills'],
   [/payment received|thank you|\btfr\b|transfer|internet banking|online banking|automatic payment|\bA\/P\b|direct credit|salary|wages/i, 'transfers'],
   // Paying a card or loan from a bank account: what was bought is counted on the card, not again here.
   [/mastercard|\bvisa\b|\bamex\b|credit card|card repayment|loan repayment/i, 'transfers'],
@@ -51,14 +56,14 @@ export function cleanDescription(d: string): string {
 
 /**
  * The shop's part of a description, without the bank's own words around it: "VT" (Visa), "EP"
- * (EFTPOS), "DD" (direct debit), "A P"/"AP" (automatic payment) and "POS" in front, and the card
- * number and original date after. So "VT Tasman Epsom 483561******3102" and "Tasman Epsom Card
- * number: 4835 …" are the same shop.
+ * (EFTPOS), "DD" (direct debit), "BP" (bill payment), "A P"/"AP" (automatic payment) and "POS" in front, and the card
+ * number and original date after. So "VT Tasman Epsom 411111******1111" and "Tasman Epsom Card
+ * number: 4111 …" are the same shop.
  */
 export function shopPart(d: string): string {
   const s = cleanDescription(d)
     .replace(/\s+(card number|orig date)\b.*$/i, '')
-    .replace(/^(?:(?:VT|EP|DD|POS|EFTPOS|A ?P)\s+)+/i, '')
+    .replace(/^(?:(?:VT|EP|DD|BP|POS|EFTPOS|A ?P)\s+)+/i, '')
     .trim();
   return s || cleanDescription(d);
 }

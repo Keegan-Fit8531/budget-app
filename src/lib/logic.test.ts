@@ -1664,16 +1664,24 @@ describe('reading bank and card exports', () => {
   });
 
   it('names a shop without the bank’s own words, so the same shop is grouped once', () => {
-    expect(categorize('VT Tasman Epsom 483561******3102 Orig date 04/02/2026').shop).toBe('Tasman Epsom');
-    expect(categorize('Tasman Epsom Card number: 4835 **** **** 3102').shop).toBe('Tasman Epsom');
-    expect(categorize('A P Tupou-Fakalaga').shop).toBe('Tupou-Fakalaga');
+    expect(categorize('VT Tasman Epsom 411111******1111 Orig date 04/02/2026').shop).toBe('Tasman Epsom');
+    expect(categorize('Tasman Epsom Card number: 4111 **** **** 1111').shop).toBe('Tasman Epsom');
+    expect(categorize('A P J Smith').shop).toBe('J Smith');
     expect(categorize('EP The Bailey').shop).toBe('The Bailey');
+  });
+
+  it('counts rent as a bill whatever the bank puts in front, but not a transfer to your own account', () => {
+    for (const d of ['AP Harbour Lettings 4/12 Example St J Smith Rent', 'BP Harbour Lettings 4/12 Example St J Smith Rent', 'Harbour Lettings 4/12 Example St J Smith Rent']) {
+      expect(categorize(d)).toEqual({ category: 'bills', shop: 'Harbour Lettings' });
+    }
+    expect(categorize('To: 12-3456-7890123-00 Rent Sep').category).toBe('transfers');
+    expect(categorize('AP Savings AUTOMATIC PAYMENT').category).toBe('transfers');
   });
 
   it('lists shops for Gemini with their purchase amounts, and checks its guesses again only when asked', () => {
     const txns = [
       { date: '2026-11-01', description: 'VT Tasman Epsom', amount: -1000 },
-      { date: '2026-11-02', description: 'Tasman Epsom Card number: 4835 **** **** 3102', amount: -9653 },
+      { date: '2026-11-02', description: 'Tasman Epsom Card number: 4111 **** **** 1111', amount: -9653 },
       { date: '2026-11-03', description: 'Odd Shop Ltd', amount: -500 },
     ];
     const b = { shopGuesses: { 'tasman epsom': 'eating-out' }, shopCategories: { 'odd shop': 'shopping' } };
