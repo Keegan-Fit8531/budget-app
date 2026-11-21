@@ -1,6 +1,6 @@
-import { depositFor } from '../../../engine/balances';
+import { depositFor } from '../../../engine/balances/deposits';
 import { todayISO, type ISODate } from '../../../core/dates';
-import { periodContaining, shiftPeriod } from '../../../engine/engine';
+import { periodContaining, shiftPeriod } from '../../../engine/periods';
 import type { Budget, Cents, GoalCost, SavingsGoal } from '../../../core/types';
 
 export const ME = 'Me';

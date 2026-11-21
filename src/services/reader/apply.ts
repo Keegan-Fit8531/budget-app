@@ -1,14 +1,17 @@
 import { nextColor } from '../../core/colors';
 import { fmtDay, fmtShort, fmtSpan, monthName, type ISODate } from '../../core/dates';
-import { applyPayment, debtPay, exactForFirstPlan, owed, planEnds, recordHistory, settleDue } from '../../features/debts/logic/debts';
+import { applyPayment, settleDue } from '../../features/debts/logic/payments';
+import { debtPay, exactForFirstPlan, owed, recordHistory } from '../../features/debts/logic/amounts';
+import { planEnds } from '../../features/debts/logic/gem';
 import { recordPayslip } from './documents';
-import { paydayFor, periodContaining, planFor, recordPayday } from '../../engine/engine';
+import { paydayFor, periodContaining, recordPayday } from '../../engine/periods';
+import { planFor } from '../../engine/plan';
 import { cash } from '../../core/money';
 import { autoBalance, autoPays } from '../../engine/rebalance';
 import { setBalance } from '../../features/accounts/logic/history';
 import { recordReading, statementEarned, statementIn } from '../../features/savings/logic/kiwisaver';
 import type { Budget, Cents, Debt, PaidPayment, Txn } from '../../core/types';
-import type { Proposal } from './check';
+import type { Proposal } from './check/draft';
 
 // ---------------------------------------------------------------------------------------------
 // Applying a checked Proposal. applyProposal is a plain function on a budget, so it runs first on a

@@ -1,7 +1,8 @@
 import { createContext, useContext, useMemo, useState, type ReactNode } from 'react';
 import { Icon } from '../ui/Icon';
 import { fmtDay, fmtShort, monthName, todayISO } from '../core/dates';
-import { budgetPeriod, shiftPeriod, upcomingPayPeriod, type Period, type View } from '../engine/engine';
+import { budgetPeriod, shiftPeriod, upcomingPayPeriod, type Period } from '../engine/periods';
+import { type View } from '../engine/frequency';
 import { useBudget } from './store';
 
 /** The pay period being viewed — shared by Planner, Debts, Savings and Deposits. */

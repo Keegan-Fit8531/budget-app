@@ -1,4 +1,4 @@
-import { owed } from '../features/debts/logic/debts';
+import { owed } from '../features/debts/logic/amounts';
 import { cash } from '../core/money';
 import type { Budget } from '../core/types';
 

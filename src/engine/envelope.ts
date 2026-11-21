@@ -1,9 +1,11 @@
 import { dateInMonth, daysInMonth, monthName, todayISO, type ISODate } from '../core/dates';
-import { isMonthEnvelope, monthBudget } from './engine';
+import { isMonthEnvelope, monthBudget } from './setAside';
 import { categorizeTxn, shopMap } from '../features/insights/logic/spending';
 import type { Budget, Cents, Item, Txn } from '../core/types';
 
-export { monthBudget, monthEnvelopeOn, monthEnvelopePerPay, monthEnvelopesOn, hasMonthEnvelopes, paydaysInMonth } from './engine';
+export {
+  monthBudget, monthEnvelopeOn, monthEnvelopePerPay, monthEnvelopesOn, hasMonthEnvelopes, paydaysInMonth,
+} from './setAside';
 
 /** Fuel shop / description patterns (same idea as Insights transport → Fuel). */
 const FUEL_RE = /z energy|\bmobil\b|\bbp\b|gull|caltex|waitomo|\bnpd\b|\bfuel\b|petrol|gas station/i;

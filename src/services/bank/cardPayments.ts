@@ -1,5 +1,7 @@
 import { addDays, type ISODate } from '../../core/dates';
-import { debtPay, debtSchedules, applyPayment } from '../../features/debts/logic/debts';
+import { debtPay } from '../../features/debts/logic/amounts';
+import { debtSchedules } from '../../features/debts/logic/schedule';
+import { applyPayment } from '../../features/debts/logic/payments';
 import type { Budget, Cents, Debt, Txn } from '../../core/types';
 
 // ---------------------------------------------------------------------------------------------

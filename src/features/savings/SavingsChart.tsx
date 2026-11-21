@@ -2,7 +2,8 @@ import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerE
 import { Disclosure } from '../../ui/components';
 import { tone } from '../../core/colors';
 import { monthName, todayISO } from '../../core/dates';
-import { budgetPeriod, planFor, shiftPeriod, type Period } from '../../engine/engine';
+import { budgetPeriod, shiftPeriod, type Period } from '../../engine/periods';
+import { planFor } from '../../engine/plan';
 import { cash } from '../../core/money';
 import { firstPayToCome } from './logic/savings';
 import type { Budget, SavingsGoal } from '../../core/types';

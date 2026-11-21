@@ -1,6 +1,6 @@
 import { nextColor } from '../../../core/colors';
 import { addDays, diffDays, type ISODate } from '../../../core/dates';
-import { periodContaining, shiftPeriod } from '../../../engine/engine';
+import { periodContaining, shiftPeriod } from '../../../engine/periods';
 import type { Payslip } from '../../../services/reader/payslip';
 import type { Budget, Cents, KiwiReading, KiwiStatement, SavingsGoal } from '../../../core/types';
 

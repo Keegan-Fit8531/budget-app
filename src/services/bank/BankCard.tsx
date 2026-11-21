@@ -2,7 +2,7 @@ import { useEffect, useState, useSyncExternalStore } from 'react';
 import type { Budget } from '../../core/types';
 import { addGoalFor, applyBank, AUTO_EVERY_MS, BANK_URL, bankMessage, fetchBank, readBankConfig, sinceFor, suggestLink, writeBankConfig, type BankData, type BankResult } from './bank';
 import { cash } from '../../core/money';
-import { csvTargets } from '../reader/check';
+import { csvTargets } from '../reader/check/transactions';
 import { newId, useBudget } from '../../state/store';
 import { showToast } from '../../ui/toast';
 import { Section } from '../../ui/components';

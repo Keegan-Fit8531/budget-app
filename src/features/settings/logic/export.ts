@@ -1,6 +1,7 @@
 import type { Row, Sheet } from 'write-excel-file/browser';
 import { fmtDay, monthName, toDate, todayISO, type ISODate } from '../../../core/dates';
-import { budgetPeriod, periodContaining, planFor, shiftPeriod, upcomingPayPeriod, type Period } from '../../../engine/engine';
+import { budgetPeriod, periodContaining, shiftPeriod, upcomingPayPeriod, type Period } from '../../../engine/periods';
+import { planFor } from '../../../engine/plan';
 import type { Budget, Cents, RuleBucket } from '../../../core/types';
 
 // ---------- Which months can be exported ----------

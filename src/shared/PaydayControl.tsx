@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { modeOf } from '../engine/balances';
+import { modeOf } from '../engine/balances/outflows';
 import { cash, centsToInput, parseMoney } from '../core/money';
 import type { PaydayMode } from '../core/types';
 import { useBudget } from '../state/store';

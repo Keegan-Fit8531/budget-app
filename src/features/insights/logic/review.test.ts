@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { addDays } from '../../../core/dates';
-import { periodContaining } from '../../../engine/engine';
+import { periodContaining } from '../../../engine/periods';
 import { cycleSoFar, lastCycle, makeReview, parseReview, reviewDue, reviewInput, saveReview, KEEP_REVIEWS } from './review';
 import { seedBudget } from '../../../core/seed';
 import type { Budget } from '../../../core/types';

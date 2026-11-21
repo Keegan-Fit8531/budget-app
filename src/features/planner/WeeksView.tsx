@@ -1,9 +1,14 @@
 import { useState } from 'react';
 import { addDays, fmtDay, monthName, ordinal, toDate, todayISO, WEEKDAY_NAMES, type ISODate } from '../../core/dates';
-import { debtPaymentsIn } from '../debts/logic/debts';
-import type { Period, PeriodPlan } from '../../engine/engine';
-import { accountMode, balanceOn } from '../../engine/balances';
-import { averageNeed, isSetAside, itemDates, shiftPeriod } from '../../engine/engine';
+import { debtPaymentsIn } from '../debts/logic/funding';
+import type { Period } from '../../engine/periods';
+import type { PeriodPlan } from '../../engine/plan';
+import { accountMode } from '../../engine/balances/outflows';
+import { balanceOn } from '../../engine/balances/estimate';
+import { averageNeed } from '../../engine/plan';
+import { isSetAside } from '../../engine/setAside';
+import { itemDates } from '../../engine/occurrences';
+import { shiftPeriod } from '../../engine/periods';
 import { cash } from '../../core/money';
 import type { Budget } from '../../core/types';
 import { calendarWeeks, weeklyCoverage } from './logic/weeks';

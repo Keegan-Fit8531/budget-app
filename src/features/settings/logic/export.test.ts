@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { periodContaining } from '../../../engine/engine';
+import { periodContaining } from '../../../engine/periods';
 import { exportFileName, exportablePeriods, monthSheets, periodLabel } from './export';
 import { seedBudget } from '../../../core/seed';
 import type { Budget } from '../../../core/types';

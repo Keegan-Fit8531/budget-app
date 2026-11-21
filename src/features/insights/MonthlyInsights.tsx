@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { fmtShort, fmtSpan, todayISO } from '../../core/dates';
 import { readBankConfig } from '../../services/bank/bankConfig';
 import { localDay } from '../../state/versions';
-import type { Period } from '../../engine/engine';
+import type { Period } from '../../engine/periods';
 import { cash } from '../../core/money';
 import { call } from '../../services/reader/gemini';
 import { modelOf, readReaderConfig } from '../../services/reader/config';

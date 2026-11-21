@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { centsToInput, cash, parseMoney } from '../../core/money';
-import { balanceToday } from '../../engine/balances';
+import { balanceToday } from '../../engine/balances/estimate';
 import { fmtShort, todayISO } from '../../core/dates';
 import { setBalance } from './logic/history';
 import { newId, useBudget } from '../../state/store';

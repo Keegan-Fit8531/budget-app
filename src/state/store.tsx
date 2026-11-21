@@ -1,9 +1,11 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
-import { freezeLockedPays, freezePaySplitFrom, paySplitLocked } from '../engine/balances';
+import { freezeLockedPays, freezePaySplitFrom, paySplitLocked } from '../engine/balances/freeze';
 import { pullBudget, pushBudget, readSyncConfig, SyncError, takePairingFromUrl, writeSyncConfig, type SyncConfig } from '../services/sync/sync';
 import { todayISO } from '../core/dates';
-import { debtPay, settleDue, syncGemToRecommended } from '../features/debts/logic/debts';
-import { periodContaining } from '../engine/engine';
+import { debtPay } from '../features/debts/logic/amounts';
+import { settleDue } from '../features/debts/logic/payments';
+import { syncGemToRecommended } from '../features/debts/logic/funding';
+import { periodContaining } from '../engine/periods';
 import { autoBalance } from '../engine/rebalance';
 import { seedBudget } from '../core/seed';
 import type { Budget } from '../core/types';

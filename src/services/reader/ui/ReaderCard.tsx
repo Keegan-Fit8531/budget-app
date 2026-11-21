@@ -1,8 +1,8 @@
 import { useState } from 'react';
-import { DEFAULT_MODEL, modelOf, readReaderConfig, writeReaderConfig } from './config';
-import { errorMessage, ReaderError } from './errors';
-import { testKey } from './job';
-import { Section } from '../../ui/components';
+import { DEFAULT_MODEL, modelOf, readReaderConfig, writeReaderConfig } from '../config';
+import { errorMessage, ReaderError } from '../errors';
+import { testKey } from '../job';
+import { Section } from '../../../ui/components';
 
 /** Settings → Reading documents: the Google key (kept in this browser only) and the model. */
 export function ReaderCard() {

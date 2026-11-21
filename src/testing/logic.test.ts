@@ -1,13 +1,20 @@
 import { describe, expect, it } from 'vitest';
-import {
-  balanceToday, billTracker, depositFor, depositPending, estimateBalance, freezePaySplit, freezePaySplitFrom,
-  outflows, unfreezePaySplit,
-} from '../engine/balances';
+import { balanceToday, estimateBalance } from '../engine/balances/estimate';
+import { billTracker } from '../engine/balances/billTracker';
+import { depositFor, depositPending } from '../engine/balances/deposits';
+import { freezePaySplit, freezePaySplitFrom, unfreezePaySplit } from '../engine/balances/freeze';
+import { outflows } from '../engine/balances/outflows';
 import { applyAllocation, existingExtras, undoAllocation } from '../features/planner/logic/allocate';
 import { addDays } from '../core/dates';
-import { applyPayment, debtAdvice, debtPay, debtPaymentsIn, debtPerPay, debtSchedules, owed, projectedOwed, paidIn, planSchedule, recordHistory, settleDue, syncGemToRecommended } from '../features/debts/logic/debts';
+import { applyPayment, settleDue } from '../features/debts/logic/payments';
+import { debtAdvice } from '../features/debts/logic/advice';
+import { debtPay, debtPerPay, owed, projectedOwed, paidIn, recordHistory } from '../features/debts/logic/amounts';
+import { debtPaymentsIn, syncGemToRecommended } from '../features/debts/logic/funding';
+import { debtSchedules, planSchedule } from '../features/debts/logic/schedule';
 import { classifyText, matchDebt, parseDate, parseStatementText, recordStatement } from '../services/reader/documents';
-import { asideMaxSaved, averageNeed, clearPaydayMove, monthEnvelopeOn, monthEnvelopePerPay, periodContaining, planFor, recordPayday, setAsidePerPay, shiftPeriod, upcomingPayPeriod } from '../engine/engine';
+import { asideMaxSaved, monthEnvelopeOn, monthEnvelopePerPay, setAsidePerPay } from '../engine/setAside';
+import { averageNeed, planFor } from '../engine/plan';
+import { clearPaydayMove, periodContaining, recordPayday, shiftPeriod, upcomingPayPeriod } from '../engine/periods';
 import { accountEnvelopes, envelopeHeld, envelopeStatus, matchesEnvelope } from '../engine/envelope';
 import { projectedAt, removeSpend, spendFromGoal } from '../features/savings/logic/goalcosts';
 import { autoBalance, autoPays, balancedMode, balancePay } from '../engine/rebalance';
@@ -18,7 +25,11 @@ import { seedBudget } from '../core/seed';
 import type { Budget, Debt, SavingsGoal } from '../core/types';
 import { looksLikeBudget } from '../core/valid';
 import { applyProposal, preview, windBack } from '../services/reader/apply';
-import { csvTargets, NEW_DEBT, NOT_MINE, review, toCents, toDraft, validDate, type Draft } from '../services/reader/check';
+import { csvTargets } from '../services/reader/check/transactions';
+import { NEW_DEBT, NOT_MINE, type Draft } from '../services/reader/check/draft';
+import { review } from '../services/reader/check/review';
+import { toCents, validDate } from '../services/reader/check/figures';
+import { toDraft } from '../services/reader/check/toDraft';
 import { classifyHttpError, nextPacificMidnight, nzTime, ReaderError } from '../services/reader/errors';
 import { geminiProvider, parseReply } from '../services/reader/gemini';
 import { prepareFile } from '../services/reader/prepare';
@@ -27,7 +38,7 @@ import type { Extraction } from '../services/reader/types';
 import { KEEP_DAYS, localDay, needsCopy, toForget } from '../state/versions';
 import { addGoalFor, applyBank, fetchBank, suggestLink } from '../services/bank/bank';
 import { cardPaid } from '../services/bank/cardPayments';
-import { guessDebt } from '../services/reader/check';
+import { guessDebt } from '../services/reader/check/toDraft';
 import { transferTo } from '../services/bank/bank';
 import { moveAmong } from '../core/order';
 import { csvAmount, csvDate, endingOf, fromStatementRows, readTransactionsCsv } from '../services/bank/csv';

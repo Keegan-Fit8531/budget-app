@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { esctRate, isKiwiSaver, kiwiHistory, kiwiPerPay, recordReading, slipContribution } from './kiwisaver';
 import { applyProposal, preview } from '../../../services/reader/apply';
-import { NEW_GOAL, review, toDraft } from '../../../services/reader/check';
+import { NEW_GOAL } from '../../../services/reader/check/draft';
+import { review } from '../../../services/reader/check/review';
+import { toDraft } from '../../../services/reader/check/toDraft';
 import { mergeReads, parseReply } from '../../../services/reader/gemini';
 import { seedBudget } from '../../../core/seed';
 import type { Budget, SavingsGoal } from '../../../core/types';

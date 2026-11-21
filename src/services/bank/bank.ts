@@ -1,11 +1,11 @@
 import { endingOf } from './csv';
 import { addDays, todayISO, toISO, type ISODate } from '../../core/dates';
-import { periodContaining } from '../../engine/engine';
+import { periodContaining } from '../../engine/periods';
 import { recordGoalMoves, setGoalBankBalance, settleGoalMoves, type SeenMove } from './goalMoves';
 import { setBalance } from '../../features/accounts/logic/history';
 import { isKiwiSaver, recordReading } from '../../features/savings/logic/kiwisaver';
 import { applyProposal } from '../reader/apply';
-import { newTransactions } from '../reader/check';
+import { newTransactions } from '../reader/check/transactions';
 import type { BankConfig } from './bankConfig';
 import { nextColor } from '../../core/colors';
 import { recordCardPayments, type SeenPayment } from './cardPayments';

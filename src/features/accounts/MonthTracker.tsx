@@ -1,9 +1,13 @@
 import type { ReactNode } from 'react';
-import { accountMode, balanceOn, billTracker, nextBufferUse, payProjection } from '../../engine/balances';
+import { accountMode } from '../../engine/balances/outflows';
+import { balanceOn } from '../../engine/balances/estimate';
+import { billTracker } from '../../engine/balances/billTracker';
+import { nextBufferUse, payProjection } from '../../engine/balances/projection';
 import { fmtDay, fmtShort, monthName, ordinal, todayISO } from '../../core/dates';
-import { debtAdvice } from '../debts/logic/debts';
+import { debtAdvice } from '../debts/logic/advice';
 import { accountEnvelopes, envelopeHeld } from '../../engine/envelope';
-import { asideMaxSaved, hasSetAsides, isHeldInAccount, type Period } from '../../engine/engine';
+import { asideMaxSaved, hasSetAsides, isHeldInAccount } from '../../engine/setAside';
+import { type Period } from '../../engine/periods';
 import { asideNames } from '../../engine/rebalance';
 import { tone } from '../../core/colors';
 import { cash } from '../../core/money';

@@ -1,7 +1,8 @@
-import { freezePaySplit } from '../../engine/balances';
-import { applyPayrollDeduction, debtPay, owed, settleDue } from '../../features/debts/logic/debts';
+import { freezePaySplit } from '../../engine/balances/freeze';
+import { applyPayrollDeduction, settleDue } from '../../features/debts/logic/payments';
+import { debtPay, owed } from '../../features/debts/logic/amounts';
 import { todayISO, type ISODate } from '../../core/dates';
-import { periodContaining, recordPayday } from '../../engine/engine';
+import { periodContaining, recordPayday } from '../../engine/periods';
 import { parsePayslipText, readPdfText, type Payslip } from './payslip';
 import type { Budget, Cents, Debt } from '../../core/types';
 

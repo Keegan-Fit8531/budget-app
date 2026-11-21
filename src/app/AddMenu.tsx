@@ -1,17 +1,18 @@
 import { lazy, Suspense, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { owed } from '../features/debts/logic/debts';
+import { owed } from '../features/debts/logic/amounts';
 import { startRead, type ReadJob } from '../services/reader/job';
 import { cash } from '../core/money';
 import { useBudget } from '../state/store';
-import { DebtModal, PaymentModal } from '../features/debts/DebtsPage';
+import { DebtModal } from '../features/debts/DebtModal';
+import { PaymentModal } from '../features/debts/PaymentModal';
 import { ErrorBoundary } from '../ui/ErrorBoundary';
-import { GoalModal } from '../features/savings/SavingsPage';
+import { GoalModal } from '../features/savings/GoalModal';
 import { Icon } from '../ui/Icon';
 import { ItemModal } from '../shared/ItemModal';
 
 // Loaded only when a document is chosen.
-const UploadQueue = lazy(() => import('../services/reader/UploadFlow').then((m) => ({ default: m.UploadQueue })));
+const UploadQueue = lazy(() => import('../services/reader/ui/UploadFlow').then((m) => ({ default: m.UploadQueue })));
 
 type Adding = 'menu' | 'cost' | 'goal' | 'debt' | 'pay';
 /** The most documents read at once. */

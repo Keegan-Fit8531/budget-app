@@ -2,8 +2,9 @@ import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerE
 import { Disclosure } from '../../ui/components';
 import { tone } from '../../core/colors';
 import { monthName, todayISO } from '../../core/dates';
-import { debtPay, debtSchedules, historyOwed, owed, paidIn, projectedOwed } from './logic/debts';
-import { periodContaining, shiftPeriod, type Period } from '../../engine/engine';
+import { debtPay, historyOwed, owed, paidIn, projectedOwed } from './logic/amounts';
+import { debtSchedules } from './logic/schedule';
+import { periodContaining, shiftPeriod, type Period } from '../../engine/periods';
 import { cash } from '../../core/money';
 import type { Budget, Debt } from '../../core/types';
 

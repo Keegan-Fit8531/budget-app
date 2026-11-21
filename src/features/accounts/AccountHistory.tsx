@@ -1,7 +1,9 @@
 import { useMemo, useState } from 'react';
-import { balanceToday, depositFor } from '../../engine/balances';
+import { balanceToday } from '../../engine/balances/estimate';
+import { depositFor } from '../../engine/balances/deposits';
 import { fmtShort, todayISO } from '../../core/dates';
-import { hasSetAsides, periodContaining, shiftPeriod } from '../../engine/engine';
+import { hasSetAsides } from '../../engine/setAside';
+import { periodContaining, shiftPeriod } from '../../engine/periods';
 import { accountHistory, recordCost, removeCost } from './logic/history';
 import { cash, parseMoney } from '../../core/money';
 import { asideNames } from '../../engine/rebalance';

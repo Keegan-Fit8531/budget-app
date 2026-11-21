@@ -1,6 +1,6 @@
 import type { ISODate } from '../../../core/dates';
-import { modeOf } from '../../../engine/balances';
-import { periodContaining, shiftPeriod, type Period } from '../../../engine/engine';
+import { modeOf } from '../../../engine/balances/outflows';
+import { periodContaining, shiftPeriod, type Period } from '../../../engine/periods';
 import type { Budget, Cents, SavingsGoal, Settings } from '../../../core/types';
 
 export interface GoalForecast {

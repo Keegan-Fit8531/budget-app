@@ -1,38 +1,32 @@
-import { Fragment, lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { startRead, type ReadJob } from '../../services/reader/job';
 import { applyBalance, autoPays, balancePay, restoreOverrides, type BalanceResult } from '../../engine/rebalance';
-import { accountMode, freezePaySplit, leftoverBeforeBudget, nextBufferUse, topsUp, unfreezePaySplit } from '../../engine/balances';
-import { isHoldDisplayAccount, owed } from '../debts/logic/debts';
+import { freezePaySplit, unfreezePaySplit } from '../../engine/balances/freeze';
+import { isHoldDisplayAccount } from '../debts/logic/funding';
+import { owed } from '../debts/logic/amounts';
 import { Donut, Legend } from '../../ui/Donut';
 import { Icon } from '../../ui/Icon';
 import { ErrorBoundary } from '../../ui/ErrorBoundary';
-import { AccIcon, Disclosure, Dot } from '../../ui/components';
 import { AccountEditModal, type AccountTab } from '../accounts/AccountEdit';
 import { WeeksView } from './WeeksView';
+import { PaydayCard, type PlannerView } from './PaydayCard';
+import { PayNotes, type AdjEdit } from './PayNotes';
+import { DueList } from './DueList';
 import { PayNav, useViewPeriod, ViewModes } from '../../state/period';
 import { clearOptimiseUndo, OptimiseModal, readOptimiseUndo, type OptimiseUndo } from './OptimiseModal';
 import { existingExtras, undoAllocation } from './logic/allocate';
-import { addDays, fmtDay, fmtShort, monthName, ordinal, todayISO } from '../../core/dates';
-import {
-  averageSplit, convert, firstBudgetPay, isAuto, isHeldInAccount, isMonthEnvelope, isSetAside, monthBudget, planFor, plannedAverage, shiftPeriod, upcomingPayPeriod, type View,
-} from '../../engine/engine';
-import { envelopeHeld } from '../../engine/envelope';
+import { modesChangedIn, rememberModes, takeModes } from './logic/modeMemory';
+import { fmtShort, monthName, todayISO } from '../../core/dates';
+import { averageSplit, planFor, plannedAverage } from '../../engine/plan';
+import { convert, type View } from '../../engine/frequency';
+import { shiftPeriod, upcomingPayPeriod } from '../../engine/periods';
 import { cash, moneyParts, centsToInput, parseMoney } from '../../core/money';
 import { useBudget } from '../../state/store';
 import type { Cents, PaydayMode } from '../../core/types';
 
 // Loaded only when a document is chosen.
-const UploadQueue = lazy(() => import('../../services/reader/UploadFlow').then((m) => ({ default: m.UploadQueue })));
-
-const MODES_KEY = 'paydays.balance.modes';
-
-/** Payments in date order, grouped by day. */
-function dayGroups<T extends { date: string }>(list: T[]): [string, T[]][] {
-  const m = new Map<string, T[]>();
-  for (const d of list) m.set(d.date, [...(m.get(d.date) ?? []), d]);
-  return [...m];
-}
+const UploadQueue = lazy(() => import('../../services/reader/ui/UploadFlow').then((m) => ({ default: m.UploadQueue })));
 
 export function PlannerPage() {
   const { budget, update } = useBudget();
@@ -48,7 +42,7 @@ export function PlannerPage() {
   // Last "Balance this pay": what changed and why, plus what to restore on Undo.
   const [optimiseOpen, setOptimiseOpen] = useState(false);
   // An account's amount for this pay only, being changed from "What's different this pay".
-  const [adjEdit, setAdjEdit] = useState<{ id: string; text: string; err?: boolean } | null>(null);
+  const [adjEdit, setAdjEdit] = useState<AdjEdit | null>(null);
   const [optUndo, setOptUndo] = useState<OptimiseUndo | null>(() => readOptimiseUndo());
   // Undo puts back only what Optimise changed, so anything you've edited since stays.
   function undoOptimise() {
@@ -186,39 +180,24 @@ export function PlannerPage() {
     { label: 'Other', color: 'var(--muted)', value: chartAccounts.filter((a) => !grouped.has(a.account.groupId)).reduce((t, a) => t + chartOf(a), 0) },
   ].filter((x) => x.value > 0);
 
-  const debtAccounts = new Set((budget.debts ?? []).map((d) => d.accountId));
-  const goalAccounts = new Set((budget.savings ?? []).map((g) => g.accountId));
+  // How amounts are shown, for each card in the payday split.
+  const view: PlannerView = { mode, avg, split, longRun, known, v, leftover, planned, period, today };
 
   const upcoming = plan.dues.filter((d) => !isCurrent || d.date >= today);
-  const dues = showAllDues ? upcoming : upcoming.slice(0, 8);
 
   function balanceThisPay() {
     // Builds on what's there (your own one-pay changes stay), so it also works as Re-balance.
     // `pending` is the same calculation, already done for this budget and pay.
     const result = pending;
     // Remember the payday amounts balancing changed (e.g. Fixed → Steady), so Reset to defaults can put them back.
-    if (result.toSteady.length) {
-      try {
-        const all = JSON.parse(localStorage.getItem(MODES_KEY) ?? '{}') as Record<string, Record<string, string>>;
-        const mine = all[period.start] ?? {};
-        for (const t of result.toSteady) if (!(t.accountId in mine)) mine[t.accountId] = t.was;
-        all[period.start] = mine;
-        localStorage.setItem(MODES_KEY, JSON.stringify(all));
-      } catch { /* ignore */ }
-    }
+    if (result.toSteady.length) rememberModes(period.start, result.toSteady);
     update((b) => { applyBalance(b, period, result); return b; });
     const earlier = balanced?.periodStart === period.start ? balanced.result.changes.filter((c) => !result.changes.some((x) => x.accountId === c.accountId)) : [];
     setBalanced({ periodStart: period.start, result: { ...result, changes: [...earlier, ...result.changes], toSteady: [...(balanced?.periodStart === period.start ? balanced.result.toSteady : []), ...result.toSteady] } });
   }
   /** Back to defaults for this pay: no one-pay adjustments, and payday amounts balancing changed put back. */
   function resetToDefaults() {
-    let modes: Record<string, string> = {};
-    try {
-      const all = JSON.parse(localStorage.getItem(MODES_KEY) ?? '{}') as Record<string, Record<string, string>>;
-      modes = all[period.start] ?? {};
-      delete all[period.start];
-      localStorage.setItem(MODES_KEY, JSON.stringify(all));
-    } catch { /* ignore */ }
+    const modes = takeModes(period.start);
     update((b) => {
       restoreOverrides(b, period.start, undefined);
       for (const [id, m] of Object.entries(modes)) {
@@ -248,7 +227,7 @@ export function PlannerPage() {
   const extrasHere = useMemo(() => !avg && !!existingExtras(budget, period), [avg, budget, period]);
   // Automatic balancing looks after today's pay (while it is still payday) and the next 11; after that, by hand.
   const autoHere = autoPays(budget, today).some((p) => p.start === period.start);
-  const hasModeChanges = (() => { try { return !!JSON.parse(localStorage.getItem(MODES_KEY) ?? '{}')[period.start]; } catch { return false; } })();
+  const hasModeChanges = modesChangedIn(period.start);
   const canReset = adjustments.length > 0 || hasModeChanges;
   // From the day after payday, a change isn't re-sent with the split — make it as a transfer instead.
   const passedNote = paydayEnded && byHand.length > 0
@@ -408,42 +387,8 @@ export function PlannerPage() {
 
           {/* A detail, so it's behind a click; it opens by itself when the pay is short. */}
           {!avg && (notes.length > 0 || usualTotal > plan.pay) && (
-            <Disclosure ruled wide title="What's different this pay" meta={notes.length || undefined}
-              storageKey="paydays.planner.notes" forceOpen={plan.leftover < 0}>
-              <div className="notes-list">
-                {notes.map((x) => (
-                  <div key={x.a.account.id} className="notes-row">
-                    <Dot color={x.a.account.color} />
-                    <span className="min0">
-                      <b>{x.a.account.name}</b>
-                      {x.why.map((w) => <span key={w} className="small muted block">{w}</span>)}
-                      {x.why.length === 0 && <span className="small muted block">Usually about {cash(x.usual, { whole: true })}</span>}
-                      {x.a.account.id in thisPay && adjEdit?.id !== x.a.account.id && (
-                        <button className="btn link small" onClick={() => setAdjEdit({ id: x.a.account.id, text: centsToInput(x.a.funded) })}>Change</button>
-                      )}
-                    </span>
-                    <span className="num right">
-                      <b>{cash(x.a.funded)}</b>
-                      {Math.abs(x.extra) > 2000 && <span className={`small block ${x.extra > 0 ? 'neg' : 'pos'}`}>{x.extra > 0 ? '+' : '−'}{cash(Math.abs(x.extra), { whole: true })}</span>}
-                    </span>
-                    {adjEdit?.id === x.a.account.id && (
-                      <div className="row nowrap gap-6" style={{ gridColumn: '2 / -1', marginTop: 6 }}>
-                        <input className="input" inputMode="decimal" autoFocus aria-label={`${x.a.account.name} this pay`} aria-invalid={adjEdit.err || undefined}
-                          value={adjEdit.text} style={{ flex: '1 1 0', minWidth: 0, maxWidth: 130, fontWeight: 600 }}
-                          onChange={(e) => setAdjEdit({ ...adjEdit, text: e.target.value, err: false })}
-                          onKeyDown={(e) => { if (e.key === 'Enter') saveAdj(); if (e.key === 'Escape') setAdjEdit(null); }} />
-                        <button className="btn small primary" onClick={saveAdj}>Save</button>
-                        <button className="btn small" onClick={() => setThisPay(x.a.account.id, null)}>Reset ({cash(x.a.usual ?? x.usual, { whole: true })})</button>
-                        <button className="icon-btn mini plain" aria-label="Cancel" onClick={() => setAdjEdit(null)}><Icon name="x" size={16} /></button>
-                      </div>
-                    )}
-                  </div>
-                ))}
-                {usualTotal > plan.pay && (
-                  <span className="small muted">Even in a normal pay your budget is {cash(usualTotal - plan.pay, { whole: true })} more than your pay.</span>
-                )}
-              </div>
-            </Disclosure>
+            <PayNotes notes={notes} usualTotal={usualTotal} pay={plan.pay} short={plan.leftover < 0} thisPay={thisPay}
+              adjEdit={adjEdit} setAdjEdit={setAdjEdit} saveAdj={saveAdj} resetAdj={(id) => setThisPay(id, null)} />
           )}
         </div>
 
@@ -485,221 +430,12 @@ export function PlannerPage() {
 
         {cards.length === 0 && <p className="note">Nothing is sent on from your pay yet. Use Add for a cost, a savings goal or a debt, and it shows here.</p>}
         <div className="acc-grid">
-          {cards.map((a) => {
-            const isPay = a.account.id === budget.settings.payAccountId;
-            const auto = isAuto(budget, a.account.id);
-            const steadyMode = accountMode(budget, a.account.id) === 'smooth';
-            const funded = !avg ? a.funded : isPay ? leftover : split ? v(a.funded) : v(planned?.get(a.account.id)?.sent ?? 0);
-            const need = split ? v(a.need) : longRun ? v(planned?.get(a.account.id)?.need ?? 0) : a.need;
-            // With a balance entered, the pill shows what the account ends the period with —
-            // after reserving unspent month envelopes (Gas assumed spent this month).
-            const rawEnds = !avg ? a.endBalance : undefined;
-            const gasHeld = rawEnds !== undefined ? envelopeHeld(budget, a.account.id, today) : 0;
-            const ends = rawEnds !== undefined ? rawEnds - gasHeld : undefined;
-            const diff = ends !== undefined ? null : a.diff === null || auto ? null : funded - need;
-            // Steady (e.g. rent): only the cushion for the next 5-week pay is "Buffer" — not the whole
-            // ending balance (which was reading as a massive spare pile).
-            const bufferFor = ends !== undefined && ends > 0 && steadyMode
-              ? nextBufferUse(budget, a.account.id, period, 13, today) : undefined;
-            const bufferCushion = bufferFor ? Math.max(0, bufferFor.need - bufferFor.deposit) : 0;
-            const bufferShown = bufferFor && bufferCushion > 0 && ends !== undefined
-              ? Math.min(ends, bufferCushion) : undefined;
-            // Money put aside on payday (a WOF, tyres) isn't a payment: it's counted on its own.
-            const paying = a.dues.filter((d) => !isHeldInAccount(d.item));
-            const asideTotal = a.need - paying.reduce((t, d) => t + d.item.amount, 0);
-            const asidePart = asideTotal > 0 ? `${cash(asideTotal)} put aside` : '';
-            const billBreakdown = a.breakdown.filter((x) => !isHeldInAccount(x.item));
-            // "5 × $275" when every cost repeats the same number of times (e.g. weekly food + gas), else a count.
-            const sameCount = billBreakdown.length > 0 && billBreakdown.every((x) => x.count === billBreakdown[0].count);
-            const times = [sameCount && billBreakdown[0].count > 1
-              ? `${billBreakdown[0].count} × ${cash(billBreakdown.reduce((s, x) => s + x.item.amount, 0))}`
-              : paying.length || !asidePart ? `${paying.length} payment${paying.length === 1 ? '' : 's'} due` : '', asidePart].filter(Boolean).join(' + ');
-            const detail = auto
-              ? (longRun ? (steadyMode ? 'Level amount' : 'Average')
-                : !steadyMode && topsUp(budget, a.account.id)
-                  ? (a.funded < a.need ? `${cash(a.need, { whole: true })} of bills − ${cash(a.need - a.funded, { whole: true })} already there`
-                    : asidePart ? times : `${a.dues.length} bills, nothing left over`)
-                  : times)
-              : isPay
-              ? (known ? 'Pay lands here · what’s left' : 'Pay lands here · shows once pay is in')
-              : a.diff === null
-                ? (a.account.kind === 'external' ? 'Sent on payday' : 'No costs set')
-                : longRun
-                  ? `${cash(need)} needed on average`
-                  : sameCount && billBreakdown[0].item.frequency !== 'monthly'
-                    ? times
-                    : asidePart && !paying.length ? `${asidePart} · nothing paid out` : `${paying.length} costs due · ${cash(a.need)}${asidePart ? `, incl. ${asidePart}` : ''}`;
-            // Everything about the account beyond its amount lives in a pop-up, opened by tapping the card.
-            const adjusted = a.usual !== undefined && a.usual !== a.funded;
-            // Only a problem (short) or something to act on (spare) is coloured; the rest stays quiet.
-            const endTip = ends === undefined ? ''
-              : ends < 0
-                ? (gasHeld > 0
-                  ? `Short after bills and ${cash(gasHeld)} still budgeted for this month’s envelopes (assumed spent)`
-                  : 'Estimated balance at the end of this pay period')
-              : bufferShown !== undefined && bufferFor
-                ? `${cash(bufferShown)} kept for the ${fmtShort(bufferFor.period.start)} pay (${cash(bufferFor.need)} needed, ${cash(bufferFor.deposit)} sent)${gasHeld ? `, after ${cash(gasHeld)} reserved for month budgets` : ''}.`
-                : gasHeld > 0 ? `Ends about ${cash(ends)} after reserving ${cash(gasHeld)} for this month’s envelopes`
-                : steadyMode ? `Estimated balance at the end of this pay (level amount evenings out 4- and 5-week pays)`
-                : 'Estimated balance at the end of this pay period';
-            const pill = (
-              <>
-                {diff !== null && diff !== 0 && (
-                  <span className={`pill ${diff < 0 ? 'bad' : 'good'}`}>{diff < 0 ? `${cash(-diff, { whole: Math.abs(diff) >= 10000 })} short` : `+${cash(diff, { whole: diff >= 10000 })} spare`}</span>
-                )}
-                {diff === 0 && <span className="pill">Exactly right</span>}
-                {ends !== undefined && (
-                  <span className={`pill ${ends < 0 ? 'bad' : ''}`} title={endTip}>
-                    {ends < 0
-                      ? `${cash(-ends)} short`
-                      : bufferShown !== undefined
-                        ? `Buffer ${cash(bufferShown)}`
-                        : `Ends ${cash(ends)}`}
-                  </span>
-                )}
-              </>
-            );
-            const amount = <>{isPay && !known ? '—' : cash(funded)}{split && !(isPay && !known) && <small className="muted small" style={{ fontWeight: 500 }}> /{mode === 'week' ? 'wk' : 'fn'}</small>}</>;
-            const amountClass = funded < 0 && (known || !isPay) ? 'neg' : '';
-            const icon = <AccIcon color={a.account.color} name={a.account.kind === 'external' ? 'send' : isPay ? 'wallet' : 'bank'} />;
-            // Each cost this pay (e.g. food, car gas, scooter gas, or every bill in Misc bills).
-            const byName = new Map<string, { name: string; amount: Cents; dates: string[]; aside: boolean; envelope?: boolean; note?: string; maxSaved?: Cents; monthBudget?: Cents }>();
-            if (!longRun) for (const d of a.dues) {
-              const held = isHeldInAccount(d.item);
-              const r = byName.get(`${held}|${d.item.name}`) ?? {
-                name: d.item.name, amount: 0, dates: [], aside: isSetAside(d.item), envelope: isMonthEnvelope(d.item), note: d.item.note,
-                maxSaved: d.item.maxSaved && d.item.maxSaved > 0 ? d.item.maxSaved : undefined,
-                monthBudget: isMonthEnvelope(d.item) ? monthBudget(d.item) : undefined,
-              };
-              r.amount += d.item.amount; r.dates.push(d.date);
-              if (!r.note && d.item.note) r.note = d.item.note;
-              if (!r.maxSaved && d.item.maxSaved && d.item.maxSaved > 0) r.maxSaved = d.item.maxSaved;
-              byName.set(`${held}|${d.item.name}`, r);
-            }
-            const rows = [...byName.values()];
-            // The budget's first pay starts from what the pay before it left in the account (or left short).
-            const carry = avg || isPay || period.start !== firstBudgetPay(budget, today).start
-              || !(budget.split.find((l) => l.accountId === a.account.id)?.mode === 'smooth' || topsUp(budget, a.account.id))
-              ? 0 : leftoverBeforeBudget(budget, a.account.id);
-            const why = notes.find((n) => n.a.account.id === a.account.id)?.why ?? [];
-            const isDebt = debtAccounts.has(a.account.id);
-            const debt = (budget.debts ?? []).find((d) => d.accountId === a.account.id);
-            const holdAcc = debt?.holdAccountId ? budget.accounts.find((x) => x.id === debt.holdAccountId) : undefined;
-            const holdNote = debt?.holdAccountId && holdAcc && debt.statementDay
-              ? `Stored in ${holdAcc.name} until the ${ordinal(debt.statementDay)}`
-              : undefined;
-            const isGoal = goalAccounts.has(a.account.id);
-            const isOpen = openCard === a.account.id;
-            return (
-              <Fragment key={a.account.id}>
-              <button className="acc-card" aria-haspopup="dialog"
-                aria-label={`${a.account.name}: details`} onClick={() => setOpenCard(a.account.id)}>
-                <div className="between nowrap">{icon}{pill}</div>
-                <p className="acc-name">{a.account.name}</p>
-                {holdNote && <p className="xs muted" style={{ margin: '2px 0 0' }}>{holdNote}</p>}
-                <div className="between nowrap bottom">
-                  <p className={`amt ${amountClass}`}>{amount}</p>
-                  <span className="acc-more" aria-hidden="true"><Icon name="info" size={18} /></span>
-                </div>
-              </button>
-              {isOpen && (
-                <div className="modal-back" onClick={() => setOpenCard(null)}>
-                  <div className="modal" role="dialog" aria-modal="true" aria-labelledby="acc-title" onClick={(e) => e.stopPropagation()}>
-                    <div className="between nowrap">
-                      <span className="row min0">
-                        {icon}
-                        <span className="min0">
-                          <h2 id="acc-title" className="h2">{a.account.name}</h2>
-                          <span className="small muted">{monthName(period.start)} pay · {fmtShort(period.start)} – {fmtShort(period.end)}</span>
-                        </span>
-                      </span>
-                      <button className="icon-btn plain" aria-label="Close" autoFocus onClick={() => setOpenCard(null)}><Icon name="x" /></button>
-                    </div>
-
-                    <div className="stat">
-                      <div className="between nowrap">
-                        <span className="small muted">{isPay ? 'Left here after the plan' : longRun ? 'Sent on average' : 'Payday sends'}</span>
-                        {pill}
-                      </div>
-                      <b className={`fig ${amountClass}`}>{amount}</b>
-                      <span className="small muted">{detail}</span>
-                      {holdNote && debt && (
-                        <span className="small">
-                          Held in <b>{holdAcc!.name}</b> until the {ordinal(debt.statementDay!)}
-                          {debt.statementDay ? ` — send to ${a.account.name} on or after that day, not on payday` : ''}.
-                        </span>
-                      )}
-                      {adjusted && <span className="small">Adjusted this pay · usually {cash(a.usual!)}</span>}
-                      {carry !== 0 && (
-                        <span className={`small ${carry < 0 ? 'neg' : 'pos'}`}>
-                          {carry < 0 ? `Includes ${cash(-carry, { whole: true })} the ${monthName(shiftPeriod(period, -1, budget.settings).start)} pay left short` : `${cash(carry, { whole: true })} left from ${monthName(shiftPeriod(period, -1, budget.settings).start)} counted`}
-                        </span>
-                      )}
-                    </div>
-
-                    {why.length > 0 && (
-                      <div className="tip small stack gap-4">
-                        <b>Different this pay</b>
-                        {why.map((w) => <span key={w}>{w}</span>)}
-                      </div>
-                    )}
-
-                    {rows.length > 0 && (
-                      <div>
-                        <div className="between" style={{ marginBottom: 6 }}>
-                          <h3 className="h3">{rows.length} cost{rows.length === 1 ? '' : 's'} this pay{split ? `, per ${mode}` : ''}</h3>
-                          <b className="num">{cash(v(a.need))}</b>
-                        </div>
-                        <div className="cost-rows">
-                          {rows.map((r) => {
-                            const each = r.amount / r.dates.length;
-                            const same = r.dates.length > 1 && Number.isInteger(each);
-                            return (
-                              <span key={`${r.aside || r.envelope}|${r.name}`} className="cost-row">
-                                <span className="min0">
-                                  <span className="cost-name">{r.name}</span>
-                                  <span className="cost-meta muted">
-                                    {r.envelope
-                                      ? `Month envelope${r.monthBudget ? ` ${cash(r.monthBudget)}` : ''} · resets each month · leftover is yours`
-                                      : r.aside
-                                      ? `Put aside on payday, stays in the account${r.maxSaved ? ` · max ${cash(r.maxSaved)}` : ''}`
-                                      : same ? `${r.dates.length} × ${cash(each, { whole: each % 100 === 0 })}` : r.dates.length === 1 ? fmtShort(r.dates[0]) : `${r.dates.length} payments`}
-                                    {/* Week / Fortnight: say what the whole pay is, since the amount on the right is per week */}
-                                    {split ? `${same ? ' =' : ' ·'} ${cash(r.amount)} this pay` : ''}
-                                    {r.note ? ` · ${r.note}` : ''}
-                                  </span>
-                                </span>
-                                <b className="num">{cash(v(r.amount))}{split && <small className="muted" style={{ fontWeight: 500 }}> /{mode === 'week' ? 'wk' : 'fn'}</small>}</b>
-                              </span>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    )}
-                    {rows.length === 0 && !isPay && !longRun && <p className="small muted">{a.account.kind === 'external' ? 'Sent on payday; no costs come out of it.' : 'No costs come out of this account this pay.'}</p>}
-
-                    {/* Quick links to where this account is set up. */}
-                    <div className="quick-links">
-                      <span className="small muted">Go to</span>
-                      {isDebt && <a className="btn small" href="#/debts"><Icon name="card" size={16} /> Debt and payment plans</a>}
-                      {isGoal && <a className="btn small" href="#/savings"><Icon name="piggy" size={16} /> Savings goal</a>}
-                      {(!isDebt && !isGoal || budget.items.some((i) => i.accountId === a.account.id)) && (
-                        <button type="button" className="btn small" onClick={() => { setOpenCard(null); setEditAccount({ id: a.account.id, tab: 'payday' }); }}>
-                          <Icon name="edit" size={16} /> {isPay ? 'Account settings' : 'Account settings · Payday send'}
-                        </button>
-                      )}
-                      {!isDebt && !isGoal && !isPay && a.account.kind === 'bank' && (
-                        <button type="button" className="btn small" onClick={() => { setOpenCard(null); setEditAccount({ id: a.account.id, tab: 'balance' }); }}>
-                          <Icon name="wallet" size={16} /> {budget.balances?.[a.account.id] ? 'Update balance' : 'Enter balance'}
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              )}
-              </Fragment>
-            );
-          })}
+          {cards.map((a) => (
+            <PaydayCard key={a.account.id} budget={budget} a={a} view={view}
+              why={notes.find((n) => n.a.account.id === a.account.id)?.why ?? []}
+              isOpen={openCard === a.account.id} onOpen={() => setOpenCard(a.account.id)} onClose={() => setOpenCard(null)}
+              onEdit={(tab) => { setOpenCard(null); setEditAccount({ id: a.account.id, tab }); }} />
+          ))}
         </div>
       </section>
 
@@ -715,40 +451,8 @@ export function PlannerPage() {
         <div className="planner-lower two">
           <WeeksView budget={budget} period={period} plan={plan} />
 
-          <section className="card">
-            <div className="card-head" style={{ marginBottom: 8 }}>
-              <h2 className="h2">{isCurrent ? 'Coming up before next pay' : 'Due this period'}</h2>
-              <span className="small muted">{upcoming.length} payment{upcoming.length === 1 ? '' : 's'}</span>
-            </div>
-            {dues.length === 0 && <p className="muted small">Nothing else due this period.</p>}
-            {/* One heading per day (Today, Tomorrow, Wed 18 Nov) with that day's total, then what's due. */}
-            {dayGroups(dues).map(([date, list]) => (
-              <div key={date} className="due-day">
-                <div className="due-day-head">
-                  <span>{date === today ? 'Today' : date === addDays(today, 1) ? 'Tomorrow' : fmtDay(date)}</span>
-                  {list.length > 1 && <span className="num">{cash(list.reduce((t, d) => t + d.item.amount, 0))}</span>}
-                </div>
-                {list.map((d, i) => {
-                  const acc = budget.accounts.find((a) => a.id === d.item.accountId);
-                  return (
-                    <div className="list-row" key={`${d.item.id}-${d.date}-${i}`}>
-                      <Dot color={acc?.color} />
-                      <span className="grow">
-                        {d.item.name}
-                        {acc && acc.name !== d.item.name && <span className="small muted"> · {acc.name}</span>}
-                      </span>
-                      <b className="num">{cash(d.item.amount)}</b>
-                    </div>
-                  );
-                })}
-              </div>
-            ))}
-            {upcoming.length > 8 && (
-              <button className="btn small ghost" style={{ marginTop: 8 }} onClick={() => setShowAllDues(!showAllDues)}>
-                {showAllDues ? 'Show fewer' : `Show all ${upcoming.length}`}
-              </button>
-            )}
-          </section>
+          <DueList accounts={budget.accounts} upcoming={upcoming} showAll={showAllDues} onToggle={() => setShowAllDues(!showAllDues)}
+            isCurrent={isCurrent} today={today} />
         </div>
       )}
       {optimiseOpen && <OptimiseModal period={period} leftover={plan.leftover} previous={undoHere} onClose={() => setOptimiseOpen(false)} onApplied={(u) => setOptUndo(u)} />}

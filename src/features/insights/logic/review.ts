@@ -1,6 +1,7 @@
 import { addDays, diffDays, type ISODate } from '../../../core/dates';
-import { periodContaining, planFor, shiftPeriod, type Period } from '../../../engine/engine';
-import { owed } from '../../debts/logic/debts';
+import { periodContaining, shiftPeriod, type Period } from '../../../engine/periods';
+import { planFor } from '../../../engine/plan';
+import { owed } from '../../debts/logic/amounts';
 import { CATEGORY_LABEL, categorizeTxn, cleanDescription, shopMap, summarize } from './spending';
 import type { Budget, Cents, Txn } from '../../../core/types';
 

@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from 'react';
 import { Collapse } from '../ui/components';
 import { addDays, fmtDay, fmtShort, monthName, todayISO } from '../core/dates';
-import { periodContaining, shiftPeriod, type Period } from '../engine/engine';
+import { periodContaining, shiftPeriod, type Period } from '../engine/periods';
 import { useBudget } from '../state/store';
 import { Icon } from '../ui/Icon';
 
