@@ -6,6 +6,7 @@ import { nextBufferUse, payProjection } from '../../engine/balances/projection';
 import { fmtDay, fmtShort, monthName, ordinal, todayISO } from '../../core/dates';
 import { debtAdvice } from '../debts/logic/advice';
 import { accountEnvelopes, envelopeHeld } from '../../engine/envelope';
+import { EnvelopeCards } from './EnvelopeCards';
 import { asideMaxSaved, hasSetAsides, isHeldInAccount } from '../../engine/setAside';
 import { type Period } from '../../engine/periods';
 import { asideNames } from '../../engine/rebalance';
@@ -60,9 +61,6 @@ export function MonthTracker({ budget, account, today = todayISO(), open }: { bu
     : steady ? 'Ends'
     : 'Spare';
   const envNames = envelopes.map((e) => e.item.name).join(' and ');
-  // "this month", or "this week" when every envelope here is weekly; mixed spans say "for now".
-  const spans = new Set(envelopes.map((e) => e.span));
-  const spanWords = spans.size === 1 ? `this ${[...spans][0]}` : 'for now';
   // Accounts = this pay with what's in the account now. Planner's "Buffer" is often the *next* pay's end.
   const leftNote = short
     ? (gasHeld > 0 ? `after bills and ${envNames || 'envelopes'}` : 'this pay after bills')
@@ -90,43 +88,7 @@ export function MonthTracker({ budget, account, today = todayISO(), open }: { bu
 
   return (
     <>
-      {envelopes.length > 0 && (
-        <div className="stack gap-8">
-          {envelopes.map((e) => (
-            <div key={e.item.id} className="stack gap-8">
-              <div className="trio">
-                <div className="stat">
-                  <span className="small muted">{e.item.name} · {e.label}</span>
-                  <b>{cash(e.budget)}</b>
-                  <span className="xs muted">{e.span} budget</span>
-                </div>
-                <div className="stat">
-                  <span className="small muted">Spent</span>
-                  <b>{cash(e.spent)}</b>
-                  <span className="xs muted">{e.txns.length ? `${e.txns.length} purchase${e.txns.length === 1 ? '' : 's'}` : 'none yet'}</span>
-                </div>
-                <div className="stat">
-                  <span className="small muted">{e.over ? 'Over' : 'Left'}</span>
-                  <b className={e.over ? 'neg' : e.left > 0 ? 'pos' : ''}>{cash(Math.abs(e.left))}</b>
-                  <span className="xs muted">{e.over ? 'over budget' : `this ${e.span}`}</span>
-                </div>
-              </div>
-              {(e.budget > 0 || e.spent > 0) && (
-                <div className="parts" role="img" aria-label={`${cash(e.spent)} spent of ${cash(e.budget)}`}>
-                  {e.spent > 0 && <div title={`Spent ${cash(e.spent)}`} style={{ flex: Math.min(e.spent, e.budget || e.spent), background: e.over ? 'var(--bad)' : color }} />}
-                  {e.left > 0 && <div title={`Left ${cash(e.left)}`} style={{ flex: e.left, background: 'var(--good)' }} />}
-                  {e.over && e.budget > 0 && <div title={`Over ${cash(-e.left)}`} style={{ flex: -e.left, background: 'var(--bad)' }} />}
-                </div>
-              )}
-              <p className="small muted">
-                {e.over
-                  ? <>Over by {cash(-e.left)} this {e.span} — next {e.span}’s {cash(e.budget)} budget starts fresh.</>
-                  : <>Assumed spent this {e.span} (reserved in the account). Anything left when the {e.span} ends ({fmtShort(e.to)}) is yours — it doesn’t roll over. Matched from synced purchases{e.item.name.match(/gas|fuel|petrol/i) ? ' (fuel shops)' : e.item.name.match(/food|grocer|supermarket/i) ? ' (supermarkets)' : ''}.</>}
-              </p>
-            </div>
-          ))}
-        </div>
-      )}
+      <EnvelopeCards budget={budget} account={account} envelopes={envelopes} color={color} today={today} />
 
       {!t.balanceKnown && (
         <div className="tip small stack gap-4">
@@ -193,13 +155,13 @@ export function MonthTracker({ budget, account, today = todayISO(), open }: { bu
           </div>
           {short && gasHeld > 0 && (
             <p className="small muted">
-              Needs {cash(t.toCome)} for bills and {cash(gasHeld)} still budgeted for {envNames} {spanWords}
+              Needs {cash(t.toCome)} for bills and {cash(gasHeld)} still budgeted for {envNames}
               ({cash(t.toCome + gasHeld)} total) against {cash(t.balance)} in the account.
             </p>
           )}
           {!short && gasHeld > 0 && spareAmt > 0 && bufferShown === undefined && (
             <p className="small muted">
-              {cash(gasHeld)} reserved for {envNames} {spanWords} (assumed spent). Anything left at the end is yours.
+              {cash(gasHeld)} still budgeted for {envNames} (assumed spent). Anything left when each one resets is yours.
             </p>
           )}
           {overAsideMax && (
@@ -224,7 +186,7 @@ export function MonthTracker({ budget, account, today = todayISO(), open }: { bu
           )}
 
           {envelopes.map((e) => e.txns.length > 0 && (
-            <Disclosure key={`env-${e.item.id}`} title={`${e.item.name} purchases · ${e.label}`} meta={cash(e.spent)}>
+            <Disclosure key={`env-${e.item.id}`} title={`${e.item.name} spending · ${e.label}`} meta={cash(e.spent)}>
               <ShortList>
                 {e.txns.map((t, i) => (
                   <div className="list-row small" key={`${t.date}-${t.amount}-${i}`}>
