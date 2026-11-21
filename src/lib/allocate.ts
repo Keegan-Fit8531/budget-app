@@ -1,3 +1,4 @@
+import { depositFor, paySplitLocked } from './balances';
 import { owed } from './debts';
 import { convert, isHeldInAccount, itemDates, planFor, type Period } from './engine';
 import type { Budget, Cents, SplitLine } from './types';
@@ -63,34 +64,51 @@ export interface AllocationUndo {
   overrides: Record<string, Cents | null>;
   split: Record<string, SplitLine | null>;
   items: Record<string, Cents>;
+  /**
+   * What this pay sends each account Optimise changed, before and after. If payday then splits the pay
+   * and its frozen split keeps the `after` figure, Undo puts `before` back. (Older saves don't have it.)
+   */
+  sent?: Record<string, { before: Cents; after: Cents }>;
 }
 
 /**
  * Put leftover money where you chose.
  *  once  = this pay only (one-pay adjustments; e.g. Wedding gets $1,000 + $150 this pay).
- *  every = from now on (raises normal amounts; the allowance's weekly transfer goes up).
+ *  every = from now on, this pay included (raises normal amounts; the allowance's weekly transfer goes up).
+ *          Once payday has split this pay its amounts are frozen, so this pay also gets a one-pay
+ *          adjustment for the same extra: its leftover goes down just as it would have before payday.
  * Returns what's needed to undo it.
  */
 export function applyAllocation(b: Budget, period: Period, allocs: { targetId: string; amount: Cents }[], mode: AllocMode): AllocationUndo {
-  const undo: AllocationUndo = { periodStart: period.start, overrides: {}, split: {}, items: {} };
+  const undo: AllocationUndo = { periodStart: period.start, overrides: {}, split: {}, items: {}, sent: {} };
   const targets = allocationTargets(b);
   const plan = planFor(b, period);
+  const fundedNow = (p: typeof plan, id: string) => p.accounts.find((x) => x.account.id === id)?.funded ?? 0;
+  // Payday has already split this pay: raising the normal amounts no longer changes what it sends.
+  const frozen = !!b.splitSent?.[period.start] && paySplitLocked(b, period);
+  const touched = new Set<string>();
+  /** Send `extra` more to an account this pay only, on top of what it gets now. */
+  const addThisPay = (accountId: string, extra: Cents) => {
+    b.overrides = b.overrides ?? {};
+    const cur = b.overrides[period.start]?.[accountId];
+    if (!(accountId in undo.overrides)) undo.overrides[accountId] = cur ?? null;
+    b.overrides[period.start] = { ...(b.overrides[period.start] ?? {}), [accountId]: (cur ?? fundedNow(plan, accountId)) + extra };
+  };
   for (const { targetId, amount } of allocs) {
     const t = targets.find((x) => x.id === targetId);
     if (!t || amount <= 0 || t.kind === 'spend' || !t.accountId) continue;
+    touched.add(t.accountId);
     const a = plan.accounts.find((x) => x.account.id === t.accountId);
-    if (mode === 'once') {
-      b.overrides = b.overrides ?? {};
-      const cur = b.overrides[period.start]?.[t.accountId];
-      if (!(t.accountId in undo.overrides)) undo.overrides[t.accountId] = cur ?? null;
-      b.overrides[period.start] = { ...(b.overrides[period.start] ?? {}), [t.accountId]: (cur ?? a?.funded ?? 0) + amount };
-      continue;
-    }
+    if (mode === 'once') { addThisPay(t.accountId, amount); continue; }
     if (t.kind === 'allowance') {
       const item = b.items.find((i) => i.id === t.weeklyItemId);
       if (item) {
+        const was = depositFor(b, t.accountId, period, undefined, { usual: true });
         if (!(item.id in undo.items)) undo.items[item.id] = item.amount;
         item.amount += allowancePerWeek(b, period, t, amount, 'every').perWeek;
+        // Split pay: send what the bigger transfers add to this pay, as payday would have before it split.
+        const more = depositFor(b, t.accountId, period, undefined, { usual: true }) - was;
+        if (frozen && more > 0) addThisPay(t.accountId, more);
       }
       continue;
     }
@@ -100,6 +118,12 @@ export function applyAllocation(b: Budget, period: Period, allocs: { targetId: s
     const usual = a ? (a.usual ?? a.funded) : 0;
     if (line) { line.mode = 'fixed'; line.amount = usual + amount; delete line.auto; }
     else b.split.push({ accountId: t.accountId, amount, mode: 'fixed' });
+    if (frozen) addThisPay(t.accountId, amount);
+  }
+  const after = planFor(b, period);
+  for (const id of touched) {
+    const was = fundedNow(plan, id), now = fundedNow(after, id);
+    if (was !== now) undo.sent![id] = { before: was, after: now };
   }
   return undo;
 }
@@ -121,6 +145,12 @@ export function undoAllocation(b: Budget, u: AllocationUndo): void {
     const item = b.items.find((x) => x.id === id);
     if (item) item.amount = amount;
   }
+  // Payday split the pay after Optimise, so the frozen split kept Optimise's amount: put back what this pay
+  // sent before it. A frozen amount that's changed since stays as it is.
+  const sent = b.splitSent?.[u.periodStart];
+  for (const [id, { before, after }] of Object.entries(u.sent ?? {})) {
+    if (sent?.[id] === after) sent[id] = before;
+  }
 }
 
 /**
@@ -133,7 +163,7 @@ export function existingExtras(b: Budget, period: Period): (AllocationUndo & { a
   if (!o) return null;
   const auto = b.autoBalanced?.[period.start] ?? {};
   const plan = planFor(b, period);
-  const undo: AllocationUndo = { periodStart: period.start, overrides: {}, split: {}, items: {} };
+  const undo: AllocationUndo = { periodStart: period.start, overrides: {}, split: {}, items: {}, sent: {} };
   const allocs: { targetId: string; amount: Cents }[] = [];
   for (const t of allocationTargets(b)) {
     const id = t.accountId;
@@ -141,6 +171,8 @@ export function existingExtras(b: Budget, period: Period): (AllocationUndo & { a
     const usual = plan.accounts.find((a) => a.account.id === id)?.usual;
     if (usual === undefined || o[id] <= usual) continue;
     undo.overrides[id] = null;
+    // If payday's frozen split holds the extra too, handing it out again puts that back to the usual amount.
+    undo.sent![id] = { before: usual, after: o[id] };
     allocs.push({ targetId: t.id, amount: o[id] - usual });
   }
   return allocs.length ? { ...undo, allocs } : null;

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   balanceToday, billTracker, depositFor, depositPending, estimateBalance, freezePaySplit, freezePaySplitFrom,
   outflows, unfreezePaySplit,
@@ -1056,6 +1056,11 @@ describe('reading a statement', () => {
 });
 
 describe('optimising the leftover, then changing it', () => {
+  // Payday is Thu 19 Nov: on the 18th it's still to come; by the 25th it has split the pay, so its
+  // deposits are frozen (budget.splitSent).
+  const BEFORE = '2026-11-18', AFTER = '2026-11-25';
+  const on = (day: string) => { vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new Date(`${day}T12:00:00`)); };
+  afterEach(() => { vi.useRealTimers(); });
   function twoGoals() {
     const b = budget();
     for (const id of ['a', 'b']) {
@@ -1065,49 +1070,178 @@ describe('optimising the leftover, then changing it', () => {
     b.savings = ['a', 'b'].map((id) => ({ id, name: id, accountId: id, balance: 0, asOf: '2026-11-12' }));
     return b;
   }
+  /** Two goals plus a weekly $200 allowance transfer out of a "fun" account that sends this pay's costs. */
+  function withAllowance() {
+    const b = twoGoals();
+    b.accounts.push({ id: 'fun', name: 'Fun', kind: 'bank', color: '#000', groupId: 'lifestyle' });
+    b.items.push({ id: 'pocket', name: 'Pocket money', amount: 20000, frequency: 'weekly', start: '2026-11-04', accountId: 'fun' });
+    b.split.push({ accountId: 'fun', amount: 0, mode: 'exact' });
+    return b;
+  }
+  const payPeriod = (b: Budget) => periodContaining('2026-11-20', b.settings);
   const funded = (b: Budget, p: ReturnType<typeof periodContaining>, id: string) => planFor(b, p).accounts.find((a) => a.account.id === id)!.funded;
 
-  it('this pay only: editing swaps the old amounts for the new ones', () => {
+  describe.each([['before payday', BEFORE], ['after payday', AFTER]])('%s (%s)', (_, day) => {
+    beforeEach(() => on(day));
+
+    it('this pay only: editing swaps the old amounts for the new ones', () => {
+      const b = twoGoals();
+      const p = payPeriod(b);
+      const start = planFor(b, p).leftover;
+      const first = applyAllocation(b, p, [{ targetId: 'goal-a', amount: 30000 }], 'once');
+      expect(planFor(b, p).leftover).toBe(start - 30000);
+      // Edit: put back what Optimise did, then hand it out again.
+      undoAllocation(b, first);
+      expect(planFor(b, p).leftover).toBe(start);
+      applyAllocation(b, p, [{ targetId: 'goal-a', amount: 5000 }, { targetId: 'goal-b', amount: 20000 }], 'once');
+      expect(funded(b, p, 'a')).toBe(15000);
+      expect(funded(b, p, 'b')).toBe(30000);
+      expect(planFor(b, p).leftover).toBe(start - 25000);
+    });
+
+    it('finds extra already added for this pay only, so Optimise can hand it out again', () => {
+      const b = twoGoals();
+      const p = payPeriod(b);
+      b.overrides = { [p.start]: { a: 40000 } }; // $300 on top of the usual $100, set without Optimise
+      const start = planFor(b, p).leftover; // after payday, the frozen split keeps the $400
+      const x = existingExtras(b, p)!;
+      expect(x.allocs).toEqual([{ targetId: 'goal-a', amount: 30000 }]);
+      // Hand it all out again: $200 back to goal a, $100 plus what was left to goal b.
+      undoAllocation(b, x);
+      expect(planFor(b, p).leftover).toBe(start + 30000);
+      applyAllocation(b, p, [{ targetId: 'goal-a', amount: 20000 }, { targetId: 'goal-b', amount: 10000 + start }], 'once');
+      expect(funded(b, p, 'a')).toBe(30000);
+      expect(planFor(b, p).leftover).toBe(0);
+      // An amount set lower than usual isn't extra.
+      b.overrides = { [p.start]: { a: 5000 } };
+      expect(existingExtras(b, p)).toBeNull();
+    });
+
+    it('every pay: editing changes the normal amount rather than adding to it', () => {
+      const b = twoGoals();
+      const p = payPeriod(b);
+      const first = applyAllocation(b, p, [{ targetId: 'goal-a', amount: 30000 }], 'every');
+      expect(b.split.find((l) => l.accountId === 'a')!.amount).toBe(40000);
+      undoAllocation(b, first);
+      applyAllocation(b, p, [{ targetId: 'goal-a', amount: 10000 }], 'every');
+      expect(b.split.find((l) => l.accountId === 'a')!.amount).toBe(20000);
+    });
+
+    it('every pay: this pay’s leftover goes down by the amount too, later pays send the new amount, and Undo puts both back', () => {
+      const b = twoGoals();
+      const p = payPeriod(b), next = shiftPeriod(p, 1, b.settings);
+      const start = planFor(b, p).leftover;
+      const u = applyAllocation(b, p, [{ targetId: 'goal-a', amount: 30000 }], 'every');
+      expect(planFor(b, p).leftover).toBe(start - 30000);
+      expect(funded(b, p, 'a')).toBe(40000);
+      expect(funded(b, next, 'a')).toBe(40000);
+      undoAllocation(b, u);
+      expect(planFor(b, p).leftover).toBe(start);
+      expect(funded(b, next, 'a')).toBe(10000);
+    });
+
+    it('every pay to the allowance: this pay covers the bigger transfers the same way either side of payday', () => {
+      on(BEFORE);
+      const ref = withAllowance();
+      const refStart = planFor(ref, payPeriod(ref)).leftover;
+      applyAllocation(ref, payPeriod(ref), [{ targetId: 'allow-fun', amount: 20000 }], 'every');
+      const drop = refStart - planFor(ref, payPeriod(ref)).leftover;
+      expect(drop).toBeGreaterThan(0);
+
+      on(day);
+      const b = withAllowance();
+      const p = payPeriod(b);
+      const start = planFor(b, p).leftover;
+      const u = applyAllocation(b, p, [{ targetId: 'allow-fun', amount: 20000 }], 'every');
+      expect(b.items.find((i) => i.id === 'pocket')!.amount).toBeGreaterThan(20000);
+      expect(start - planFor(b, p).leftover).toBe(drop);
+      undoAllocation(b, u);
+      expect(planFor(b, p).leftover).toBe(start);
+      expect(b.items.find((i) => i.id === 'pocket')!.amount).toBe(20000);
+    });
+  });
+
+  it('every pay before payday changes only the normal amount; after payday this pay also gets a one-pay amount, and payday’s record stays as sent', () => {
+    on(BEFORE);
+    const early = twoGoals();
+    applyAllocation(early, payPeriod(early), [{ targetId: 'goal-a', amount: 30000 }], 'every');
+    expect(early.overrides?.[payPeriod(early).start]).toBeUndefined();
+    expect(early.splitSent).toBeUndefined();
+
+    on(AFTER);
     const b = twoGoals();
-    const p = periodContaining('2026-11-20', b.settings);
+    const p = payPeriod(b);
+    planFor(b, p); // viewing the pay freezes it
+    expect(b.splitSent?.[p.start]?.a).toBe(10000);
+    applyAllocation(b, p, [{ targetId: 'goal-a', amount: 30000 }], 'every');
+    expect(b.overrides?.[p.start]?.a).toBe(40000);
+    expect(b.splitSent?.[p.start]?.a).toBe(10000);
+    // Not "extra for this pay only": it's the new normal amount, so Optimise doesn't count it twice.
+    expect(existingExtras(b, p)).toBeNull();
+  });
+
+  it('Optimise before payday, Undo after it: the split pay’s leftover comes back (this pay only and every pay)', () => {
+    for (const mode of ['once', 'every'] as const) {
+      on(BEFORE);
+      const b = twoGoals();
+      const p = payPeriod(b), next = shiftPeriod(p, 1, b.settings);
+      const start = planFor(b, p).leftover;
+      const u = applyAllocation(b, p, [{ targetId: 'goal-a', amount: 30000 }], mode);
+
+      on(AFTER);
+      expect(planFor(b, p).leftover).toBe(start - 30000);
+      expect(b.splitSent?.[p.start]?.a).toBe(40000); // payday sent Optimise's amount
+      undoAllocation(b, u);
+      expect(planFor(b, p).leftover).toBe(start);
+      expect(funded(b, p, 'a')).toBe(10000);
+      expect(funded(b, next, 'a')).toBe(10000);
+    }
+  });
+
+  it('Optimise before payday, Edit after it: the whole leftover is there to hand out again', () => {
+    on(BEFORE);
+    const b = twoGoals();
+    const p = payPeriod(b);
     const start = planFor(b, p).leftover;
-    const first = applyAllocation(b, p, [{ targetId: 'goal-a', amount: 30000 }], 'once');
-    expect(planFor(b, p).leftover).toBe(start - 30000);
-    // Edit: put back what Optimise did, then hand it out again.
-    undoAllocation(b, first);
-    expect(planFor(b, p).leftover).toBe(start);
+    const record = applyAllocation(b, p, [{ targetId: 'goal-a', amount: 30000 }], 'once');
+
+    on(AFTER);
+    planFor(b, p); // payday has split it
+    // What the Edit dialog shows: the leftover with last time's choice put back.
+    const before = structuredClone(b);
+    undoAllocation(before, record);
+    expect(planFor(before, p).leftover).toBe(start);
+    // Saving swaps last time's choice for the new one.
+    undoAllocation(b, record);
     applyAllocation(b, p, [{ targetId: 'goal-a', amount: 5000 }, { targetId: 'goal-b', amount: 20000 }], 'once');
     expect(funded(b, p, 'a')).toBe(15000);
     expect(funded(b, p, 'b')).toBe(30000);
     expect(planFor(b, p).leftover).toBe(start - 25000);
   });
 
-  it('finds extra already added for this pay only, so Optimise can hand it out again', () => {
+  it('extra set by hand on a split pay (the Planner keeps the frozen split in step) can be handed out again', () => {
+    on(AFTER);
     const b = twoGoals();
-    const p = periodContaining('2026-11-20', b.settings);
-    b.overrides = { [p.start]: { a: 40000 } }; // $300 on top of the usual $100, set without Optimise
+    const p = payPeriod(b);
     const start = planFor(b, p).leftover;
-    const x = existingExtras(b, p)!;
-    expect(x.allocs).toEqual([{ targetId: 'goal-a', amount: 30000 }]);
-    // Hand it all out again: $200 back to goal a, $100 plus what was left to goal b.
-    undoAllocation(b, x);
-    expect(planFor(b, p).leftover).toBe(start + 30000);
-    applyAllocation(b, p, [{ targetId: 'goal-a', amount: 20000 }, { targetId: 'goal-b', amount: 10000 + start }], 'once');
-    expect(funded(b, p, 'a')).toBe(30000);
-    expect(planFor(b, p).leftover).toBe(0);
-    // An amount set lower than usual isn't extra.
-    b.overrides = { [p.start]: { a: 5000 } };
-    expect(existingExtras(b, p)).toBeNull();
+    // What the Planner's "this pay only" edit does once the pay is split.
+    b.overrides = { [p.start]: { a: 40000 } };
+    b.splitSent![p.start].a = 40000;
+    expect(planFor(b, p).leftover).toBe(start - 30000);
+    undoAllocation(b, existingExtras(b, p)!);
+    expect(planFor(b, p).leftover).toBe(start);
   });
 
-  it('every pay: editing changes the normal amount rather than adding to it', () => {
+  it('Undo leaves a frozen amount that has changed since alone', () => {
+    on(BEFORE);
     const b = twoGoals();
-    const p = periodContaining('2026-11-20', b.settings);
-    const first = applyAllocation(b, p, [{ targetId: 'goal-a', amount: 30000 }], 'every');
-    expect(b.split.find((l) => l.accountId === 'a')!.amount).toBe(40000);
-    undoAllocation(b, first);
-    applyAllocation(b, p, [{ targetId: 'goal-a', amount: 10000 }], 'every');
-    expect(b.split.find((l) => l.accountId === 'a')!.amount).toBe(20000);
+    const p = payPeriod(b);
+    const u = applyAllocation(b, p, [{ targetId: 'goal-a', amount: 30000 }], 'once');
+    on(AFTER);
+    planFor(b, p);
+    b.splitSent![p.start].a = 25000; // changed by hand after payday
+    undoAllocation(b, u);
+    expect(b.splitSent![p.start].a).toBe(25000);
   });
 });
 

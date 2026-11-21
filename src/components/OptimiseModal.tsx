@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Dot } from './ui';
 import { allocationTargets, allowancePerWeek, applyAllocation, existingExtras, undoAllocation, type AllocationUndo, type AllocMode } from '../lib/allocate';
+import { paySplitLocked } from '../lib/balances';
 import { fmtShort, monthName, todayISO } from '../lib/dates';
 import { planFor, type Period } from '../lib/engine';
 import { cash, centsToInput, parseMoney } from '../lib/money';
@@ -49,7 +50,7 @@ export function OptimiseModal({ period, leftover: leftNow, previous: record, onC
       const same = allocs?.find((x) => x.targetId === a.targetId);
       if (same) same.amount += a.amount; else allocs?.push(a);
     }
-    return { ...record, overrides: { ...record.overrides, ...extra.overrides }, allocs };
+    return { ...record, overrides: { ...record.overrides, ...extra.overrides }, sent: { ...record.sent, ...extra.sent }, allocs };
   });
   // Editing: the budget as it was before the last Optimise, so the whole leftover is there to hand out again.
   const before = useMemo(() => {
@@ -78,6 +79,10 @@ export function OptimiseModal({ period, leftover: leftNow, previous: record, onC
   const cents = (id: string) => (ticked.includes(id) ? Math.max(0, parseMoney(amounts[id] ?? '') ?? 0) : 0);
   const allocated = targets.reduce((t, x) => t + cents(x.id), 0);
   const left = leftover - allocated;
+  // From the day after payday the split has gone: what Optimise adds to this pay has to be moved by hand.
+  const today = todayISO();
+  const splitDone = period.start < today && paySplitLocked(budget, period, today);
+  const payName = budget.accounts.find((a) => a.id === budget.settings.payAccountId)?.name ?? 'your main account';
 
   function toggle(id: string, on: boolean) {
     setTicked((t) => (on ? [...t, id] : t.filter((x) => x !== id)));
@@ -164,7 +169,8 @@ export function OptimiseModal({ period, leftover: leftNow, previous: record, onC
             <b>{left < 0 ? `${cash(-left)} too much` : left === 0 ? 'All allocated' : `${cash(left)} still left`}</b>
           </span>
         </div>
-        {mode === 'every' && <p className="small muted">Every pay raises the normal amounts from now on (allowance: each weekly transfer goes up). Check the next pays still balance on the Planner.</p>}
+        {mode === 'every' && <p className="small muted">Every pay raises the normal amounts from now on, this pay included (allowance: each weekly transfer goes up). Check the next pays still balance on the Planner.</p>}
+        {splitDone && <p className="small muted">This pay was already split on {fmtShort(period.start)}, so payday won't send what you add here: move it from {payName} to each account yourself.{mode === 'every' ? ' Later pays send the new amounts.' : ''}</p>}
         {left > 0 && <p className="small muted">Anything not allocated stays as spending money.</p>}
 
         <div className="row end">
