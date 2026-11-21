@@ -29,6 +29,34 @@ export function matchesEnvelope(item: Pick<Item, 'name'>, t: TxnLike, mine?: Sho
   return hay.includes(name);
 }
 
+/** The envelopes on an account that are running on a date. */
+export function envelopesAt(b: Budget, accountId: string, date: ISODate): Item[] {
+  return b.items.filter((i) => i.accountId === accountId && isEnvelope(i) && i.start <= date && (!i.end || date <= i.end))
+    .sort((x, y) => x.name.localeCompare(y.name));
+}
+
+/**
+ * The one envelope a purchase counts against, of those on its account (`envelopes`), and whether that was
+ * clear. When several match (Car gas and Scooter gas both take fuel), one with an `envelopeUnder` limit
+ * the purchase is under wins (the smallest limit first), else the only one with no limit. Never two, so a
+ * fill isn't counted twice; with no limit to go by it takes the first by name, but isn't `clear`.
+ */
+export function pickEnvelope(envelopes: Item[], t: TxnLike, mine?: Shops): { item?: Item; clear: boolean } {
+  const fits = envelopes.filter((i) => matchesEnvelope(i, t, mine));
+  if (fits.length <= 1) return { item: fits[0], clear: true };
+  const spent = -t.amount;
+  const under = fits.filter((i) => i.envelopeUnder && spent < i.envelopeUnder)
+    .sort((x, y) => x.envelopeUnder! - y.envelopeUnder!);
+  if (under.length) return { item: under[0], clear: true };
+  const open = fits.filter((i) => !i.envelopeUnder);
+  // Over every limit and none without one: the one with the biggest limit.
+  if (!open.length) return { item: [...fits].sort((x, y) => y.envelopeUnder! - x.envelopeUnder!)[0], clear: true };
+  return { item: open[0], clear: open.length === 1 };
+}
+
+export const purchaseEnvelope = (envelopes: Item[], t: TxnLike, mine?: Shops): Item | undefined =>
+  pickEnvelope(envelopes, t, mine).item;
+
 /** Money moved out to another account (not a purchase). */
 export function isTransferOut(t: TxnLike, mine?: Shops): boolean {
   return t.amount < 0 && categorizeTxn(t, mine).category === 'transfers';
@@ -72,12 +100,12 @@ export interface TransferGuess {
 
 /**
  * Which envelope a transfer out of its account paid for, from purchases on the account it went to (or
- * any other account, when the bank doesn't say where) within 3 days either side. Sure when only one of
- * the account's envelopes has a matching purchase; with several, the one whose purchase is nearest the
- * amount comes first. Undefined when nothing nearby matches.
+ * any other account, when the bank doesn't say where) within 3 days either side, each given to one
+ * envelope by `purchaseEnvelope` (a $30 fill → Scooter gas, $80 → Car gas). Sure when only one envelope
+ * has a purchase; with several, the one whose purchase is nearest the amount comes first. Undefined when nothing nearby matches.
  */
 export function guessTransfer(b: Budget, accountId: string, t: Txn, mine: Shops = shopMap(b)): TransferGuess | undefined {
-  const envelopes = b.items.filter((i) => i.accountId === accountId && isEnvelope(i) && i.start <= t.date && (!i.end || t.date <= i.end));
+  const envelopes = envelopesAt(b, accountId, t.date);
   if (!envelopes.length) return undefined;
   const target = transferTarget(b, t);
   const from = addDays(t.date, -NEAR_DAYS), to = addDays(t.date, NEAR_DAYS);
@@ -86,7 +114,7 @@ export function guessTransfer(b: Budget, accountId: string, t: Txn, mine: Shops 
     .filter((p) => p.txn.amount < 0 && !isTransferOut(p.txn, mine));
   const fits = envelopes
     .map((item) => {
-      const seen = purchases.filter((p) => matchesEnvelope(item, p.txn, mine))
+      const seen = purchases.filter((p) => purchaseEnvelope(envelopes, p.txn, mine)?.id === item.id)
         .sort((x, y) => Math.abs(x.txn.amount - t.amount) - Math.abs(y.txn.amount - t.amount));
       const gap = seen.length ? Math.abs(seen[0].txn.amount - t.amount) : Infinity;
       return { item, seen, gap };
@@ -94,8 +122,9 @@ export function guessTransfer(b: Budget, accountId: string, t: Txn, mine: Shops 
     .filter((f) => f.seen.length > 0)
     .sort((x, y) => x.gap - y.gap);
   if (!fits.length) return undefined;
-  // Car gas and Scooter gas both match the same fuel stop: that's for you to say.
-  const sure = fits.length === 1;
+  // Two envelopes each have a purchase nearby (a $30 and an $80 fill), or a fill could be either (two gas
+  // envelopes, no limit to tell them apart): that's for you to say.
+  const sure = fits.length === 1 && fits[0].seen.every((p) => pickEnvelope(envelopes, p.txn, mine).clear);
   return { itemIds: fits.map((f) => f.item.id), sure, seen: fits[0].seen };
 }
 

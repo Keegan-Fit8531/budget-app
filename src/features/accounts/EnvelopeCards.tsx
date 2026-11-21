@@ -26,7 +26,12 @@ function EnvelopeCard({ budget, account, e, envelopes, color }: {
   budget: Budget; account: Account; e: EnvelopeStatus; envelopes: EnvelopeStatus[]; color: string;
 }) {
   const transfers = e.txns.filter((t) => isTransferOut(t));
-  const shops = e.item.name.match(/gas|fuel|petrol/i) ? ' (fuel shops)' : e.item.name.match(/food|grocer|supermarket/i) ? ' (supermarkets)' : '';
+  const kind = shopsFor(e.item.name);
+  // Shared shops (Car gas / Scooter gas): say which fills come here.
+  const limited = envelopes.find((x) => x.item.id !== e.item.id && x.item.envelopeUnder && kind && shopsFor(x.item.name) === kind);
+  const split = e.item.envelopeUnder ? `under ${cash(e.item.envelopeUnder)}`
+    : limited ? `${cash(limited.item.envelopeUnder!)} and over; smaller ones go to ${limited.item.name}` : '';
+  const shops = kind || split ? ` (${[kind, split].filter(Boolean).join(', ')})` : '';
   return (
     <div className="stack gap-8">
       <div className="trio">
@@ -123,6 +128,9 @@ function TransferQuestion({ budget, account, t, envelopes, onDone }: {
     </div>
   );
 }
+
+/** The shops an envelope counts, as `engine/envelopeMatch.ts` → `matchesEnvelope` decides them. */
+const shopsFor = (name: string) => (/gas|fuel|petrol/i.test(name) ? 'fuel shops' : /food|grocer|supermarket/i.test(name) ? 'supermarkets' : '');
 
 const rank = (ids: string[] | undefined, id: string) => {
   const i = ids?.indexOf(id) ?? -1;

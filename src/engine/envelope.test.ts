@@ -199,3 +199,39 @@ describe('transfers that paid for an envelope', () => {
     expect(envelopeHeld(b, 'food', '2026-11-22')).toBe(15000 + 4 * 20000 + 25000);
   });
 });
+
+describe('two envelopes that share shops (Car gas and Scooter gas)', () => {
+  function setup() {
+    const b = budget();
+    b.accounts.push({ id: 'food', name: 'Food and gas', kind: 'bank', color: '#000', groupId: 'needs' });
+    b.items.push(
+      { id: 'car', name: 'Car gas', amount: 25000, frequency: 'monthly', start: '2026-11-01', accountId: 'food', envelope: 'month' },
+      { id: 'scoot', name: 'Scooter gas', amount: 5000, frequency: 'monthly', start: '2026-11-01', accountId: 'food', envelope: 'month', envelopeUnder: 5000 },
+    );
+    b.accountTransactions = { food: [
+      { date: '2026-11-05', description: 'Z ENERGY KILBIRNIE', amount: -2200 },
+      { date: '2026-11-09', description: 'BP CONNECT', amount: -8000 },
+      { date: '2026-11-12', description: 'GULL', amount: -5000 },
+    ] };
+    return b;
+  }
+  const spent = (b: ReturnType<typeof budget>, id: string) => envelopeStatus(b, b.items.find((i) => i.id === id)!, '2026-11-20').spent;
+
+  it('gives fills under the limit to Scooter gas and the rest to Car gas, never both', () => {
+    const b = setup();
+    expect(spent(b, 'scoot')).toBe(2200);
+    expect(spent(b, 'car')).toBe(8000 + 5000); // $50 exactly isn't under $50
+  });
+
+  it('places a transfer by the fill it paid for', () => {
+    const b = setup();
+    b.accounts.find((a) => a.id === 'food')!.number = '06-0115-0324910-55';
+    b.accounts.push({ id: 'day', name: 'Everyday', kind: 'bank', color: '#000', groupId: 'needs', number: '06-0115-0324910-00' });
+    const move = { date: '2026-11-21', description: 'To: 06-0115-0324910-00 Debit Transfer 1', amount: -3000 };
+    b.accountTransactions!.food.push(move);
+    b.accountTransactions!.day = [{ date: '2026-11-20', description: 'Z ENERGY', amount: -3150 }];
+    expect(guessTransfer(b, 'food', move)).toMatchObject({ itemIds: ['scoot'], sure: true });
+    b.accountTransactions!.day = [{ date: '2026-11-20', description: 'Z ENERGY', amount: -7400 }];
+    expect(guessTransfer(b, 'food', move)).toMatchObject({ itemIds: ['car'], sure: true });
+  });
+});
