@@ -1,8 +1,8 @@
 import { addDays, diffDays, fmtShort, monthName, todayISO, type ISODate } from '../core/dates';
 import { periodContaining } from './periods';
 import { envelopeBudget, envelopeSpan, envelopeWindow, isEnvelope } from './setAside';
-import { matchesEnvelope } from './envelopeMatch';
-export { guessTransfer, isTransferOut, matchesEnvelope, transferKey, transferTarget, type TransferGuess } from './envelopeMatch';
+import { envelopesAt, purchaseEnvelope } from './envelopeMatch';
+export { envelopesAt, guessTransfer, isTransferOut, matchesEnvelope, purchaseEnvelope, transferKey, transferTarget, type TransferGuess } from './envelopeMatch';
 import { shopMap } from '../features/insights/logic/spending';
 import { isTransferOut, transferEnvelope, txnsIn } from './envelopeMatch';
 import type { Budget, Cents, EnvelopeSpan, Item, Txn } from '../core/types';
@@ -16,7 +16,7 @@ export function envelopeTxns(b: Budget, item: Item, { from, to }: { from: ISODat
   const mine = shopMap(b);
   return txnsIn(b, item.accountId, from, to).filter((t) => isTransferOut(t, mine)
     ? transferEnvelope(b, item.accountId, t, mine) === item.id
-    : matchesEnvelope(item, t, mine));
+    : purchaseEnvelope(envelopesAt(b, item.accountId, t.date), t, mine)?.id === item.id);
 }
 
 export interface EnvelopeStatus {

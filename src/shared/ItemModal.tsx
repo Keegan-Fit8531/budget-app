@@ -38,6 +38,7 @@ export function ItemModal({ item, accountId, onClose }: { item?: Item; accountId
   // Until a timeframe is picked, it follows how often (weekly → a week's envelope).
   const [spanPick, setSpanPick] = useState<EnvelopeSpan | null>(item?.envelope ?? null);
   const [maxSaved, setMaxSaved] = useState(item?.maxSaved ? centsToInput(item.maxSaved) : '');
+  const [under, setUnder] = useState(item?.envelopeUnder ? centsToInput(item.envelopeUnder) : '');
   const [err, setErr] = useState('');
 
   const cents = parseMoney(amount);
@@ -58,6 +59,12 @@ export function ItemModal({ item, accountId, onClose }: { item?: Item; accountId
       if (parsed === null || parsed <= 0) return setErr('Max saved should be an amount above $0, or left blank.');
       cap = parsed;
     }
+    let limit: number | undefined;
+    if (envOn && under.trim() !== '') {
+      const parsed = parseMoney(under);
+      if (parsed === null || parsed <= 0) return setErr('"Only purchases under" should be an amount above $0, or left blank.');
+      limit = parsed;
+    }
     const next: Item = {
       ...item, // keep anything this form doesn't edit
       id: item?.id ?? newId(), name: name.trim(), amount: cents, frequency: freq, start,
@@ -67,8 +74,10 @@ export function ItemModal({ item, accountId, onClose }: { item?: Item; accountId
       setAside: keep || undefined,
       envelope: envOn ? span : undefined,
       ...(cap ? { maxSaved: cap } : {}),
+      ...(limit ? { envelopeUnder: limit } : {}),
     };
     if (!cap) delete next.maxSaved;
+    if (!limit) delete next.envelopeUnder;
     if (!keep) delete next.setAside;
     if (!envOn) delete next.envelope;
     update((b) => {
@@ -150,6 +159,13 @@ export function ItemModal({ item, accountId, onClose }: { item?: Item; accountId
             <select value={span} onChange={(e) => setSpanPick(e.target.value as EnvelopeSpan)}>
               {SPANS.map((x) => <option key={x.v} value={x.v}>{x.label}</option>)}
             </select>
+          </label>
+        )}
+
+        {envOn && (
+          <label className="field">Only purchases under (optional)
+            <input inputMode="decimal" value={under} onChange={(e) => { setUnder(e.target.value); setErr(''); }} placeholder="50.00" />
+            <span className="small muted">For two envelopes that use the same shops, like Scooter gas and Car gas: fills under this go here, bigger ones to the other.</span>
           </label>
         )}
 

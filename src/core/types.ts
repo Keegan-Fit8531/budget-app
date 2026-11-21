@@ -78,6 +78,12 @@ export interface Item {
    * doesn't roll over. Absent = an ordinary cost. Mutually exclusive with `setAside`.
    */
   envelope?: EnvelopeSpan;
+  /**
+   * Only purchases under this amount count against this envelope (Scooter gas: fills under $50). When two
+   * envelopes on an account match the same shops (Car gas and Scooter gas), smaller purchases go to this
+   * one and the rest to the other, so nothing is counted twice.
+   */
+  envelopeUnder?: Cents;
   /** Older saves: true meant a month envelope. `tidy()` turns it into `envelope`; don't use it. */
   monthEnvelope?: boolean;
   /** Older saves: the span that went with `monthEnvelope`. `tidy()` turns it into `envelope`; don't use it. */
