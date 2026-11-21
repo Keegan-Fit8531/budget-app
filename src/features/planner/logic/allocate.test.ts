@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { applyAllocation, existingExtras, undoAllocation } from './allocate';
 import { planFor } from '../../../engine/plan';
 import { periodContaining } from '../../../engine/periods';
@@ -6,6 +6,12 @@ import type { Budget } from '../../../core/types';
 import { budget } from '../../../testing/fixtures';
 
 describe('optimising the leftover, then changing it', () => {
+  // These are about the 19 Nov 2026 pay while it's still to come. Once its payday has passed the pay is
+  // locked (what payday sent is frozen, engine/balances/freeze.ts), so fix "today" before it rather than
+  // use the real date. Without this the second test started failing on 20 Nov 2026.
+  beforeEach(() => { vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new Date('2026-11-16T09:00:00Z')); });
+  afterEach(() => { vi.useRealTimers(); });
+
   function twoGoals() {
     const b = budget();
     for (const id of ['a', 'b']) {
