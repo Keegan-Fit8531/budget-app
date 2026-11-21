@@ -6,8 +6,8 @@ import type { DocKind, ReaderSource } from '../types';
 
 // ---------------------------------------------------------------------------------------------
 // Checking what was read. The reader's answer becomes a draft you can correct in the rundown; every
-// field of the draft is checked here, and only a draft with no blocking problems becomes a
-// Proposal: the exact, typed changes apply.ts makes. Nothing in this file changes the budget.
+// field of the draft is checked in this folder, and only a draft with no blocking problems becomes a
+// Proposal: the exact, typed changes ../apply.ts makes. Nothing in this folder changes the budget.
 // ---------------------------------------------------------------------------------------------
 
 export const NEW_DEBT = '__new';

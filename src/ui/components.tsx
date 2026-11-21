@@ -6,7 +6,7 @@ import { Icon } from './Icon';
 
 /**
  * The shared building blocks every page is made of. Sizes, colours and spacing all come from the
- * tokens in index.css, so pages only say what something is, not how it looks.
+ * tokens in styles/tokens.css, so pages only say what something is, not how it looks.
  */
 
 /** A small square of an account's, group's or category's colour, shown beside its name. */

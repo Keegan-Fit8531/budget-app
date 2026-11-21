@@ -2,7 +2,7 @@
  * Colours for accounts, groups, cost categories and people.
  *
  * A budget stores each colour as a hex. On screen, a colour from the palette is shown through its
- * design token (--pal-*, in index.css), so it has a light and a dark step and matches the rest of
+ * design token (--pal-*, in ui/styles/tokens.css), so it has a light and a dark step and matches the rest of
  * the app. Colours saved by earlier versions map onto the nearest token, so nothing saved changes.
  * A colour that isn't from either palette is shown exactly as saved.
  *

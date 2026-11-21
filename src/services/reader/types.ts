@@ -4,7 +4,7 @@ import type { ISODate } from '../../core/dates';
 // ---------------------------------------------------------------------------------------------
 // What a reader (Google's Gemini, or the one on this device) fills in from a document. This is a
 // fixed form: amounts are text exactly as printed and dates are YYYY-MM-DD. Nothing here changes
-// the budget; the app checks every field (check.ts) and applies it itself (apply.ts).
+// the budget; the app checks every field (check/) and applies it itself (apply.ts).
 // ---------------------------------------------------------------------------------------------
 
 /** `transactions` is a bank or card export (CSV), read on this device. */
