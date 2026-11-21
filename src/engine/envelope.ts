@@ -1,23 +1,14 @@
-import { dateInMonth, daysInMonth, monthName, todayISO, type ISODate } from '../core/dates';
-import { isMonthEnvelope, monthBudget } from './setAside';
+import { fmtShort, monthName, todayISO, type ISODate } from '../core/dates';
+import { envelopeBudget, envelopeSpan, envelopeWindow, isEnvelope } from './setAside';
 import { categorizeTxn, shopMap } from '../features/insights/logic/spending';
-import type { Budget, Cents, Item, Txn } from '../core/types';
+import type { Budget, Cents, EnvelopeSpan, Item, Txn } from '../core/types';
 
 export {
-  monthBudget, monthEnvelopeOn, monthEnvelopePerPay, monthEnvelopesOn, hasMonthEnvelopes, paydaysInMonth,
+  envelopeBudget, envelopeOn, envelopePerPay, envelopeSpan, envelopesOn, envelopeWindow, hasEnvelopes, paydaysInMonth,
 } from './setAside';
 
 /** Fuel shop / description patterns (same idea as Insights transport → Fuel). */
 const FUEL_RE = /z energy|\bmobil\b|\bbp\b|gull|caltex|waitomo|\bnpd\b|\bfuel\b|petrol|gas station/i;
-
-/** Calendar month key "YYYY-MM". */
-export const monthKey = (d: ISODate): string => d.slice(0, 7);
-
-/** First and last day of a calendar month. */
-export function monthRange(ym: string): { from: ISODate; to: ISODate } {
-  const [y, m] = ym.split('-').map(Number);
-  return { from: `${ym}-01`, to: dateInMonth(y, m - 1, daysInMonth(y, m - 1)) };
-}
 
 /** Whether a synced purchase counts against this envelope (e.g. Gas → fuel shops). */
 export function matchesEnvelope(item: Pick<Item, 'name'>, t: Pick<Txn, 'description' | 'merchant' | 'category' | 'amount'>, mine?: ReturnType<typeof shopMap>): boolean {
@@ -28,13 +19,13 @@ export function matchesEnvelope(item: Pick<Item, 'name'>, t: Pick<Txn, 'descript
   if (/gas|fuel|petrol/.test(name)) {
     return shop === 'Fuel' || FUEL_RE.test(t.description) || FUEL_RE.test(t.merchant ?? '');
   }
+  if (/food|grocer|supermarket/.test(name)) return category === 'groceries';
   const hay = `${t.description} ${t.merchant ?? ''} ${shop}`.toLowerCase();
   return hay.includes(name);
 }
 
-/** Purchases on the account this calendar month that count against the envelope. */
-export function envelopeTxns(b: Budget, item: Item, ym: string = monthKey(todayISO())): Txn[] {
-  const { from, to } = monthRange(ym);
+/** Purchases on the account in one span (from–to) that count against the envelope. */
+export function envelopeTxns(b: Budget, item: Item, { from, to }: { from: ISODate; to: ISODate }): Txn[] {
   const mine = shopMap(b);
   const seen = new Set<string>();
   const out: Txn[] = [];
@@ -50,8 +41,13 @@ export function envelopeTxns(b: Budget, item: Item, ym: string = monthKey(todayI
 
 export interface EnvelopeStatus {
   item: Item;
-  month: string;
+  /** The span being tracked (this week, fortnight or calendar month). */
+  from: ISODate;
+  to: ISODate;
+  /** "November", or "21 Nov – 27 Nov" for a week or fortnight. */
   label: string;
+  /** How long it lasts before starting fresh. */
+  span: EnvelopeSpan;
   budget: Cents;
   spent: Cents;
   left: Cents;
@@ -59,17 +55,20 @@ export interface EnvelopeStatus {
   txns: Txn[];
 }
 
-/** Budget / spent / left for one month-envelope item in a calendar month. */
+/** Budget / spent / left for one envelope in the span (week, fortnight or month) holding `today`. */
 export function envelopeStatus(b: Budget, item: Item, today: ISODate = todayISO()): EnvelopeStatus {
-  const month = monthKey(today);
-  const budget = monthBudget(item);
-  const txns = envelopeTxns(b, item, month);
+  const { from, to } = envelopeWindow(item, today);
+  const span = envelopeSpan(item);
+  const budget = envelopeBudget(item);
+  const txns = envelopeTxns(b, item, { from, to });
   const spent = txns.reduce((s, t) => s - t.amount, 0);
   const left = budget - spent;
   return {
     item,
-    month,
-    label: monthName(`${month}-01`),
+    from,
+    to,
+    label: span === 'month' ? monthName(from) : `${fmtShort(from)} – ${fmtShort(to)}`,
+    span,
     budget,
     spent,
     left,
@@ -78,15 +77,15 @@ export function envelopeStatus(b: Budget, item: Item, today: ISODate = todayISO(
   };
 }
 
-/** Every month-envelope on an account, for the Accounts card. */
+/** Every envelope on an account, for the Accounts card. */
 export function accountEnvelopes(b: Budget, accountId: string, today: ISODate = todayISO()): EnvelopeStatus[] {
   return b.items
-    .filter((i) => i.accountId === accountId && isMonthEnvelope(i) && i.start <= today && (!i.end || today <= i.end))
+    .filter((i) => i.accountId === accountId && isEnvelope(i) && i.start <= today && (!i.end || today <= i.end))
     .map((i) => envelopeStatus(b, i, today))
     .sort((a, b) => a.item.name.localeCompare(b.item.name));
 }
 
-/** Remaining (unspent) envelope money on an account this month — spoken for until month end. */
+/** Remaining (unspent) envelope money on an account this span — spoken for until the span ends. */
 export function envelopeHeld(b: Budget, accountId: string, today: ISODate = todayISO()): Cents {
   return accountEnvelopes(b, accountId, today).reduce((t, e) => t + Math.max(0, e.left), 0);
 }

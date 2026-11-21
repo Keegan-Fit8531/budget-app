@@ -10,6 +10,6 @@ Plain functions behind Insights (no React).
 
 ## Watch out for
 - The numbers are worked out here, not by Gemini; Gemini only writes the words (what went well, what didn't, tips).
-- `engine/envelope.ts` uses `categorizeTxn` and `shopMap` to tell which purchases count against a month envelope (Gas → fuel).
+- `engine/envelope.ts` uses `categorizeTxn` and `shopMap` to tell which purchases count against an envelope (Gas → fuel, Food → groceries).
 
 Keep this README current: update it in the same change when you add, remove, rename or repurpose a file here (see AGENTS.md).

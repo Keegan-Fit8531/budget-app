@@ -27,7 +27,7 @@ export function MonthTracker({ budget, account, today = todayISO(), open }: { bu
   const paid = t.rows.filter((r) => r.status === 'paid');
   const total = t.paid + t.toCome;
   const envelopes = accountEnvelopes(budget, account.id, today);
-  // Unspent month-envelope budget (Gas left this month) is assumed spent — reserved until month end.
+  // Unspent envelope budget (Gas left this month, Food left this week) is assumed spent — reserved until it resets.
   const gasHeld = envelopeHeld(budget, account.id, today);
   // After bills and reserved gas: negative = short for this pay + this month's gas.
   const afterReserved = t.spare - gasHeld;
@@ -60,9 +60,12 @@ export function MonthTracker({ budget, account, today = todayISO(), open }: { bu
     : steady ? 'Ends'
     : 'Spare';
   const envNames = envelopes.map((e) => e.item.name).join(' and ');
+  // "this month", or "this week" when every envelope here is weekly; mixed spans say "for now".
+  const spans = new Set(envelopes.map((e) => e.span));
+  const spanWords = spans.size === 1 ? `this ${[...spans][0]}` : 'for now';
   // Accounts = this pay with what's in the account now. Planner's "Buffer" is often the *next* pay's end.
   const leftNote = short
-    ? (gasHeld > 0 ? `after bills and ${envNames || 'month budgets'}` : 'this pay after bills')
+    ? (gasHeld > 0 ? `after bills and ${envNames || 'envelopes'}` : 'this pay after bills')
     : overAsideMax ? `above ${names} max ${cash(maxAside!)}`
     : aside && maxAside !== undefined ? `for ${names} · max ${cash(maxAside)}`
     : aside ? `for ${names}`
@@ -95,7 +98,7 @@ export function MonthTracker({ budget, account, today = todayISO(), open }: { bu
                 <div className="stat">
                   <span className="small muted">{e.item.name} · {e.label}</span>
                   <b>{cash(e.budget)}</b>
-                  <span className="xs muted">month budget</span>
+                  <span className="xs muted">{e.span} budget</span>
                 </div>
                 <div className="stat">
                   <span className="small muted">Spent</span>
@@ -105,7 +108,7 @@ export function MonthTracker({ budget, account, today = todayISO(), open }: { bu
                 <div className="stat">
                   <span className="small muted">{e.over ? 'Over' : 'Left'}</span>
                   <b className={e.over ? 'neg' : e.left > 0 ? 'pos' : ''}>{cash(Math.abs(e.left))}</b>
-                  <span className="xs muted">{e.over ? 'over budget' : 'this month'}</span>
+                  <span className="xs muted">{e.over ? 'over budget' : `this ${e.span}`}</span>
                 </div>
               </div>
               {(e.budget > 0 || e.spent > 0) && (
@@ -117,8 +120,8 @@ export function MonthTracker({ budget, account, today = todayISO(), open }: { bu
               )}
               <p className="small muted">
                 {e.over
-                  ? <>Over by {cash(-e.left)} this month — next month’s {cash(e.budget)} budget starts fresh.</>
-                  : <>Assumed spent this month (reserved in the account). Anything left at month end is yours — it doesn’t roll over. Matched from synced purchases{e.item.name.match(/gas|fuel|petrol/i) ? ' (fuel shops)' : ''}.</>}
+                  ? <>Over by {cash(-e.left)} this {e.span} — next {e.span}’s {cash(e.budget)} budget starts fresh.</>
+                  : <>Assumed spent this {e.span} (reserved in the account). Anything left when the {e.span} ends ({fmtShort(e.to)}) is yours — it doesn’t roll over. Matched from synced purchases{e.item.name.match(/gas|fuel|petrol/i) ? ' (fuel shops)' : e.item.name.match(/food|grocer|supermarket/i) ? ' (supermarkets)' : ''}.</>}
               </p>
             </div>
           ))}
@@ -190,13 +193,13 @@ export function MonthTracker({ budget, account, today = todayISO(), open }: { bu
           </div>
           {short && gasHeld > 0 && (
             <p className="small muted">
-              Needs {cash(t.toCome)} for bills and {cash(gasHeld)} still budgeted for {envNames} this month
+              Needs {cash(t.toCome)} for bills and {cash(gasHeld)} still budgeted for {envNames} {spanWords}
               ({cash(t.toCome + gasHeld)} total) against {cash(t.balance)} in the account.
             </p>
           )}
           {!short && gasHeld > 0 && spareAmt > 0 && bufferShown === undefined && (
             <p className="small muted">
-              {cash(gasHeld)} reserved for {envNames} this month (assumed spent). Anything left at month end is yours.
+              {cash(gasHeld)} reserved for {envNames} {spanWords} (assumed spent). Anything left at the end is yours.
             </p>
           )}
           {overAsideMax && (

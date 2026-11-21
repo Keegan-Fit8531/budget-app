@@ -72,12 +72,16 @@ export interface Item {
    */
   maxSaved?: Cents;
   /**
-   * Calendar-month envelope (e.g. Gas $200/month): amount is this month's budget. Synced purchases
-   * that match (fuel for Gas) count against it. What's left at month end is yours — it does not roll
-   * into next month. Mutually exclusive with `setAside`.
+   * Envelope (e.g. Gas $200/month, Food $200/week): amount converted to `envelopeSpan` is each span's
+   * budget. Synced purchases that match (fuel for Gas) count against it. What's left when the span ends
+   * is yours — it does not roll over. Mutually exclusive with `setAside`. (Named before weeks were added.)
    */
   monthEnvelope?: boolean;
+  /** How long each envelope lasts: a calendar month (absent = month), or a week / fortnight from `start`. */
+  envelopeSpan?: EnvelopeSpan;
 }
+
+export type EnvelopeSpan = 'week' | 'fortnight' | 'month';
 
 /** How much of each pay is sent to each account on payday. */
 export interface SplitLine {

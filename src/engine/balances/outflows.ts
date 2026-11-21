@@ -2,7 +2,7 @@ import { dateInMonth, todayISO, type ISODate } from '../../core/dates';
 import { debtAdvice } from '../../features/debts/logic/advice';
 import { debtPaymentsIn, heldDebtPaymentsIn, isHoldDisplayAccount } from '../../features/debts/logic/funding';
 import type { Debt } from '../../core/types';
-import { asideSpareNow, hasMonthEnvelopes, hasSetAsides, isHeldInAccount, monthEnvelopesOn, setAsidesOn } from '../setAside';
+import { asideSpareNow, hasEnvelopes, hasSetAsides, isHeldInAccount, envelopesOn, setAsidesOn } from '../setAside';
 import { periodContaining, shiftPeriod, type Period } from '../periods';
 import { itemDates } from '../occurrences';
 import { savingsNeedIn } from '../../features/savings/logic/savings';
@@ -90,7 +90,7 @@ function gemStatementInRange(debt: Debt, from: ISODate, to: ISODate): ISODate | 
  */
 export function fundedOut(b: Budget, accountId: string, from: ISODate, to: ISODate): Outflow[] {
   const out = outflows(b, accountId, from, to);
-  if (from > to || (!hasSetAsides(b, accountId) && !hasMonthEnvelopes(b, accountId))) return out;
+  if (from > to || (!hasSetAsides(b, accountId) && !hasEnvelopes(b, accountId))) return out;
   const s = b.settings;
   let p = periodContaining(from, s);
   if (p.start < from) p = shiftPeriod(p, 1, s);
@@ -103,7 +103,7 @@ export function fundedOut(b: Budget, accountId: string, from: ISODate, to: ISODa
       out.push({ date: p.start, amount: x.amount, name: x.item.name });
       if (spare !== undefined) spare += x.amount;
     }
-    for (const x of monthEnvelopesOn(b, accountId, p.start)) {
+    for (const x of envelopesOn(b, accountId, p.start)) {
       out.push({ date: p.start, amount: x.amount, name: x.item.name });
     }
   }

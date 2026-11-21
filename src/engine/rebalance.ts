@@ -7,7 +7,7 @@ import { debtAdvice } from '../features/debts/logic/advice';
 import { fundingAccountId } from '../features/debts/logic/funding';
 import { todayISO } from '../core/dates';
 import {
-  asideMaxSaved, asideSpareNow, hasMonthEnvelopes, hasSetAsides, isHeldInAccount, isSetAside, monthEnvelopeOn, setAsideOn,
+  asideMaxSaved, asideSpareNow, hasEnvelopes, hasSetAsides, isHeldInAccount, isSetAside, envelopeOn, setAsideOn,
 } from './setAside';
 import { periodContaining, shiftPeriod, upcomingPayPeriod, type Period } from './periods';
 import { planFor } from './plan';
@@ -75,9 +75,9 @@ export function balancePay(input: Budget, period: Period, today: ISODate = today
     ...input.accounts.filter((a) => usable(a) && accountMode(input, a.id) === 'fixed' && allWeekly(a.id))
       .map((a) => ({ accountId: a.id, name: a.name, was: 'fixed' as const, to: 'smooth' as const })),
     // Accounts with bills on set dates (even with a weekly cost among them, e.g. a bills account), or
-    // money put aside / month envelopes, go to Exact: payday follows them rather than a fixed amount.
+    // money put aside / envelopes, go to Exact: payday follows them rather than a fixed amount.
     ...input.accounts.filter((a) => usable(a) && accountMode(input, a.id) === 'fixed'
-      && (items(a.id).length > 0 || hasSetAsides(input, a.id) || hasMonthEnvelopes(input, a.id)) && !allWeekly(a.id))
+      && (items(a.id).length > 0 || hasSetAsides(input, a.id) || hasEnvelopes(input, a.id)) && !allWeekly(a.id))
       .map((a) => ({ accountId: a.id, name: a.name, was: 'fixed' as const, to: 'exact' as const })),
   ];
   const b = toSteady.length ? structuredClone(input) : input;
@@ -162,12 +162,12 @@ export function balancePay(input: Budget, period: Period, today: ISODate = today
       const info = spareInfo(b, id, period, 12, today);
       if (!info) { notSpare.push({ accountId: id, name, reason: 'No balance entered in Accounts, so the app can\u2019t tell if it has spare money.' }); continue; }
       if (protectedIds.has(id)) { notSpare.push({ accountId: id, name, reason: 'It\u2019s short this pay, so it was topped up instead.' }); continue; }
-      // Unspent month-envelope budget (Gas left this month) is spoken for until month end.
+      // Unspent envelope budget (Gas left this month, Food left this week) is spoken for until it resets.
       const heldEnv = envelopeHeld(b, id, today);
       const spare = Math.max(0, info.spare - heldEnv);
       if (spare <= 0) {
         if (heldEnv > 0) {
-          notSpare.push({ accountId: id, name, reason: `What's left covers this month's envelope (e.g. Gas) — leftover at month end is yours.` });
+          notSpare.push({ accountId: id, name, reason: `What's left covers what's still budgeted in its envelopes (e.g. Gas this month) — leftover when each resets is yours.` });
           continue;
         }
         // Steady accounts (e.g. rent) build a buffer for pays with an extra week: that money is spoken for.
@@ -203,9 +203,9 @@ export function balancePay(input: Budget, period: Period, today: ISODate = today
     //    Only what's put aside is paused; bills paid from the same account still get their money.
     for (const a of plan.accounts) {
       if (a.account.id === b.settings.payAccountId) continue; // pay lands there: nothing is sent to it to trim
-      const aside = Math.min(a.funded, setAsideOn(b, a.account.id, period.start) + monthEnvelopeOn(b, a.account.id, period.start));
+      const aside = Math.min(a.funded, setAsideOn(b, a.account.id, period.start) + envelopeOn(b, a.account.id, period.start));
       const label = hasSetAsides(b, a.account.id) ? asideNames(b, a.account.id)
-        : b.items.filter((i) => i.accountId === a.account.id && i.monthEnvelope).map((i) => i.name).join(' and ') || 'month budgets';
+        : b.items.filter((i) => i.accountId === a.account.id && i.monthEnvelope).map((i) => i.name).join(' and ') || 'envelopes';
       cut(a.account.id, a.account.name, aside, `Puts aside less for ${label} this pay only (there's no date to meet). Back to the usual amount next pay.`);
     }
   }

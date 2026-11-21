@@ -11,7 +11,7 @@ import { topsUp } from '../../engine/balances/topUps';
 import { debtPerPay } from '../debts/logic/amounts';
 import { averageNeed, planFor } from '../../engine/plan';
 import { convert } from '../../engine/frequency';
-import { isMonthEnvelope, isSetAside, monthBudget, setAsidePerPay } from '../../engine/setAside';
+import { envelopeBudget, envelopeSpan, isEnvelope, isSetAside, setAsidePerPay } from '../../engine/setAside';
 import { itemDates } from '../../engine/occurrences';
 import { periodContaining, shiftPeriod } from '../../engine/periods';
 import { PayNav, useViewPeriod } from '../../state/period';
@@ -130,11 +130,11 @@ function AccountSection({ account: a, open, bare, onToggle, periodNeed, periodSe
   const avgNeed = averageNeed(budget, a.id);
   const today = todayISO();
   // Money put aside here (a WOF, tyres) stays in the account; the bills are what really comes out.
-  const bills = items.filter((i) => !isSetAside(i) && !isMonthEnvelope(i));
+  const bills = items.filter((i) => !isSetAside(i) && !isEnvelope(i));
   const asides = items.filter(isSetAside);
-  const envelopes = items.filter(isMonthEnvelope);
+  const envelopes = items.filter(isEnvelope);
   const asidePerPay = asides.filter((i) => !i.end || i.end >= today).reduce((t, i) => t + setAsidePerPay(i), 0)
-    + envelopes.filter((i) => !i.end || i.end >= today).reduce((t, i) => t + monthBudget(i), 0);
+    + envelopes.filter((i) => !i.end || i.end >= today).reduce((t, i) => t + setAsidePerPay(i), 0);
   // Debts that store their payday payment here until statement day (e.g. Gem Visa → Misc bills).
   const heldDebts = (budget.debts ?? []).filter((d) => d.holdAccountId === a.id && !d.payroll);
   const costCount = items.length + heldDebts.length;
@@ -328,7 +328,7 @@ function AccountSection({ account: a, open, bare, onToggle, periodNeed, periodSe
               })}
               {items.map((i) => {
                 const kept = isSetAside(i);
-                const env = isMonthEnvelope(i);
+                const env = isEnvelope(i);
                 const next = kept || env ? undefined : itemDates(i, today, '2100-01-01', budget.settings)[0];
                 return (
                   <button key={i.id} className="list-row" onClick={() => onEditItem(i)}>
@@ -338,7 +338,7 @@ function AccountSection({ account: a, open, bare, onToggle, periodNeed, periodSe
                         {kept
                           ? `${FREQ_LABEL[i.frequency]} · put aside, ${cash(setAsidePerPay(i))} a pay${i.maxSaved ? ` · max ${cash(i.maxSaved)}` : ''}${i.end && i.end < today ? ' · stopped' : i.start > today ? ` · from ${fmtShort(i.start)}` : ''}`
                           : env
-                          ? `${FREQ_LABEL[i.frequency]} · month envelope ${cash(monthBudget(i))}/mo · resets each month${i.end && i.end < today ? ' · stopped' : i.start > today ? ` · from ${fmtShort(i.start)}` : ''}`
+                          ? `${FREQ_LABEL[i.frequency]} · ${envelopeSpan(i)} envelope ${cash(envelopeBudget(i))} · resets each ${envelopeSpan(i)}${i.end && i.end < today ? ' · stopped' : i.start > today ? ` · from ${fmtShort(i.start)}` : ''}`
                           : <>
                             {FREQ_LABEL[i.frequency]}{next ? ` · next ${fmtShort(next)}` : ' · finished'}
                             {i.frequency !== 'once' && i.frequency !== 'monthly' ? ` · ${cash(convert(i.amount, i.frequency, 'month'))}/mo avg` : ''}

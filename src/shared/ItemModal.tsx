@@ -1,10 +1,10 @@
 import { useState } from 'react';
 import { convert } from '../engine/frequency';
-import { monthBudget, setAsidePerPay } from '../engine/setAside';
-import { todayISO } from '../core/dates';
+import { envelopeBudget, envelopeSpan, setAsidePerPay } from '../engine/setAside';
+import { addDays, todayISO, weekday, WEEKDAY_NAMES } from '../core/dates';
 import { cash, centsToInput, parseMoney } from '../core/money';
 import { newId, useBudget } from '../state/store';
-import type { Frequency, Item } from '../core/types';
+import type { EnvelopeSpan, Frequency, Item } from '../core/types';
 import { Icon } from '../ui/Icon';
 
 const FREQS: { v: Frequency; label: string }[] = [
@@ -13,6 +13,12 @@ const FREQS: { v: Frequency; label: string }[] = [
   { v: 'fortnightly', label: 'Fortnightly' },
   { v: 'monthly', label: 'Monthly' },
   { v: 'yearly', label: 'Yearly' },
+];
+
+const SPANS: { v: EnvelopeSpan; label: string }[] = [
+  { v: 'week', label: 'Week' },
+  { v: 'fortnight', label: 'Fortnight' },
+  { v: 'month', label: 'Month' },
 ];
 
 export function ItemModal({ item, accountId, onClose }: { item?: Item; accountId?: string; onClose: () => void }) {
@@ -29,6 +35,8 @@ export function ItemModal({ item, accountId, onClose }: { item?: Item; accountId
   const [skip, setSkip] = useState(String(item?.skipIfWithin ?? 0));
   const [aside, setAside] = useState(item?.setAside ?? false);
   const [envelope, setEnvelope] = useState(item?.monthEnvelope ?? false);
+  // Until a timeframe is picked, it follows how often (weekly → a week's envelope).
+  const [spanPick, setSpanPick] = useState<EnvelopeSpan | null>(item?.monthEnvelope ? envelopeSpan(item) : null);
   const [maxSaved, setMaxSaved] = useState(item?.maxSaved ? centsToInput(item.maxSaved) : '');
   const [err, setErr] = useState('');
 
@@ -37,6 +45,7 @@ export function ItemModal({ item, accountId, onClose }: { item?: Item; accountId
   const keep = aside && !envelope && freq !== 'once';
   const monthEnv = envelope && freq !== 'once';
   const weekly = freq === 'weekly' && !keep && !monthEnv;
+  const span: EnvelopeSpan = spanPick ?? (freq === 'weekly' ? 'week' : freq === 'fortnightly' ? 'fortnight' : 'month');
 
   function save() {
     if (!name.trim()) return setErr('Enter a name.');
@@ -57,11 +66,13 @@ export function ItemModal({ item, accountId, onClose }: { item?: Item; accountId
       skipIfWithin: weekly && Number(skip) > 0 ? Number(skip) : undefined,
       setAside: keep || undefined,
       monthEnvelope: monthEnv || undefined,
+      envelopeSpan: monthEnv && span !== 'month' ? span : undefined,
       ...(cap ? { maxSaved: cap } : {}),
     };
     if (!cap) delete next.maxSaved;
     if (!keep) delete next.setAside;
     if (!monthEnv) delete next.monthEnvelope;
+    if (!next.envelopeSpan) delete next.envelopeSpan;
     update((b) => {
       const i = b.items.findIndex((x) => x.id === next.id);
       if (i >= 0) b.items[i] = next; else b.items.push(next);
@@ -126,13 +137,21 @@ export function ItemModal({ item, accountId, onClose }: { item?: Item; accountId
           <label className="check-row" style={{ alignItems: 'flex-start' }}>
             <input type="checkbox" checked={envelope} disabled={aside} onChange={(e) => { setEnvelope(e.target.checked); if (e.target.checked) setAside(false); }} style={{ width: 20, height: 20, flex: 'none', marginTop: 2, accentColor: 'var(--brand)' }} />
             <span>
-              Put aside for the month
+              Put aside for the {monthEnv ? span : 'week, fortnight or month'}
               <span className="small muted block">
                 {monthEnv && cents !== null && cents > 0
-                  ? <>This month’s budget is <b>{cash(monthBudget({ amount: cents, frequency: freq }))}</b>. Payday funds it; bank purchases that match (e.g. fuel for Gas) count against it. What’s left at month end is yours — it doesn’t roll over.</>
-                  : 'For irregular spending like gas: set a monthly total, track what is left from synced purchases, and keep any leftover as spare when the month ends.'}
+                  ? <>This {span}’s budget is <b>{cash(envelopeBudget({ amount: cents, frequency: freq, envelopeSpan: span }))}</b>. Payday funds it; bank purchases that match (e.g. supermarkets for Food, fuel for Gas) count against it. What’s left at the end of the {span} is yours — it doesn’t roll over.</>
+                  : 'For everyday spending like food or gas: set a total for the week, fortnight or month, track what is left from synced purchases, and keep any leftover as spare when it ends.'}
               </span>
             </span>
+          </label>
+        )}
+
+        {monthEnv && (
+          <label className="field">Timeframe
+            <select value={span} onChange={(e) => setSpanPick(e.target.value as EnvelopeSpan)}>
+              {SPANS.map((x) => <option key={x.v} value={x.v}>{x.label}</option>)}
+            </select>
           </label>
         )}
 
@@ -154,7 +173,8 @@ export function ItemModal({ item, accountId, onClose }: { item?: Item; accountId
           )}
         </div>
         {keep ? <p className="small muted">Starts on the first payday on or after this date.</p> : null}
-        {monthEnv ? <p className="small muted">Budget resets each calendar month. Leftover at month end is spare to spend on yourself.</p> : null}
+        {monthEnv && span === 'month' ? <p className="small muted">Budget resets each calendar month. Leftover at month end is spare to spend on yourself.</p> : null}
+        {monthEnv && span !== 'month' && start ? <p className="small muted">Each {span} runs {WEEKDAY_NAMES[weekday(start)]} to {span === 'fortnight' ? 'the ' : ''}{WEEKDAY_NAMES[weekday(addDays(start, -1))]}{span === 'fortnight' ? ' after next' : ''}, counting from this date. Leftover when it ends is spare to spend on yourself.</p> : null}
         {!keep && !monthEnv && (freq === 'weekly' || freq === 'fortnightly') ? <p className="small muted">Repeats on the same weekday as the first date.</p> : null}
         {!keep && !monthEnv && freq === 'monthly' ? <p className="small muted">Repeats on the same day each month (or the last day in shorter months).</p> : null}
 

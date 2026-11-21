@@ -8,7 +8,7 @@ import { accountHasPlans, debtPaymentsIn, heldDebtPaymentsIn, isHoldDisplayAccou
 import { accountHasGoals, savingsNeedIn } from '../features/savings/logic/savings';
 import type { Account, Budget, Cents, Item } from '../core/types';
 import { type Period, periodContaining, upcomingPayPeriod, shiftPeriod } from './periods';
-import { isHeldInAccount, setAsidesOn, monthEnvelopesOn } from './setAside';
+import { isHeldInAccount, setAsidesOn, envelopesOn } from './setAside';
 import { itemDates } from './occurrences';
 import { convert } from './frequency';
 
@@ -111,8 +111,8 @@ export function planFor(b: Budget, period: Period, today: ISODate = todayISO()):
       dues.push({ item, date: period.start });
       breakdown.push({ item, count: 1 });
     }
-    // Month envelopes (Gas $200/month): share of this month's budget, spent from synced purchases.
-    for (const x of monthEnvelopesOn(b, account.id, period.start)) {
+    // Envelopes (Gas $200/month, Food $200/week): what this payday funds, spent from synced purchases.
+    for (const x of envelopesOn(b, account.id, period.start)) {
       if (x.amount <= 0) continue;
       const item: Item = { ...x.item, id: `env-${x.item.id}`, amount: x.amount, frequency: 'once', start: period.start, end: undefined, monthEnvelope: true };
       dues.push({ item, date: period.start });
