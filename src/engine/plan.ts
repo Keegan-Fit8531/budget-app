@@ -114,7 +114,7 @@ export function planFor(b: Budget, period: Period, today: ISODate = todayISO()):
     // Envelopes (Gas $200/month, Food $200/week): what this payday funds, spent from synced purchases.
     for (const x of envelopesOn(b, account.id, period.start)) {
       if (x.amount <= 0) continue;
-      const item: Item = { ...x.item, id: `env-${x.item.id}`, amount: x.amount, frequency: 'once', start: period.start, end: undefined, monthEnvelope: true };
+      const item: Item = { ...x.item, id: `env-${x.item.id}`, amount: x.amount, frequency: 'once', start: period.start, end: undefined };
       dues.push({ item, date: period.start });
       breakdown.push({ item, count: 1 });
     }

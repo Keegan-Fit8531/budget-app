@@ -72,12 +72,15 @@ export interface Item {
    */
   maxSaved?: Cents;
   /**
-   * Envelope (e.g. Gas $200/month, Food $200/week): amount converted to `envelopeSpan` is each span's
-   * budget. Synced purchases that match (fuel for Gas) count against it. What's left when the span ends
-   * is yours — it does not roll over. Mutually exclusive with `setAside`. (Named before weeks were added.)
+   * An envelope (e.g. Gas $200/month, Food $200/week), and how long each one lasts: a calendar month, or
+   * a week / fortnight counted from `start`. The amount converted to that span is its budget; synced
+   * purchases that match (fuel for Gas) count against it, and what's left when it ends is yours — it
+   * doesn't roll over. Absent = an ordinary cost. Mutually exclusive with `setAside`.
    */
+  envelope?: EnvelopeSpan;
+  /** Older saves: true meant a month envelope. `tidy()` turns it into `envelope`; don't use it. */
   monthEnvelope?: boolean;
-  /** How long each envelope lasts: a calendar month (absent = month), or a week / fortnight from `start`. */
+  /** Older saves: the span that went with `monthEnvelope`. `tidy()` turns it into `envelope`; don't use it. */
   envelopeSpan?: EnvelopeSpan;
 }
 

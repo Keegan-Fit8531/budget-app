@@ -48,6 +48,12 @@ function tidy(b: Budget): Budget {
   }
   b.flags = b.flags ?? [];
   b.debts = b.debts ?? [];
+  // Envelopes were saved as monthEnvelope (+ envelopeSpan once weeks came in): now one `envelope` field.
+  for (const i of b.items) {
+    if (i.monthEnvelope && !i.envelope) i.envelope = i.envelopeSpan ?? 'month';
+    delete i.monthEnvelope;
+    delete i.envelopeSpan;
+  }
   b.savings = b.savings ?? [];
   // Costs named as set-asides (e.g. "Service set-aside") were always money kept in the account, never
   // paid out: say so once. Unticking "Put aside" afterwards sticks.

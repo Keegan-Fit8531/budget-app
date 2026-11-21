@@ -9,7 +9,11 @@ GitHub repo (`budget-data`). `CLAUDE.md` points here.
 1. Read this file. Then find your task in **Where to look** below.
 2. Read the `README.md` of that folder only. Every folder in `src/` has one, listing each file and what it does.
 3. Open only the files the README points you to. Use search (`grep`) for a name before opening big files.
-4. Don't read `package-lock.json`, `dist/`, `public/ocr/`, or the whole of `core/types.ts` (search it for the type you need).
+4. Before changing what a shared function returns, or the words a page shows for it, run
+   `npm run uses -- <name>` (or `npm run uses -- engine/envelope.ts` for a whole file). It lists every file
+   and line that uses it, so you reach every page that shows it. The READMEs say what a file does, not
+   who uses it: the script answers that from the code, so it's never out of date.
+5. Don't read `package-lock.json`, `dist/`, `public/ocr/`, or the whole of `core/types.ts` (search it for the type you need).
 
 ## Folder map
 
@@ -55,6 +59,8 @@ before dev/build), `.github/workflows/pages.yml` (deploys `main` to GitHub Pages
 | How things look: colours, spacing, a shared component | `ui/styles/tokens.css`, `ui/components.tsx` |
 | Page routing, nav, the Add button | `app/` |
 | Saved daily copies, Undo by restoring | `state/versions.ts` |
+| Every page that uses a function, type or file | `npm run uses -- <name or src-relative file>` |
+| Renaming a saved field | `core/types.ts` (keep the old one, marked "Older saves"), `state/store.tsx` → `tidy()` converts it |
 
 ## Rules the code relies on
 
@@ -95,6 +101,7 @@ npm test           # all tests (vitest); tests sit next to the code as *.test.ts
 npx tsc -b         # type-check
 npm run lint
 npm run build      # production build in dist/ (pushing to main deploys it)
+npm run uses -- envelopeHeld   # every file and line that uses a name (or a file's exports)
 ```
 
 Run one test file with `npx vitest run src/engine/periods.test.ts`. Test budgets and helpers are in `src/testing/fixtures.ts`.
