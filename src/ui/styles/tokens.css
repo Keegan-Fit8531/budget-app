@@ -1,0 +1,131 @@
+/*
+ * Paydays design system
+ * ---------------------
+ * Everything visual comes from the tokens below: colours, type sizes, spacing, corner radii.
+ * Components and pages use the tokens (or the classes built on them), never their own values,
+ * so a change here changes the whole app.
+ *
+ * Colour: petrol ink on warm paper, with one ochre highlight kept for payday.
+ *   - Brand (petrol) is for the sidebar, primary buttons and the payday marker only.
+ *   - Status green and red always mean "fine" and "short"; nothing else uses them.
+ *   - Account, group and category colours come from the palette (--pal-*), and are only ever
+ *     small marks (a dot, an icon chip, a chart slice) beside a name, never a whole surface.
+ */
+:root {
+  /* Surfaces */
+  --bg: #F4F1EA;        /* the page */
+  --card: #FDFCF9;      /* cards, inputs, pop-ups */
+  --soft: #EFEBE2;      /* insets inside a card: stat tiles, tracks, tips */
+  --line: #E2DDD2;      /* hairlines and input borders */
+  /* Text */
+  --ink: #18262B;
+  --muted: #566367;
+  /* Brand */
+  --brand: #14424D;
+  --brand-2: #1B6676;   /* links, focus rings, small accents on a light surface */
+  --on-brand: #FFFFFF;
+  --accent: #E0A02E;    /* ochre: payday */
+  --on-accent: #18262B;
+  /* Status */
+  --good: #1F7A4D;
+  --good-bg: #DDF1E4;
+  --bad: #B3402E;
+  --bad-bg: #FBE6E0;
+  /* Sidebar */
+  --side-bg: #14424D;
+  --side-ink: #C9D8DB;
+  --side-strong: #FFFFFF;
+  --side-hover: rgba(255, 255, 255, 0.08);
+  --side-active: rgba(255, 255, 255, 0.15);
+  --scrim: rgba(12, 24, 28, 0.5);
+  --shadow-pop: 0 8px 24px rgba(16, 32, 36, 0.14);
+  --shadow-seg: 0 1px 2px rgba(16, 32, 36, 0.12);
+
+  /*
+   * Palette for accounts, groups, categories and people. The first eight are in an order checked
+   * for colour-blind separation between neighbours (so new ones are handed out in this order);
+   * the rest are extra identities for longer lists.
+   */
+  --pal-teal: #1AA89B; --pal-indigo: #4E59B1; --pal-moss: #77A246; --pal-plum: #884783;
+  --pal-ochre: #D9A440; --pal-rose: #B64466; --pal-sky: #47A3D3; --pal-clay: #C06240;
+  --pal-blue: #3A75BF; --pal-green: #359658; --pal-brick: #AF3D36; --pal-cyan: #5DBBC6;
+  --pal-orange: #DE8639; --pal-orchid: #BB7CCA; --pal-brown: #7D5B40; --pal-slate: #667785;
+  --pal-stone: #A7A49C;
+
+  /* Type scale */
+  --fs-micro: 11px;     /* calendar cells only */
+  --fs-xs: 12px;        /* captions, pills */
+  --fs-sm: 13px;        /* secondary text */
+  --fs-md: 14px;        /* default UI text */
+  --fs-lg: 16px;        /* inputs, lead text */
+  --fs-xl: 18px;        /* section titles */
+  --fs-2xl: 22px;       /* stat figures, phone page title */
+  --fs-3xl: 28px;       /* page title */
+  --fs-hero: 52px;      /* the one big number on the Planner */
+
+  /* Spacing (4px steps) */
+  --s-1: 4px; --s-2: 8px; --s-3: 12px; --s-4: 16px; --s-5: 20px; --s-6: 24px; --s-8: 32px;
+
+  /* Corners */
+  --r-sm: 8px;          /* chips, small controls */
+  --r-md: 12px;         /* buttons, inputs, insets */
+  --r-lg: 16px;         /* tiles, rows that open */
+  --r-xl: 20px;         /* cards, pop-ups */
+  --r-pill: 999px;
+
+  --tap: 44px;          /* smallest touch target */
+
+  /* Motion */
+  --ease-out: cubic-bezier(.22, .8, .24, 1);
+  --dur-open: .3s;      /* details opening and closing */
+
+  font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+  font-size: var(--fs-md);
+  line-height: 1.45;
+  color: var(--ink);
+  background: var(--bg);
+  font-variant-numeric: tabular-nums;
+  -webkit-font-smoothing: antialiased;
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0E1618; --card: #172225; --soft: #1F2E32; --line: #2B3C41;
+    --ink: #ECF1F0; --muted: #9FADAF;
+    --brand: #1F7385; --brand-2: #7CC6D4; --on-brand: #FFFFFF;
+    --accent: #E8B24A; --on-accent: #18262B;
+    --good: #5ED19A; --good-bg: #12372A; --bad: #FF9482; --bad-bg: #46211B;
+    --side-bg: #101C1F; --side-ink: #B8C7CA; --side-strong: #FFFFFF;
+    --scrim: rgba(0, 0, 0, 0.6);
+    --shadow-pop: 0 8px 24px rgba(0, 0, 0, 0.45);
+    --shadow-seg: 0 1px 2px rgba(0, 0, 0, 0.4);
+    /* The same hues, stepped for a dark surface. */
+    --pal-teal: #1AA89B; --pal-indigo: #6977D3; --pal-moss: #779E4B; --pal-plum: #A45B9F;
+    --pal-ochre: #B8892D; --pal-rose: #B94769; --pal-sky: #3F9BCB; --pal-clay: #C66846;
+    --pal-blue: #528ED9; --pal-green: #4AA969; --pal-brick: #CA564D; --pal-cyan: #57B5BF;
+    --pal-orange: #D78032; --pal-orchid: #C282D0; --pal-brown: #9B785C; --pal-slate: #7D8F9E;
+    --pal-stone: #89867E;
+    color-scheme: dark;
+  }
+}
+/* Dark chosen in Settings, whatever the device is set to. */
+:root[data-theme="dark"] {
+  --bg: #0E1618; --card: #172225; --soft: #1F2E32; --line: #2B3C41;
+  --ink: #ECF1F0; --muted: #9FADAF;
+  --brand: #1F7385; --brand-2: #7CC6D4; --on-brand: #FFFFFF;
+  --accent: #E8B24A; --on-accent: #18262B;
+  --good: #5ED19A; --good-bg: #12372A; --bad: #FF9482; --bad-bg: #46211B;
+  --side-bg: #101C1F; --side-ink: #B8C7CA; --side-strong: #FFFFFF;
+  --scrim: rgba(0, 0, 0, 0.6);
+  --shadow-pop: 0 8px 24px rgba(0, 0, 0, 0.45);
+  --shadow-seg: 0 1px 2px rgba(0, 0, 0, 0.4);
+  /* The same hues, stepped for a dark surface. */
+  --pal-teal: #1AA89B; --pal-indigo: #6977D3; --pal-moss: #779E4B; --pal-plum: #A45B9F;
+  --pal-ochre: #B8892D; --pal-rose: #B94769; --pal-sky: #3F9BCB; --pal-clay: #C66846;
+  --pal-blue: #528ED9; --pal-green: #4AA969; --pal-brick: #CA564D; --pal-cyan: #57B5BF;
+  --pal-orange: #D78032; --pal-orchid: #C282D0; --pal-brown: #9B785C; --pal-slate: #7D8F9E;
+  --pal-stone: #89867E;
+  color-scheme: dark;
+}
+
