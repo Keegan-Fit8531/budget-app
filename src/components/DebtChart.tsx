@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerE
 import { Disclosure } from './ui';
 import { tone } from '../lib/colors';
 import { monthName, todayISO } from '../lib/dates';
-import { debtPerPay, debtSchedules, historyOwed, owed, paidIn, projectedOwed } from '../lib/debts';
+import { debtPay, debtSchedules, historyOwed, owed, paidIn, projectedOwed } from '../lib/debts';
 import { periodContaining, shiftPeriod, type Period } from '../lib/engine';
 import { cash } from '../lib/money';
 import type { Budget, Debt } from '../lib/types';
@@ -63,7 +63,7 @@ export function DebtChart({ budget }: { budget: Budget }) {
     const earliest = chosen.flatMap((d) => d.history ?? []).map((h) => h.asOf).sort()[0];
     let back = 0;
     if (earliest) { let p = cur; while (back < PAST && p.start > earliest) { p = shiftPeriod(p, -1, s); back++; } }
-    const pays = chosen.flatMap((d) => debtSchedules(d, s, debtPerPay(budget, d)).flatMap((x) => x.payments));
+    const pays = chosen.flatMap((d) => debtSchedules(d, s, debtPay(budget, d)).flatMap((x) => x.payments));
     // Payments this pay that have already gone out still count towards what it pays.
     const paidThisPay = chosen.reduce((t, d) => t + paidIn(d, cur.start, cur.end).reduce((u, x) => u + x.amount, 0), 0);
     const out: Point[] = [];
@@ -74,7 +74,7 @@ export function DebtChart({ budget }: { budget: Budget }) {
       const at = isNow ? today : p.end;
       const hist = chosen.map((d) => (isNow ? owed(d) : historyOwed(d, at)));
       const actual = isPast || isNow ? (hist.some((h) => h !== undefined) ? hist.reduce<number>((t, h) => t + (h ?? 0), 0) : undefined) : undefined;
-      const forecast = isPast ? undefined : isNow ? chosen.reduce((t, d) => t + owed(d), 0) : chosen.reduce((t, d) => t + projectedOwed(d, s, p.end, debtPerPay(budget, d)), 0);
+      const forecast = isPast ? undefined : isNow ? chosen.reduce((t, d) => t + owed(d), 0) : chosen.reduce((t, d) => t + projectedOwed(d, s, p.end, debtPay(budget, d)), 0);
       out.push({
         period: p, isNow, actual, forecast,
         label: `${monthName(p.start).slice(0, 3)}${p.start.slice(5, 7) === '01' || i === 0 ? ` ${p.start.slice(2, 4)}` : ''}`,

@@ -106,7 +106,7 @@ export function SpendingCard() {
                       <div key={x.shop} className="row nowrap gap-8 small">
                         <span className="grow min0 clip">{x.shop}{x.count > 1 ? ` (${x.count})` : ''}{isGuess(x.shop) && <span className="xs muted"> · Gemini’s guess</span>}</span>
                         <span className="num">{cash(x.total)}</span>
-                        <select aria-label={`Category for ${x.shop}`} value={c.category} style={{ maxWidth: 110, fontSize: 12, minHeight: 28, padding: '0 4px' }}
+                        <select aria-label={`Category for ${x.shop}`} className="select-sm" value={c.category} style={{ width: 132, flex: '0 0 auto' }}
                           onChange={(e) => recategorize(x.shop, e.target.value as SpendCategory)}>
                           {(Object.keys(CATEGORY_LABEL) as SpendCategory[]).map((k) => <option key={k} value={k}>{CATEGORY_LABEL[k]}</option>)}
                         </select>

@@ -1,6 +1,9 @@
+import type { ReactNode } from 'react';
 import { accountMode, balanceOn, billTracker, nextBufferUse, payProjection } from '../lib/balances';
-import { fmtDay, fmtShort, monthName, todayISO } from '../lib/dates';
-import { hasSetAsides, isSetAside, type Period } from '../lib/engine';
+import { fmtDay, fmtShort, monthName, ordinal, todayISO } from '../lib/dates';
+import { debtAdvice } from '../lib/debts';
+import { accountEnvelopes, envelopeHeld } from '../lib/envelope';
+import { asideMaxSaved, hasSetAsides, isHeldInAccount, type Period } from '../lib/engine';
 import { asideNames } from '../lib/rebalance';
 import { tone } from '../lib/colors';
 import { cash } from '../lib/money';
@@ -19,21 +22,105 @@ export function MonthTracker({ budget, account, today = todayISO(), open }: { bu
   const toCome = t.rows.filter((r) => r.status !== 'paid');
   const paid = t.rows.filter((r) => r.status === 'paid');
   const total = t.paid + t.toCome;
+  const envelopes = accountEnvelopes(budget, account.id, today);
+  // Unspent month-envelope budget (Gas left this month) is assumed spent — reserved until month end.
+  const gasHeld = envelopeHeld(budget, account.id, today);
+  // After bills and reserved gas: negative = short for this pay + this month's gas.
+  const afterReserved = t.spare - gasHeld;
   // A steady account (e.g. rent) builds a buffer for pays with an extra week; what's left isn't spare.
-  // Money put aside here (a car fund: WOF, tyres) builds up until it's needed; it isn't spare either.
+  // Money put aside here (a car fund: WOF, tyres) builds up until it's needed; it isn't spare either —
+  // unless every set-aside has a max (Haircut $60) and the account is already over it.
   const aside = hasSetAsides(budget, account.id);
-  const paysBills = budget.items.some((i) => i.accountId === account.id && !isSetAside(i));
+  const paysBills = budget.items.some((i) => i.accountId === account.id && !isHeldInAccount(i));
   const steady = !aside && accountMode(budget, account.id) === 'smooth';
   const bufferFor = steady ? nextBufferUse(budget, account.id, t.period, 13, today) : undefined;
-  const leftWord = aside ? 'put aside' : steady ? 'buffer' : 'spare';
-  const leftLabel = t.spare < 0 ? 'Short' : aside ? 'Put aside' : steady ? 'Buffer' : 'Spare';
-  const leftNote = t.spare < 0 ? 'after bills' : aside ? `for ${asideNames(budget, account.id)}` : steady
-    ? (bufferFor ? `for ${fmtShort(bufferFor.period.start)}` : 'for extra weeks')
-    : 'after bills';
+  const names = aside ? asideNames(budget, account.id) : '';
+  const maxAside = aside ? asideMaxSaved(budget, account.id) : undefined;
+  const spareAmt = Math.max(0, afterReserved);
+  const overAsideMax = maxAside !== undefined && spareAmt > maxAside;
+  const asideHeld = maxAside !== undefined ? Math.min(spareAmt, maxAside) : spareAmt;
+  // Only the cushion for the next 5-week pay is "Buffer" — and only from what's left after gas.
+  const bufferCushion = bufferFor ? Math.max(0, bufferFor.need - bufferFor.deposit) : 0;
+  const bufferShown = steady && bufferCushion > 0 && spareAmt > 0 ? Math.min(spareAmt, bufferCushion) : undefined;
+  const short = afterReserved < 0;
+  const leftAmount = short ? Math.abs(afterReserved)
+    : overAsideMax ? spareAmt - maxAside!
+    : aside && maxAside !== undefined ? asideHeld
+    : bufferShown !== undefined ? bufferShown
+    : spareAmt;
+  const leftWord = short ? 'short' : overAsideMax ? 'spare' : aside ? 'put aside' : bufferShown !== undefined ? 'buffer' : steady ? 'ends' : 'spare';
+  const leftLabel = short ? 'Short'
+    : overAsideMax ? 'Spare'
+    : aside ? 'Put aside'
+    : bufferShown !== undefined ? 'Buffer'
+    : steady ? 'Ends'
+    : 'Spare';
+  const envNames = envelopes.map((e) => e.item.name).join(' and ');
+  // Accounts = this pay with what's in the account now. Planner's "Buffer" is often the *next* pay's end.
+  const leftNote = short
+    ? (gasHeld > 0 ? `after bills and ${envNames || 'month budgets'}` : 'this pay after bills')
+    : overAsideMax ? `above ${names} max ${cash(maxAside!)}`
+    : aside && maxAside !== undefined ? `for ${names} · max ${cash(maxAside)}`
+    : aside ? `for ${names}`
+    : bufferShown !== undefined && bufferFor ? `for ${fmtShort(bufferFor.period.start)}`
+    : gasHeld > 0 ? `after bills and ${envNames}`
+    : steady ? 'this pay after bills'
+    : 'this pay after bills';
   const color = tone(account.color);
+  // Gem Visa held in this account until statement day — note the amount from Latitude's allocation.
+  const gemHolds = (budget.debts ?? []).filter((d) => d.holdAccountId === account.id && d.rules === 'gem' && !d.payroll);
+  const gemNotes = gemHolds.map((d) => {
+    const adv = debtAdvice(budget, d, t.period);
+    const due = t.rows.filter((r) => r.name === d.name && r.status !== 'paid');
+    const held = due.reduce((s, r) => s + r.amount, 0);
+    if (held <= 0 && adv.recommended <= 0) return null;
+    const dayLabel = d.statementDay ? `the ${ordinal(d.statementDay)}` : 'statement day';
+    return {
+      id: d.id,
+      text: <>{d.name} {cash(held || adv.recommended)} held for {dayLabel} — Gem’s allocation (instalments first, then interest-free by expiry; min {cash(adv.minimum ?? 0)}).</>,
+    };
+  }).filter(Boolean) as { id: string; text: ReactNode }[];
 
   return (
     <>
+      {envelopes.length > 0 && (
+        <div className="stack gap-8">
+          {envelopes.map((e) => (
+            <div key={e.item.id} className="stack gap-8">
+              <div className="trio">
+                <div className="stat">
+                  <span className="small muted">{e.item.name} · {e.label}</span>
+                  <b>{cash(e.budget)}</b>
+                  <span className="xs muted">month budget</span>
+                </div>
+                <div className="stat">
+                  <span className="small muted">Spent</span>
+                  <b>{cash(e.spent)}</b>
+                  <span className="xs muted">{e.txns.length ? `${e.txns.length} purchase${e.txns.length === 1 ? '' : 's'}` : 'none yet'}</span>
+                </div>
+                <div className="stat">
+                  <span className="small muted">{e.over ? 'Over' : 'Left'}</span>
+                  <b className={e.over ? 'neg' : e.left > 0 ? 'pos' : ''}>{cash(Math.abs(e.left))}</b>
+                  <span className="xs muted">{e.over ? 'over budget' : 'this month'}</span>
+                </div>
+              </div>
+              {(e.budget > 0 || e.spent > 0) && (
+                <div className="parts" role="img" aria-label={`${cash(e.spent)} spent of ${cash(e.budget)}`}>
+                  {e.spent > 0 && <div title={`Spent ${cash(e.spent)}`} style={{ flex: Math.min(e.spent, e.budget || e.spent), background: e.over ? 'var(--bad)' : color }} />}
+                  {e.left > 0 && <div title={`Left ${cash(e.left)}`} style={{ flex: e.left, background: 'var(--good)' }} />}
+                  {e.over && e.budget > 0 && <div title={`Over ${cash(-e.left)}`} style={{ flex: -e.left, background: 'var(--bad)' }} />}
+                </div>
+              )}
+              <p className="small muted">
+                {e.over
+                  ? <>Over by {cash(-e.left)} this month — next month’s {cash(e.budget)} budget starts fresh.</>
+                  : <>Assumed spent this month (reserved in the account). Anything left at month end is yours — it doesn’t roll over. Matched from synced purchases{e.item.name.match(/gas|fuel|petrol/i) ? ' (fuel shops)' : ''}.</>}
+              </p>
+            </div>
+          ))}
+        </div>
+      )}
+
       {!t.balanceKnown && (
         <div className="tip small stack gap-4">
           <b>Enter this account's balance to check {t.toCome ? fmtShort(toCome[0].date) : 'it'}</b>
@@ -46,27 +133,38 @@ export function MonthTracker({ budget, account, today = todayISO(), open }: { bu
 
       {/* Money put aside (a car fund): nothing comes out on a date, so what matters is what's built up and what's next. */}
       {t.balanceKnown && aside && !paysBills && (
-        <div className="trio">
-          <div className="stat">
-            <span className="small muted">Put aside</span>
-            <b>{t.balanceSource === 'entered' ? cash(Math.max(0, t.balance)) : '—'}</b>
-            <span className="xs muted">for {asideNames(budget, account.id)}</span>
+        <div className="stack gap-8">
+          <div className="trio">
+            <div className="stat">
+              <span className="small muted">Put aside</span>
+              <b>{t.balanceSource === 'entered'
+                ? cash(maxAside !== undefined ? Math.min(Math.max(0, t.balance), maxAside) : Math.max(0, t.balance))
+                : '—'}</b>
+              <span className="xs muted">for {names}{maxAside !== undefined ? ` · max ${cash(maxAside)}` : ''}</span>
+            </div>
+            <div className="stat">
+              <span className="small muted">Next pay adds</span>
+              <b>+{cash(t.next.deposit)}</b>
+              <span className="xs muted">on {fmtShort(t.next.period.start)}</span>
+            </div>
           </div>
-          <div className="stat">
-            <span className="small muted">Next pay adds</span>
-            <b>+{cash(t.next.deposit)}</b>
-            <span className="xs muted">on {fmtShort(t.next.period.start)}</span>
-          </div>
+          {maxAside !== undefined && t.balanceSource === 'entered' && t.balance > maxAside && (
+            <p className="small muted">
+              {cash(t.balance - maxAside)} spare above the {cash(maxAside)} max.
+            </p>
+          )}
         </div>
       )}
 
       {t.balanceKnown && !(aside && !paysBills) && (
         <div className="stack gap-8">
-          {total > 0 && (
-            <div className="parts" role="img" aria-label={`${cash(t.paid)} paid, ${cash(t.toCome)} still to come, ${cash(Math.max(0, t.spare))} ${leftWord}`}>
+          {(total > 0 || gasHeld > 0) && (
+            <div className="parts" role="img" aria-label={`${cash(t.paid)} paid, ${cash(t.toCome)} still to come${gasHeld ? `, ${cash(gasHeld)} reserved for ${envNames}` : ''}, ${cash(leftAmount)} ${leftWord}`}>
               {t.paid > 0 && <div title={`Paid ${cash(t.paid)}`} style={{ flex: t.paid, background: 'var(--line)' }} />}
               {t.toCome > 0 && <div title={`Still to come ${cash(t.toCome)}`} style={{ flex: t.toCome, background: color }} />}
-              {t.spare > 0 && <div title={`${leftLabel} ${cash(t.spare)}`} style={{ flex: t.spare, background: 'var(--good)' }} />}
+              {gasHeld > 0 && !short && <div title={`Reserved for ${envNames} ${cash(gasHeld)}`} style={{ flex: gasHeld, background: 'var(--warn, #C4A35A)' }} />}
+              {leftAmount > 0 && !short && <div title={`${leftLabel} ${cash(leftAmount)}`} style={{ flex: leftAmount, background: 'var(--good)' }} />}
+              {short && <div title={`Short ${cash(leftAmount)}`} style={{ flex: leftAmount, background: 'var(--bad)' }} />}
             </div>
           )}
           <div className="trio">
@@ -82,22 +180,55 @@ export function MonthTracker({ budget, account, today = todayISO(), open }: { bu
             </div>
             <div className="stat">
               <span className="small muted">{leftLabel}</span>
-              <b className={t.spare < 0 ? 'neg' : ''}>{cash(Math.abs(t.spare))}</b>
+              <b className={short ? 'neg' : ''}>{cash(leftAmount)}</b>
               <span className="xs muted">{leftNote}</span>
             </div>
           </div>
+          {short && gasHeld > 0 && (
+            <p className="small muted">
+              Needs {cash(t.toCome)} for bills and {cash(gasHeld)} still budgeted for {envNames} this month
+              ({cash(t.toCome + gasHeld)} total) against {cash(t.balance)} in the account.
+            </p>
+          )}
+          {!short && gasHeld > 0 && spareAmt > 0 && bufferShown === undefined && (
+            <p className="small muted">
+              {cash(gasHeld)} reserved for {envNames} this month (assumed spent). Anything left at month end is yours.
+            </p>
+          )}
+          {overAsideMax && (
+            <p className="small muted">
+              Put aside {cash(asideHeld)} for {names} (max {cash(maxAside!)}); the rest after bills is spare.
+            </p>
+          )}
+          {gemNotes.map((n) => (
+            <p className="small muted" key={n.id}>{n.text}</p>
+          ))}
         </div>
       )}
 
       <Collapse open={open} stacked><FlatDetails.Provider value>
         <div className="stack gap-12">
-          {steady && t.balanceKnown && t.spare > 0 && (
+          {steady && t.balanceKnown && bufferShown !== undefined && bufferFor && (
             <p className="small muted">
-              {bufferFor
-                ? <>Buffer is for the {fmtShort(bufferFor.period.start)} pay: it needs {cash(bufferFor.need)}, gets {cash(bufferFor.deposit)}.</>
-                : 'Buffer is for pays with an extra week.'}
+              Buffer {cash(bufferShown)} is for the {fmtShort(bufferFor.period.start)} pay: it needs {cash(bufferFor.need)}, gets {cash(bufferFor.deposit)}.
+              {gasHeld > 0 ? <> After bills and {cash(gasHeld)} reserved for {envNames}.</> : null}
+              {spareAmt > bufferShown ? <> About {cash(spareAmt)} left after that.</> : null}
             </p>
           )}
+
+          {envelopes.map((e) => e.txns.length > 0 && (
+            <Disclosure key={`env-${e.item.id}`} title={`${e.item.name} purchases · ${e.label}`} meta={cash(e.spent)}>
+              <ShortList>
+                {e.txns.map((t, i) => (
+                  <div className="list-row small" key={`${t.date}-${t.amount}-${i}`}>
+                    <span style={{ flex: '0 0 72px' }} className="muted">{fmtShort(t.date)}</span>
+                    <span className="grow clip">{t.merchant || t.description}</span>
+                    <span className="num">{cash(-t.amount)}</span>
+                  </div>
+                ))}
+              </ShortList>
+            </Disclosure>
+          ))}
 
           {/* Bills still to come this pay */}
           {toCome.length > 0 && <div>

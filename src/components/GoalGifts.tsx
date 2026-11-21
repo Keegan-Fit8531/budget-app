@@ -26,12 +26,12 @@ function saveGift(b: Budget, goalId: string, next: GoalGift, previous?: GoalGift
 
 const personLabel = (p: string) => (p === ME ? 'Me' : p);
 
-/** The "Add money" button for a goal's header. */
+/** One-off deposit into a goal (on the card, and again under Money in and out). */
 export function AddMoneyButton({ goal }: { goal: SavingsGoal }) {
   const [open, setOpen] = useState(false);
   return (
     <>
-      <button className="btn small primary" onClick={() => setOpen(true)}><Icon name="plus" size={16} /> Add money</button>
+      <button className="btn small primary" onClick={() => setOpen(true)}><Icon name="plus" size={16} /> Add deposit</button>
       {open && <GiftModal goal={goal} onClose={() => setOpen(false)} />}
     </>
   );
@@ -124,11 +124,11 @@ export function GoalGifts({ goal }: { goal: SavingsGoal }) {
   return (
     <div className="stack gap-8">
       <div className="row gap-8 wrap">
-        <button className="btn small primary" onClick={() => setAdding('in')}><Icon name="plus" size={16} /> Add money</button>
+        <button className="btn small primary" onClick={() => setAdding('in')}><Icon name="plus" size={16} /> Add deposit</button>
         <button className="btn small" onClick={() => setAdding('out')}>Take money out</button>
       </div>
       {entries.length === 0
-        ? <p className="small muted">Gifts and one-off deposits show here (your payday transfers are counted automatically). Taking money out records who it was for.</p>
+        ? <p className="small muted">One-off deposits and gifts show here (payday transfers are counted automatically). Taking money out records who it was for.</p>
         : <p className="small muted">{cash(received)} in{out ? ` · ${cash(out)} out` : ''}{expected ? ` · ${cash(expected)} expected` : ''}</p>}
       <div>
         {entries.map((x) => (
@@ -176,8 +176,10 @@ export function PersonPicker({ goal, value, onChange, label }: { goal: SavingsGo
 }
 
 function GiftModal({ goal, gift, out = false, onClose }: { goal: SavingsGoal; gift?: GoalGift; out?: boolean; onClose: () => void }) {
-  const { update } = useBudget();
+  const { budget, update } = useBudget();
   const today = todayISO();
+  // Solo goals: skip "who it's from" and treat it as your own deposit. Shared goals (wedding etc.) keep the person picker.
+  const showPeople = tracksPeople(budget, goal) || !!gift?.person || out;
   const [amount, setAmount] = useState(gift ? centsToInput(gift.amount) : '');
   const [date, setDate] = useState(gift?.date ?? today);
   const [person, setPerson] = useState(gift?.person ?? peopleOf(goal)[0]);
@@ -190,7 +192,9 @@ function GiftModal({ goal, gift, out = false, onClose }: { goal: SavingsGoal; gi
     const c = parseMoney(amount);
     if (c === null || c <= 0) return setErr('Enter an amount above $0.');
     if (!date) return setErr('Pick a date.');
-    const who = person.startsWith(NEW) ? person.slice(NEW.length).trim() : person;
+    const who = showPeople
+      ? (person.startsWith(NEW) ? person.slice(NEW.length).trim() : person)
+      : ME;
     if (!who) return setErr('Enter their name.');
     update((b) => {
       saveGift(b, goal.id, { ...gift, id: gift?.id ?? newId(), amount: c, date, person: who, note: note.trim() || undefined, out: out || undefined, received: out ? true : future ? false : received }, gift);
@@ -215,7 +219,7 @@ function GiftModal({ goal, gift, out = false, onClose }: { goal: SavingsGoal; gi
     <div className="modal-back" onClick={onClose}>
       <div className="modal" role="dialog" aria-modal="true" aria-labelledby="gift-title" onClick={(e) => e.stopPropagation()}>
         <div className="between">
-          <h2 id="gift-title" className="h2">{gift ? (out ? 'Edit money taken out' : 'Edit money added') : out ? `${goal.name}: take money out` : `${goal.name}: add money`}</h2>
+          <h2 id="gift-title" className="h2">{gift ? (out ? 'Edit money taken out' : 'Edit deposit') : out ? `${goal.name}: take money out` : `${goal.name}: add deposit`}</h2>
           <button className="icon-btn plain" aria-label="Close" onClick={onClose}><Icon name="x" /></button>
         </div>
         <div className="form-grid">
@@ -226,9 +230,11 @@ function GiftModal({ goal, gift, out = false, onClose }: { goal: SavingsGoal; gi
             <input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
           </label>
         </div>
-        <PersonPicker goal={goal} value={person} onChange={(v) => { setPerson(v); setErr(''); }} label={out ? 'Who it’s for' : 'Who it’s from'} />
+        {showPeople && (
+          <PersonPicker goal={goal} value={person} onChange={(v) => { setPerson(v); setErr(''); }} label={out ? 'Who it’s for' : 'Who it’s from'} />
+        )}
         <label className="field">Note (optional)
-          <input value={note} placeholder={out ? 'Paid back' : 'Christmas gift'} onChange={(e) => setNote(e.target.value)} />
+          <input value={note} placeholder={out ? 'Paid back' : showPeople ? 'Christmas gift' : 'Bonus, transfer…'} onChange={(e) => setNote(e.target.value)} />
         </label>
         {out ? (
           <p className="small muted">Takes it off the saved balance and off their total. To pay for a wedding cost, use <b>Spend money</b> under the costs instead.</p>
@@ -245,7 +251,7 @@ function GiftModal({ goal, gift, out = false, onClose }: { goal: SavingsGoal; gi
           {gift ? <button className="btn ghost danger" onClick={remove}>Delete</button> : <span />}
           <div className="row">
             <button className="btn" onClick={onClose}>Cancel</button>
-            <button className="btn primary" onClick={save}>{gift ? 'Save' : out ? 'Take out' : 'Add money'}</button>
+            <button className="btn primary" onClick={save}>{gift ? 'Save' : out ? 'Take out' : 'Add deposit'}</button>
           </div>
         </div>
       </div>

@@ -1,25 +1,29 @@
 import { Fragment, lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { startRead, type ReadJob } from '../lib/reader/job';
 import { applyBalance, autoPays, balancePay, restoreOverrides, type BalanceResult } from '../lib/rebalance';
-import { accountMode, leftoverBeforeBudget, topsUp } from '../lib/balances';
+import { accountMode, freezePaySplit, leftoverBeforeBudget, nextBufferUse, topsUp, unfreezePaySplit } from '../lib/balances';
+import { isHoldDisplayAccount, owed } from '../lib/debts';
 import { Donut, Legend } from '../components/Donut';
 import { Icon } from '../components/Icon';
 import { ErrorBoundary } from '../components/ErrorBoundary';
 import { AccIcon, Disclosure, Dot } from '../components/ui';
+import { AccountEditModal, type AccountTab } from '../components/AccountEdit';
 import { WeeksView } from '../components/WeeksView';
 import { PayNav, useViewPeriod, ViewModes } from '../lib/period';
 import { clearOptimiseUndo, OptimiseModal, readOptimiseUndo, type OptimiseUndo } from '../components/OptimiseModal';
 import { existingExtras, undoAllocation } from '../lib/allocate';
-import { addDays, fmtDay, fmtShort, monthName, todayISO } from '../lib/dates';
+import { addDays, fmtDay, fmtShort, monthName, ordinal, todayISO } from '../lib/dates';
 import {
-  averageSplit, convert, firstBudgetPay, isAuto, isSetAside, planFor, plannedAverage, shiftPeriod, upcomingPayPeriod, type View,
+  averageSplit, convert, firstBudgetPay, isAuto, isHeldInAccount, isMonthEnvelope, isSetAside, monthBudget, planFor, plannedAverage, shiftPeriod, upcomingPayPeriod, type View,
 } from '../lib/engine';
+import { envelopeHeld } from '../lib/envelope';
 import { cash, moneyParts, centsToInput, parseMoney } from '../lib/money';
 import { useBudget } from '../lib/store';
 import type { Cents, PaydayMode } from '../lib/types';
 
 // Loaded only when a document is chosen.
-const UploadFlow = lazy(() => import('../components/UploadFlow').then((m) => ({ default: m.UploadFlow })));
+const UploadQueue = lazy(() => import('../components/UploadFlow').then((m) => ({ default: m.UploadQueue })));
 
 const MODES_KEY = 'paydays.balance.modes';
 
@@ -39,7 +43,7 @@ export function Planner() {
   const [openCard, setOpenCard] = useState<string | null>(null);
   const [payEdit, setPayEdit] = useState<string | null>(null);
   // A payslip or other document being read (the same flow as the Add button), and the pay to show once it's saved.
-  const [job, setJob] = useState<ReadJob | null>(null);
+  const [jobs, setJobs] = useState<ReadJob[] | null>(null);
   const [jumpTo, setJumpTo] = useState<string | null>(null);
   // Last "Balance this pay": what changed and why, plus what to restore on Undo.
   const [optimiseOpen, setOptimiseOpen] = useState(false);
@@ -53,6 +57,8 @@ export function Planner() {
     clearOptimiseUndo(); setOptUndo(null);
   }
   const [balanced, setBalanced] = useState<{ periodStart: string; result: BalanceResult } | null>(null);
+  // Account settings opened from a payday-split card (Payday send tab).
+  const [editAccount, setEditAccount] = useState<{ id: string; tab: AccountTab } | null>(null);
   const slipRef = useRef<HTMLInputElement>(null);
 
   // The first pay the budget covers: today's, or the budget start if that's later .
@@ -71,10 +77,11 @@ export function Planner() {
   // Show what's left once pay is in — or, before the payslip arrives, estimated from the last pay received.
   const estimated = !plan.payIsActual && !!plan.payEstimateFrom;
   const known = plan.payIsActual || estimated;
-  const paydayPassed = plan.period.start <= today;
+  // Payday itself still counts as "to come" (pay can land late); only the day after is "already split".
+  const paydayEnded = plan.period.start < today;
   // Why the pay is an estimate: shown on hover over "Pay (estimate)".
   const estimateWhy = estimated
-    ? `Using ${monthName(plan.payEstimateFrom!)}'s pay of ${cash(plan.pay)}. ${paydayPassed ? 'Payday has passed: upload the payslip to make it exact.' : `Upload the payslip when it arrives on ${fmtShort(period.start)}.`}`
+    ? `Using ${monthName(plan.payEstimateFrom!)}'s pay of ${cash(plan.pay)}. ${paydayEnded ? 'Payday has passed: upload the payslip to make it exact.' : `Upload the payslip when it arrives on ${fmtShort(period.start)}.`}`
     : '';
   // What each account usually gets a month (worked out once per change, not per card).
   const usualSplit = useMemo(() => new Map(plan.accounts.map((a) => [a.account.id, averageSplit(budget, a.account.id)])), [budget, plan]);
@@ -90,6 +97,11 @@ export function Planner() {
       if (amount === null) delete o[id]; else o[id] = amount;
       b.overrides = b.overrides ?? {};
       if (Object.keys(o).length) b.overrides[period.start] = o; else delete b.overrides[period.start];
+      // Locked cycle: keep the frozen split in step with a hand edit.
+      if (b.splitSent?.[period.start]) {
+        if (amount === null) delete b.splitSent[period.start][id];
+        else b.splitSent[period.start][id] = amount;
+      }
       return b;
     });
     setAdjEdit(null);
@@ -137,18 +149,41 @@ export function Planner() {
   const shorts = plan.accounts.filter((a) => a.diff !== null && a.diff < 0);
 
   // The pay account (Weekly allowance) isn't part of the split — what's left there is the big number above.
-  const cards = plan.accounts.filter((a) =>
-    a.account.id !== budget.settings.payAccountId && (a.funded !== 0 || a.need !== 0));
+  // Hold-display debts (Gem Visa with money in Misc bills) stay on the payday split even when this
+  // pay's figure is $0 — they still show how much is being sent / stored, with the hold note.
+  const cards = plan.accounts.filter((a) => {
+    if (a.account.id === budget.settings.payAccountId) return false;
+    if (a.funded !== 0 || a.need !== 0) return true;
+    if (!isHoldDisplayAccount(budget, a.account.id)) return false;
+    return (budget.debts ?? []).some((d) => d.accountId === a.account.id && !d.payroll && owed(d) > 0);
+  });
 
   // The chart follows the view: this pay, this pay per week / fortnight, or the average of the next 12 pays
   // per month / added up for the year (the same amounts the cards and Total budgeted show). It's by group;
   // each account's own amount is on its card below, and its share is on Insights.
+  // Hold-display debts (Gem in Misc bills): count under Debt, and take that slice out of the hold account
+  // so Essentials isn't double-counting the same money.
   const sentOf = (a: (typeof plan.accounts)[number]) => Math.max(0, longRun ? v(planned?.get(a.account.id)?.sent ?? 0) : v(a.funded));
-  const split_ = plan.accounts.filter((a) => a.account.id !== budget.settings.payAccountId);
+  const holdOut = new Map<string, number>();
+  for (const a of plan.accounts) {
+    if (a.account.id === budget.settings.payAccountId || !isHoldDisplayAccount(budget, a.account.id)) continue;
+    const amt = sentOf(a);
+    if (amt <= 0) continue;
+    for (const d of budget.debts ?? []) {
+      if (d.accountId !== a.account.id || !d.holdAccountId) continue;
+      holdOut.set(d.holdAccountId, (holdOut.get(d.holdAccountId) ?? 0) + amt);
+    }
+  }
+  const chartOf = (a: (typeof plan.accounts)[number]) => {
+    if (a.account.id === budget.settings.payAccountId) return 0;
+    if (isHoldDisplayAccount(budget, a.account.id)) return sentOf(a);
+    return Math.max(0, sentOf(a) - (holdOut.get(a.account.id) ?? 0));
+  };
+  const chartAccounts = plan.accounts.filter((a) => a.account.id !== budget.settings.payAccountId);
   const grouped = new Set(budget.groups.map((g) => g.id));
   const slices = [
-    ...budget.groups.map((g) => ({ label: g.name, color: g.color, value: split_.filter((a) => a.account.groupId === g.id).reduce((t, a) => t + sentOf(a), 0) })),
-    { label: 'Other', color: 'var(--muted)', value: split_.filter((a) => !grouped.has(a.account.groupId)).reduce((t, a) => t + sentOf(a), 0) },
+    ...budget.groups.map((g) => ({ label: g.name, color: g.color, value: chartAccounts.filter((a) => a.account.groupId === g.id).reduce((t, a) => t + chartOf(a), 0) })),
+    { label: 'Other', color: 'var(--muted)', value: chartAccounts.filter((a) => !grouped.has(a.account.groupId)).reduce((t, a) => t + chartOf(a), 0) },
   ].filter((x) => x.value > 0);
 
   const debtAccounts = new Set((budget.debts ?? []).map((d) => d.accountId));
@@ -211,12 +246,12 @@ export function Planner() {
   const canOptimise = !avg && !needsBalance && plan.leftover >= 100;
   // Extra already added to goals, debts or the allowance for this pay only: Optimise can show and change it.
   const extrasHere = useMemo(() => !avg && !!existingExtras(budget, period), [avg, budget, period]);
-  // Automatic balancing looks after the next 12 pays; a pay already split (or further out) is done by hand.
+  // Automatic balancing looks after today's pay (while it is still payday) and the next 11; after that, by hand.
   const autoHere = autoPays(budget, today).some((p) => p.start === period.start);
   const hasModeChanges = (() => { try { return !!JSON.parse(localStorage.getItem(MODES_KEY) ?? '{}')[period.start]; } catch { return false; } })();
   const canReset = adjustments.length > 0 || hasModeChanges;
-  // A pay that's already been split can't be re-sent, so changes to it are made as transfers.
-  const passedNote = paydayPassed && byHand.length > 0
+  // From the day after payday, a change isn't re-sent with the split — make it as a transfer instead.
+  const passedNote = paydayEnded && byHand.length > 0
     ? `This pay was already split on ${fmtShort(period.start)}. A change made since then isn't sent by payday, so make it as a transfer now, before ${fmtShort(plan.dues.find((d) => d.date >= today)?.date ?? period.end)}: move the money from the accounts being trimmed (or from what's left in ${payAccountName}) to the ones being topped up.`
     : undefined;
 
@@ -225,7 +260,14 @@ export function Planner() {
     const c = cleared ? null : parseMoney(payEdit ?? '');
     if (!cleared && (c === null || c < 0)) return; // not an amount: keep editing rather than wiping the pay
     update((b) => {
-      if (c === null) delete b.payActuals[period.start]; else b.payActuals[period.start] = c;
+      if (c === null) {
+        delete b.payActuals[period.start];
+        // Payday itself can be re-planned; once the day has passed the split stays locked.
+        if (!(period.start < today)) unfreezePaySplit(b, period.start);
+      } else {
+        b.payActuals[period.start] = c;
+        freezePaySplit(b, period, today);
+      }
       return b;
     });
     setPayEdit(null);
@@ -310,8 +352,12 @@ export function Planner() {
                   </span>
                 )}
               </div>
-              <input ref={slipRef} type="file" accept="application/pdf,image/*,.csv,text/csv" hidden
-                onChange={(e) => { const f = e.target.files?.[0]; if (f) setJob(startRead(f, budget)); e.target.value = ''; }} />
+              <input ref={slipRef} type="file" accept="application/pdf,image/*,.csv,text/csv" multiple hidden
+                onChange={(e) => {
+                  const files = [...(e.target.files ?? [])].slice(0, 12);
+                  if (files.length) setJobs(files.map((f) => startRead(f, budget)));
+                  e.target.value = '';
+                }} />
               {payEdit === null ? (
                 <b className={known ? '' : 'muted'}>{known ? cash(v(plan.pay)) : 'Not in yet'}</b>
               ) : (
@@ -332,10 +378,10 @@ export function Planner() {
               <b>{cash(totalBudgeted)}</b>
             </div>
           </div>
-          {job && (
-            <ErrorBoundary key={job.file.name + job.file.lastModified} onClose={() => { job.cancel(); setJob(null); }}>
+          {jobs && (
+            <ErrorBoundary key={jobs.map((j) => j.file.name + j.file.lastModified).join('|')} onClose={() => { jobs.forEach((j) => j.cancel()); setJobs(null); }}>
               <Suspense fallback={null}>
-                <UploadFlow job={job} onClose={() => setJob(null)} onPayslip={setJumpTo} />
+                <UploadQueue jobs={jobs} onClose={() => setJobs(null)} onPayslip={setJumpTo} />
               </Suspense>
             </ErrorBoundary>
           )}
@@ -445,21 +491,31 @@ export function Planner() {
             const steadyMode = accountMode(budget, a.account.id) === 'smooth';
             const funded = !avg ? a.funded : isPay ? leftover : split ? v(a.funded) : v(planned?.get(a.account.id)?.sent ?? 0);
             const need = split ? v(a.need) : longRun ? v(planned?.get(a.account.id)?.need ?? 0) : a.need;
-            // With a balance entered, the pill shows what the account ends the period with.
-            const ends = !avg ? a.endBalance : undefined;
+            // With a balance entered, the pill shows what the account ends the period with —
+            // after reserving unspent month envelopes (Gas assumed spent this month).
+            const rawEnds = !avg ? a.endBalance : undefined;
+            const gasHeld = rawEnds !== undefined ? envelopeHeld(budget, a.account.id, today) : 0;
+            const ends = rawEnds !== undefined ? rawEnds - gasHeld : undefined;
             const diff = ends !== undefined ? null : a.diff === null || auto ? null : funded - need;
+            // Steady (e.g. rent): only the cushion for the next 5-week pay is "Buffer" — not the whole
+            // ending balance (which was reading as a massive spare pile).
+            const bufferFor = ends !== undefined && ends > 0 && steadyMode
+              ? nextBufferUse(budget, a.account.id, period, 13, today) : undefined;
+            const bufferCushion = bufferFor ? Math.max(0, bufferFor.need - bufferFor.deposit) : 0;
+            const bufferShown = bufferFor && bufferCushion > 0 && ends !== undefined
+              ? Math.min(ends, bufferCushion) : undefined;
             // Money put aside on payday (a WOF, tyres) isn't a payment: it's counted on its own.
-            const paying = a.dues.filter((d) => !isSetAside(d.item));
+            const paying = a.dues.filter((d) => !isHeldInAccount(d.item));
             const asideTotal = a.need - paying.reduce((t, d) => t + d.item.amount, 0);
             const asidePart = asideTotal > 0 ? `${cash(asideTotal)} put aside` : '';
-            const billBreakdown = a.breakdown.filter((x) => !isSetAside(x.item));
+            const billBreakdown = a.breakdown.filter((x) => !isHeldInAccount(x.item));
             // "5 × $275" when every cost repeats the same number of times (e.g. weekly food + gas), else a count.
             const sameCount = billBreakdown.length > 0 && billBreakdown.every((x) => x.count === billBreakdown[0].count);
             const times = [sameCount && billBreakdown[0].count > 1
               ? `${billBreakdown[0].count} × ${cash(billBreakdown.reduce((s, x) => s + x.item.amount, 0))}`
               : paying.length || !asidePart ? `${paying.length} payment${paying.length === 1 ? '' : 's'} due` : '', asidePart].filter(Boolean).join(' + ');
             const detail = auto
-              ? (longRun ? (steadyMode ? 'Same each pay' : 'Average')
+              ? (longRun ? (steadyMode ? 'Level amount' : 'Average')
                 : !steadyMode && topsUp(budget, a.account.id)
                   ? (a.funded < a.need ? `${cash(a.need, { whole: true })} of bills − ${cash(a.need - a.funded, { whole: true })} already there`
                     : asidePart ? times : `${a.dues.length} bills, nothing left over`)
@@ -476,6 +532,16 @@ export function Planner() {
             // Everything about the account beyond its amount lives in a pop-up, opened by tapping the card.
             const adjusted = a.usual !== undefined && a.usual !== a.funded;
             // Only a problem (short) or something to act on (spare) is coloured; the rest stays quiet.
+            const endTip = ends === undefined ? ''
+              : ends < 0
+                ? (gasHeld > 0
+                  ? `Short after bills and ${cash(gasHeld)} still budgeted for this month’s envelopes (assumed spent)`
+                  : 'Estimated balance at the end of this pay period')
+              : bufferShown !== undefined && bufferFor
+                ? `${cash(bufferShown)} kept for the ${fmtShort(bufferFor.period.start)} pay (${cash(bufferFor.need)} needed, ${cash(bufferFor.deposit)} sent)${gasHeld ? `, after ${cash(gasHeld)} reserved for month budgets` : ''}.`
+                : gasHeld > 0 ? `Ends about ${cash(ends)} after reserving ${cash(gasHeld)} for this month’s envelopes`
+                : steadyMode ? `Estimated balance at the end of this pay (level amount evenings out 4- and 5-week pays)`
+                : 'Estimated balance at the end of this pay period';
             const pill = (
               <>
                 {diff !== null && diff !== 0 && (
@@ -483,8 +549,12 @@ export function Planner() {
                 )}
                 {diff === 0 && <span className="pill">Exactly right</span>}
                 {ends !== undefined && (
-                  <span className={`pill ${ends < 0 ? 'bad' : ''}`} title="Estimated balance at the end of this pay period">
-                    {ends < 0 ? `${cash(-ends, { whole: true })} short` : `Ends ${cash(ends, { whole: true })}`}
+                  <span className={`pill ${ends < 0 ? 'bad' : ''}`} title={endTip}>
+                    {ends < 0
+                      ? `${cash(-ends)} short`
+                      : bufferShown !== undefined
+                        ? `Buffer ${cash(bufferShown)}`
+                        : `Ends ${cash(ends)}`}
                   </span>
                 )}
               </>
@@ -493,11 +563,18 @@ export function Planner() {
             const amountClass = funded < 0 && (known || !isPay) ? 'neg' : '';
             const icon = <AccIcon color={a.account.color} name={a.account.kind === 'external' ? 'send' : isPay ? 'wallet' : 'bank'} />;
             // Each cost this pay (e.g. food, car gas, scooter gas, or every bill in Misc bills).
-            const byName = new Map<string, { name: string; amount: Cents; dates: string[]; aside: boolean }>();
+            const byName = new Map<string, { name: string; amount: Cents; dates: string[]; aside: boolean; envelope?: boolean; note?: string; maxSaved?: Cents; monthBudget?: Cents }>();
             if (!longRun) for (const d of a.dues) {
-              const r = byName.get(`${isSetAside(d.item)}|${d.item.name}`) ?? { name: d.item.name, amount: 0, dates: [], aside: isSetAside(d.item) };
+              const held = isHeldInAccount(d.item);
+              const r = byName.get(`${held}|${d.item.name}`) ?? {
+                name: d.item.name, amount: 0, dates: [], aside: isSetAside(d.item), envelope: isMonthEnvelope(d.item), note: d.item.note,
+                maxSaved: d.item.maxSaved && d.item.maxSaved > 0 ? d.item.maxSaved : undefined,
+                monthBudget: isMonthEnvelope(d.item) ? monthBudget(d.item) : undefined,
+              };
               r.amount += d.item.amount; r.dates.push(d.date);
-              byName.set(`${r.aside}|${d.item.name}`, r);
+              if (!r.note && d.item.note) r.note = d.item.note;
+              if (!r.maxSaved && d.item.maxSaved && d.item.maxSaved > 0) r.maxSaved = d.item.maxSaved;
+              byName.set(`${held}|${d.item.name}`, r);
             }
             const rows = [...byName.values()];
             // The budget's first pay starts from what the pay before it left in the account (or left short).
@@ -506,6 +583,11 @@ export function Planner() {
               ? 0 : leftoverBeforeBudget(budget, a.account.id);
             const why = notes.find((n) => n.a.account.id === a.account.id)?.why ?? [];
             const isDebt = debtAccounts.has(a.account.id);
+            const debt = (budget.debts ?? []).find((d) => d.accountId === a.account.id);
+            const holdAcc = debt?.holdAccountId ? budget.accounts.find((x) => x.id === debt.holdAccountId) : undefined;
+            const holdNote = debt?.holdAccountId && holdAcc && debt.statementDay
+              ? `Stored in ${holdAcc.name} until the ${ordinal(debt.statementDay)}`
+              : undefined;
             const isGoal = goalAccounts.has(a.account.id);
             const isOpen = openCard === a.account.id;
             return (
@@ -514,6 +596,7 @@ export function Planner() {
                 aria-label={`${a.account.name}: details`} onClick={() => setOpenCard(a.account.id)}>
                 <div className="between nowrap">{icon}{pill}</div>
                 <p className="acc-name">{a.account.name}</p>
+                {holdNote && <p className="xs muted" style={{ margin: '2px 0 0' }}>{holdNote}</p>}
                 <div className="between nowrap bottom">
                   <p className={`amt ${amountClass}`}>{amount}</p>
                   <span className="acc-more" aria-hidden="true"><Icon name="info" size={18} /></span>
@@ -540,6 +623,12 @@ export function Planner() {
                       </div>
                       <b className={`fig ${amountClass}`}>{amount}</b>
                       <span className="small muted">{detail}</span>
+                      {holdNote && debt && (
+                        <span className="small">
+                          Held in <b>{holdAcc!.name}</b> until the {ordinal(debt.statementDay!)}
+                          {debt.statementDay ? ` — send to ${a.account.name} on or after that day, not on payday` : ''}.
+                        </span>
+                      )}
                       {adjusted && <span className="small">Adjusted this pay · usually {cash(a.usual!)}</span>}
                       {carry !== 0 && (
                         <span className={`small ${carry < 0 ? 'neg' : 'pos'}`}>
@@ -566,13 +655,18 @@ export function Planner() {
                             const each = r.amount / r.dates.length;
                             const same = r.dates.length > 1 && Number.isInteger(each);
                             return (
-                              <span key={`${r.aside}|${r.name}`} className="cost-row">
+                              <span key={`${r.aside || r.envelope}|${r.name}`} className="cost-row">
                                 <span className="min0">
                                   <span className="cost-name">{r.name}</span>
                                   <span className="cost-meta muted">
-                                    {r.aside ? 'Put aside on payday, stays in the account' : same ? `${r.dates.length} × ${cash(each, { whole: each % 100 === 0 })}` : r.dates.length === 1 ? fmtShort(r.dates[0]) : `${r.dates.length} payments`}
+                                    {r.envelope
+                                      ? `Month envelope${r.monthBudget ? ` ${cash(r.monthBudget)}` : ''} · resets each month · leftover is yours`
+                                      : r.aside
+                                      ? `Put aside on payday, stays in the account${r.maxSaved ? ` · max ${cash(r.maxSaved)}` : ''}`
+                                      : same ? `${r.dates.length} × ${cash(each, { whole: each % 100 === 0 })}` : r.dates.length === 1 ? fmtShort(r.dates[0]) : `${r.dates.length} payments`}
                                     {/* Week / Fortnight: say what the whole pay is, since the amount on the right is per week */}
                                     {split ? `${same ? ' =' : ' ·'} ${cash(r.amount)} this pay` : ''}
+                                    {r.note ? ` · ${r.note}` : ''}
                                   </span>
                                 </span>
                                 <b className="num">{cash(v(r.amount))}{split && <small className="muted" style={{ fontWeight: 500 }}> /{mode === 'week' ? 'wk' : 'fn'}</small>}</b>
@@ -589,8 +683,16 @@ export function Planner() {
                       <span className="small muted">Go to</span>
                       {isDebt && <a className="btn small" href="#/debts"><Icon name="card" size={16} /> Debt and payment plans</a>}
                       {isGoal && <a className="btn small" href="#/savings"><Icon name="piggy" size={16} /> Savings goal</a>}
-                      {!isDebt && !isGoal && <a className="btn small" href={`#/accounts/deposits/${a.account.id}`}><Icon name="edit" size={16} /> {isPay ? 'Account and costs' : 'Payday amount and costs'}</a>}
-                      {!isDebt && !isGoal && !isPay && a.account.kind === 'bank' && <a className="btn small" href="#/accounts"><Icon name="wallet" size={16} /> {budget.balances?.[a.account.id] ? 'Update balance' : 'Enter balance'}</a>}
+                      {(!isDebt && !isGoal || budget.items.some((i) => i.accountId === a.account.id)) && (
+                        <button type="button" className="btn small" onClick={() => { setOpenCard(null); setEditAccount({ id: a.account.id, tab: 'payday' }); }}>
+                          <Icon name="edit" size={16} /> {isPay ? 'Account settings' : 'Account settings · Payday send'}
+                        </button>
+                      )}
+                      {!isDebt && !isGoal && !isPay && a.account.kind === 'bank' && (
+                        <button type="button" className="btn small" onClick={() => { setOpenCard(null); setEditAccount({ id: a.account.id, tab: 'balance' }); }}>
+                          <Icon name="wallet" size={16} /> {budget.balances?.[a.account.id] ? 'Update balance' : 'Enter balance'}
+                        </button>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -600,6 +702,14 @@ export function Planner() {
           })}
         </div>
       </section>
+
+      {editAccount && (() => {
+        const acc = budget.accounts.find((x) => x.id === editAccount.id);
+        return acc ? createPortal(
+          <AccountEditModal account={acc} tab={editAccount.tab} onClose={() => setEditAccount(null)} />,
+          document.body,
+        ) : null;
+      })()}
 
       {!avg && (
         <div className="planner-lower two">

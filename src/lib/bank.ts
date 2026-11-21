@@ -1,5 +1,7 @@
 import { endingOf } from './csv';
-import { addDays, todayISO, type ISODate } from './dates';
+import { addDays, todayISO, toISO, type ISODate } from './dates';
+import { periodContaining } from './engine';
+import { recordGoalMoves, setGoalBankBalance, settleGoalMoves, type SeenMove } from './goalMoves';
 import { setBalance } from './history';
 import { isKiwiSaver, recordReading } from './kiwisaver';
 import { applyProposal } from './reader/apply';
@@ -71,7 +73,15 @@ export function suggestLink(b: Budget, acc: BankAccount): string {
   return hits.length === 1 ? hits[0] : '';
 }
 
-export interface BankResult { name: string; added: number; balance?: number; cardPayments?: SeenPayment[] }
+export interface BankResult { name: string; added: number; balance?: number; cardPayments?: SeenPayment[]; goalMoves?: SeenMove[] }
+
+/** The day the bank had an account's balance as at: when it last sent it (in NZ), or today. */
+const bankDay = (acc: BankAccount, today: ISODate): ISODate => {
+  const t = acc.updated ? Date.parse(acc.updated) : NaN;
+  if (Number.isNaN(t)) return today;
+  const d = toISO(new Date(t));
+  return d < today ? d : today;
+};
 
 /** A new savings goal (with its own account, sent nothing from pay) for a bank account, e.g. KiwiSaver. Returns its link. */
 export function addGoalFor(b: Budget, acc: BankAccount, id: string, accountId: string, today: ISODate = todayISO()): string {
@@ -98,6 +108,9 @@ function setGoalBalance(goal: NonNullable<Budget['savings']>[number], cents: num
 /** Add the new transactions to each linked account or card, and savings goals' balances. Returns how many were added to each. */
 export function applyBank(b: Budget, data: BankData, links: Record<string, string>, today: ISODate = todayISO(), now: string = new Date().toISOString()): BankResult[] {
   const out: BankResult[] = [];
+  const goalsBefore = new Map((b.savings ?? []).map((g) => [g.id, g.balance]));
+  const synced = new Set<string>();
+  const seenMoves: SeenMove[] = [];
   for (const acc of data.accounts) {
     // Noted for each account that came through, so its card shows when it last synced.
     const link = links[acc.id];
@@ -109,7 +122,13 @@ export function applyBank(b: Budget, data: BankData, links: Record<string, strin
       const goal = (b.savings ?? []).find((g) => g.id === id);
       if (goal && acc.balance !== null) {
         const cents = Math.round(acc.balance * 100);
-        if (goal.balance !== cents) { setGoalBalance(goal, cents, today); out.push({ name: goal.name, added: 0, balance: cents }); }
+        if (isKiwiSaver(goal)) {
+          if (goal.balance !== cents) { setGoalBalance(goal, cents, today); out.push({ name: goal.name, added: 0, balance: cents }); }
+        } else {
+          // Kept as the bank had it: money paid in or out since (seen in ANZ) goes on top, below.
+          setGoalBankBalance(goal, cents, bankDay(acc, today));
+          synced.add(goal.id);
+        }
       }
       continue;
     }
@@ -138,7 +157,12 @@ export function applyBank(b: Budget, data: BankData, links: Record<string, strin
     const changed = live && type === 'account' && b.balances?.[id]?.amount !== cents;
     if (changed) setBalance(b, id, cents, today, `bank-${acc.id}-${today}`);
     // The same as before, but checked again today: it's today's balance, not an estimate from an older one.
-    else if (live && type === 'account' && b.balances?.[id] && b.balances[id].asOf < today) b.balances[id] = { ...b.balances[id], asOf: today };
+    // On payday, an unchanged balance means today's deposit isn't in this account yet — keep the older
+    // asOf so projections still count what payday sends (pay often lands late afternoon).
+    else if (live && type === 'account' && b.balances?.[id] && b.balances[id].asOf < today
+      && today !== periodContaining(today, b.settings).start) {
+      b.balances[id] = { ...b.balances[id], asOf: today };
+    }
     // What hasn't settled yet replaces what was pending last time (once settled, it's in the transactions).
     if (type === 'account' && data.pending) {
       const pend: Txn[] = data.pending.filter((t) => t.account === acc.id && t.amount)
@@ -148,10 +172,24 @@ export function applyBank(b: Budget, data: BankData, links: Record<string, strin
       b.pendingTransactions = all;
     }
     // Payments from this account to cards that can't be linked themselves (Gem Visa, Q Mastercard).
-    const cardPayments = type === 'account' ? recordCardPayments(b, id, add, today) : [];
+    // Settled and pending: a $50 Q Mastercard debit still counts once when ANZ shows it as pending.
+    const stored = type === 'account' ? b.accountTransactions?.[id] ?? [] : [];
+    const pending = type === 'account' ? b.pendingTransactions?.[id] ?? [] : [];
+    const cardPayments = type === 'account' ? recordCardPayments(b, id, [...stored, ...pending], today) : [];
+    // Money paid into or taken out of a savings goal's fund (ANZ → Kernel).
+    if (type === 'account') seenMoves.push(...recordGoalMoves(b, id, stored));
     // The account behind a savings goal: the goal's balance is the bank's.
     if (live && type === 'account') for (const g of b.savings ?? []) if (g.accountId === id && g.balance !== cents) setGoalBalance(g, cents, today);
     out.push({ name: target.name, added: add.length, ...(changed ? { balance: cents } : {}), ...(cardPayments.length ? { cardPayments } : {}) });
+  }
+  // Each goal with moves seen (or a balance from the bank): its balance, with the moves since it was last updated.
+  for (const g of b.savings ?? []) {
+    const fresh = seenMoves.filter((m) => m.goal === g.name);
+    if (!fresh.length && !synced.has(g.id)) continue;
+    settleGoalMoves(g, fresh, today);
+    for (const m of fresh) m.counted = (g.bankMoves ?? []).find((x) => x.date === m.date && x.amount === m.amount)?.counted ?? 0;
+    const was = goalsBefore.get(g.id);
+    if (was !== g.balance || fresh.length) out.push({ name: g.name, added: 0, ...(was !== g.balance ? { balance: g.balance } : {}), ...(fresh.length ? { goalMoves: fresh } : {}) });
   }
   return out;
 }
@@ -166,7 +204,7 @@ export function bankSync(b: Budget, link: string): { linked: boolean; at?: strin
 export const sinceFor = (conf: BankConfig): ISODate | undefined => (conf.lastSync ? addDays(conf.lastSync.slice(0, 10), -7) : undefined);
 
 /** An account number as numbers (bank, branch, account, suffix), so 06-0115-0324910-055 and -55 are the same. */
-const numberKey = (n: string): string | undefined => {
+export const numberKey = (n: string): string | undefined => {
   const m = n.match(/(\d{2})\D?(\d{4})\D?(\d{7})\D?(\d{2,3})/);
   return m ? m.slice(1).map((x) => String(Number(x))).join('-') : undefined;
 };

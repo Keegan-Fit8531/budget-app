@@ -9,7 +9,7 @@ import { PaydayControl } from '../components/PaydayControl';
 import { TransactionList } from '../components/Transactions';
 import { nextColor } from '../lib/colors';
 import { addDays, fmtDay, fmtShort, monthName, ordinal, todayISO, type ISODate } from '../lib/dates';
-import { applyPayment, beforeStatement, debtAdvice, debtPerPay, debtSchedules, exactForFirstPlan, gemPlan, historyOwed, owed, type DebtAdvice, PLAN_LABEL, plannedOwed, planSchedule, projectedOwed, recordHistory, suggestPlan, unplanned } from '../lib/debts';
+import { applyPayment, beforeStatement, debtAdvice, debtPay, debtPerPay, debtSchedules, exactForFirstPlan, GEM_PLAN_MONTHS, gemPlan, gemPlanEnds, gemPlanType, historyOwed, offRecommended as isOffRecommended, owed, type DebtAdvice, PLAN_LABEL, plannedOwed, planSchedule, projectedOwed, recordHistory, suggestPlan, unplanned } from '../lib/debts';
 import { periodContaining, planFor, upcomingPayPeriod } from '../lib/engine';
 import { DayPicker, useDayView } from '../components/DayPicker';
 import { cash, centsToInput, parseMoney } from '../lib/money';
@@ -26,12 +26,12 @@ export function Debts() {
   const today = todayISO();
   const s = budget.settings;
   // Which pay and day to look at: today in the pay you're in now, by default.
-  const dv = useDayView('paydays.debts.view');
+  const dv = useDayView('paydays.debts.view', { endOfPay: true });
   const period = dv.view;
   const day = dv.day;
   const plan = useMemo(() => planFor(budget, period), [budget, period]);
   /** What a debt owes at the end of the chosen day: now (today), projected (later), or from its history (earlier). */
-  const owedOn = (d: Debt): Cents | undefined => day === today ? owed(d) : day > today ? projectedOwed(d, s, day, debtPerPay(budget, d)) : historyOwed(d, day);
+  const owedOn = (d: Debt): Cents | undefined => day === today ? owed(d) : day > today ? projectedOwed(d, s, day, debtPay(budget, d)) : historyOwed(d, day);
   const [planModal, setPlanModal] = useState<{ debt: Debt; plan?: DebtPlan; prefill?: number } | null>(null);
   const [debtModal, setDebtModal] = useState<{ debt?: Debt } | null>(null);
   const [payModal, setPayModal] = useState<Debt | null>(null);
@@ -70,10 +70,10 @@ export function Debts() {
   const totalOnDay = onDay.every((v) => v !== undefined) ? onDay.reduce<number>((t, v) => t + (v ?? 0), 0) : undefined;
   const totalLimit = debts.reduce((t, d) => t + (d.limit ?? 0), 0);
   const cardOwed = debts.filter((d) => d.limit).reduce((t, d) => t + (owedOn(d) ?? owed(d)), 0);
-  const ends = debts.flatMap((d) => debtSchedules(d, s, debtPerPay(budget, d))).map((x) => x.paidOffBy).filter(Boolean) as ISODate[];
+  const ends = debts.flatMap((d) => debtSchedules(d, s, debtPay(budget, d))).map((x) => x.paidOffBy).filter(Boolean) as ISODate[];
   const debtFree = debts.some((d) => d.plans.some((p) => p.remaining > 0)) && ends.length ? ends.sort()[ends.length - 1] : undefined;
 
-  const offRecommended = advice.filter((a) => a.recommended !== a.sending);
+  const offRecommended = advice.filter(isOffRecommended);
   // Where what's owed came from: the bank connection, or the last balance you checked (a payment seen
   // leaving your bank since then keeps it current, so it shows as synced on that day).
   const sourcePill = (d: Debt) => {
@@ -131,15 +131,15 @@ export function Debts() {
       <CardColumns innerRef={flip.ref} className={reorder ? 'reordering' : undefined}>
       {debts.map((d, i) => {
         const acc = budget.accounts.find((a) => a.id === d.accountId) ?? (d.color ? { color: d.color } : undefined);
-        const schedules = debtSchedules(d, s, debtPerPay(budget, d));
-        const gem = d.rules === 'gem' && d.plans.length + unplanned(d) > 0 ? gemPlan(d, s, debtPerPay(budget, d)) : null;
+        const schedules = debtSchedules(d, s, debtPay(budget, d));
+        const gem = d.rules === 'gem' && d.plans.length + unplanned(d) > 0 ? gemPlan(d, s, debtPay(budget, d)) : null;
         const o = owed(d);
         const oDay = owedOn(d);
         const used = d.limit ? Math.min(100, (o / d.limit) * 100) : 0;
         const funded = plan.accounts.find((a) => a.account.id === d.accountId);
         const isOpen = open.includes(d.id);
         const adv = advice.find((a) => a.debt.id === d.id);
-        const diff = adv ? adv.sending - adv.recommended : 0;
+        const diff = adv ? (adv.extra ? adv.usual : adv.sending) - adv.recommended : 0;
         const upcoming = schedules.flatMap((x) => x.payments).filter((x) => x.date > day).sort((a, b) => a.date.localeCompare(b.date));
         const nextAmt = upcoming[0] ? upcoming.filter((x) => x.date === upcoming[0].date).reduce((t, x) => t + x.amount, 0) : 0;
         const offBy = schedules.map((x) => x.paidOffBy).filter(Boolean).sort().pop();
@@ -150,7 +150,10 @@ export function Debts() {
               <AccIcon color={acc?.color} name={d.kind === 'person' || d.payroll ? 'send' : 'card'} />
               <div className="grow min0">
                 <h2 className="h2 clip">{d.name}</h2>
-                <p className="small muted clip">{KIND_LABEL[d.kind]}{d.rate ? ` · ${d.rate}% p.a.` : ''}</p>
+                <p className="small muted clip">
+                  {KIND_LABEL[d.kind]}{d.rate ? ` · ${d.rate}% p.a.` : ''}
+                  {d.holdAccountId ? ` · stored in ${budget.accounts.find((a) => a.id === d.holdAccountId)?.name ?? 'another account'} until the ${d.statementDay ? ordinal(d.statementDay) : 'statement'}` : ''}
+                </p>
               </div>
               <div className="acct-side">
                 {sourcePill(d)}
@@ -178,7 +181,7 @@ export function Debts() {
               <div className="stat">
                 <span className="small muted">Each pay</span>
                 <b>{perPay !== undefined ? cash(perPay) : '—'}</b>
-                <span className={`xs ${diff < 0 ? 'neg' : 'muted'}`}>{d.payroll ? 'from your salary' : !adv ? '' : diff === 0 ? 'as recommended' : diff < 0 ? `${cash(-diff)} under` : `${cash(diff)} over`}</span>
+                <span className={`xs ${diff < 0 && !adv?.extra ? 'neg' : 'muted'}`}>{d.payroll ? 'from your salary' : !adv ? '' : adv.extra ? `incl. ${cash(adv.extra)} extra this pay` : diff === 0 ? 'as recommended' : diff < 0 ? `${cash(-diff)} under` : `${cash(diff)} over`}</span>
               </div>
               {d.limit ? (
                 <div className="stat">
@@ -212,10 +215,10 @@ export function Debts() {
                 <div className="row top gap-8">
                   <Icon name="bulb" />
                   <span>
-                    Gem splits each payment itself:{' '}
-                    {gem.instalmentsDue > 0 && <><b>equal-payment plans' monthly amounts first</b> ({cash(gem.instalmentsDue)}), then </>}
-                    other purchases{unplanned(d) > 0 ? ` (${cash(unplanned(d))})` : ''}, then <b>interest-free plans in order of expiry date</b>, soonest first.
-                    You can't choose which plan a payment goes to.
+                    <b>{cash(gem.recommended)}</b> a pay clears interest-free purchases before they end.
+                    Gem’s own minimum is only {cash(gem.minimum)}
+                    {gem.instalmentsDue > 0 ? ` (including ${cash(gem.instalmentsDue)} for equal-payment plans)` : ''}.
+                    Gem applies each payment itself — you can’t pick which plan it goes to.
                   </span>
                 </div>
                 <div className="trio">
@@ -224,7 +227,7 @@ export function Debts() {
                   <div className="stat" style={{ background: 'var(--card)' }}><span className="small muted">You pay</span><b className={gem.perPay < gem.recommended ? 'neg' : ''}>{cash(gem.perPay)}</b><span className="xs muted">a pay</span></div>
                 </div>
                 {gem.perPay < gem.recommended && (
-                  <span className="small error">At {cash(gem.perPay)} a pay, some interest-free plans won't be cleared in time. See the warnings below.</span>
+                  <span className="small error">At {cash(gem.perPay)} a pay, some interest-free plans won’t clear in time.</span>
                 )}
               </div>
             )}
@@ -266,6 +269,11 @@ export function Debts() {
             <TransactionList items={d.transactions ?? []} card />
 
             {!d.payroll && <div style={{ borderTop: '1px solid var(--line)', paddingTop: 12 }}>
+              {d.holdAccountId && d.statementDay && (
+                <p className="small muted" style={{ marginBottom: 8 }}>
+                  Payday shows {cash(funded?.funded ?? 0)} for {d.name}; it’s stored in <b>{budget.accounts.find((a) => a.id === d.holdAccountId)?.name ?? 'another account'}</b> until the {ordinal(d.statementDay)}. Change that under Edit → details.
+                </p>
+              )}
               <PaydayControl accountId={d.accountId} sends={funded?.funded ?? 0} needs={funded?.need ?? 0}
                 autoLabel="Pay exactly what's due each payday"
                 autoHint="Adds up this pay's plan payments and Afterpay instalments." />
@@ -335,6 +343,17 @@ function PlanModal({ debt, plan, prefill, onClose, embedded }: { debt: Debt; pla
       if (sug.months) setMonths(String(sug.months));
     }
   }
+  function onMonths(v: string) {
+    setMonths(v);
+    const n = Number(v);
+    if (!Number.isFinite(n) || n <= 0) return;
+    if (debt.rules === 'gem') {
+      setType(gemPlanType(n));
+      setTypeTouched(true);
+      // Gem months end on the 20th: treat the chosen length as months still left from today.
+      setEnds(gemPlanEnds(today, n));
+    }
+  }
 
   const draft: DebtPlan | null = orig !== null && orig > 0 && rem !== null ? {
     id: plan?.id ?? 'draft', name: name || 'Purchase', type, original: orig, remaining: rem,
@@ -401,13 +420,15 @@ function PlanModal({ debt, plan, prefill, onClose, embedded }: { debt: Debt; pla
           </label>
           {(type === 'interest-free' || type === 'equal') && (
             <label className="field">Months
-              <select value={months} onChange={(e) => setMonths(e.target.value)}>
-                {[3, 6, 12, 18, 24, 36, 48, 60].map((m) => <option key={m} value={m}>{m} months</option>)}
+              <select value={months} onChange={(e) => onMonths(e.target.value)}>
+                {(debt.rules === 'gem' ? [...GEM_PLAN_MONTHS] : [3, 6, 12, 18, 24, 36, 48, 60]).map((m) => (
+                  <option key={m} value={m}>{m} months{debt.rules === 'gem' ? (m <= 6 ? ' · interest-free' : ' · equal payments') : ''}</option>
+                ))}
               </select>
             </label>
           )}
           {(type === 'interest-free' || type === 'equal') && (
-            <label className="field">Interest-free ends (optional)
+            <label className="field">{debt.rules === 'gem' ? 'Ends (Gem cycle on the 20th)' : 'Interest-free ends (optional)'}
               <input type="date" value={ends} onChange={(e) => setEnds(e.target.value)} />
             </label>
           )}
@@ -420,7 +441,7 @@ function PlanModal({ debt, plan, prefill, onClose, embedded }: { debt: Debt; pla
         <label className="field">Still owed today {plan ? '' : '(leave blank if nothing paid yet)'}
           <input inputMode="decimal" value={remaining} onChange={(e) => setRemaining(e.target.value)} placeholder={amount || '0.00'} />
         </label>
-        {debt.rules === 'gem' && <p className="small muted">Gem: purchases of $250 or more are 6 months interest-free. Some deals are 12, 24 or 36 months with equal payments.</p>}
+        {debt.rules === 'gem' && <p className="small muted">Gem: $250+ purchases are 6 months interest-free. Deals can be 12, 24, 36 or 60 months with equal payments. Pick the length to match the Gem app; the end date follows Gem’s month reset on the 20th.</p>}
         {debt.rules === 'mastercard' && <p className="small muted">Mastercard: every purchase is 3 months interest-free.</p>}
 
         {preview && (
@@ -452,14 +473,17 @@ function PlanModal({ debt, plan, prefill, onClose, embedded }: { debt: Debt; pla
 }
 
 export function DebtModal({ debt, onClose, onDelete, embedded }: { debt?: Debt; onClose: () => void; onDelete: (d: Debt) => void; embedded?: boolean }) {
-  const { update } = useBudget();
+  const { budget, update } = useBudget();
   const [name, setName] = useState(debt?.name ?? '');
   const [kind, setKind] = useState<Debt['kind']>(debt?.kind ?? 'card');
   const [rules, setRules] = useState<string>(debt?.rules ?? '');
   const [limit, setLimit] = useState(debt?.limit ? centsToInput(debt.limit) : '');
   const [rate, setRate] = useState(debt?.rate !== undefined ? String(debt.rate) : '');
   const [stmt, setStmt] = useState(debt?.statementDay ? String(debt.statementDay) : '');
+  const [hold, setHold] = useState(debt?.holdAccountId ?? '');
   const [err, setErr] = useState('');
+  // Bank accounts that can hold a card payment until statement day (not this debt's own payday account).
+  const holdOptions = budget.accounts.filter((a) => !a.archived && a.kind === 'bank' && a.id !== budget.settings.payAccountId && a.id !== debt?.accountId);
 
   function save() {
     if (!name.trim()) return setErr('Enter a name.');
@@ -470,21 +494,31 @@ export function DebtModal({ debt, onClose, onDelete, embedded }: { debt?: Debt; 
     const r = kind === 'bnpl' ? debt?.rate : rate.trim() === '' ? undefined : Number(rate);
     const sd = kind !== 'card' || stmt.trim() === '' ? undefined : Number(stmt);
     const rl = (kind === 'card' || kind === 'bnpl' ? rules || undefined : undefined) as Debt['rules'];
+    const holdId = kind === 'card' && sd && hold ? hold : undefined;
     if (sd !== undefined && (!Number.isInteger(sd) || sd < 1 || sd > 28)) return setErr('Statement day should be a day of the month from 1 to 28.');
     if (r !== undefined && (Number.isNaN(r) || r < 0 || r > 100)) return setErr('Interest rate should be between 0 and 100%.');
+    if (hold && !sd) return setErr('Set a statement day to store the payment in another account until then.');
     update((b) => {
       b.debts = b.debts ?? [];
       if (debt) {
         const d = b.debts.find((x) => x.id === debt.id)!;
-        Object.assign(d, { name: name.trim(), kind, rules: rl, limit: lim, rate: r, statementDay: sd });
+        Object.assign(d, { name: name.trim(), kind, rules: rl, limit: lim, rate: r, statementDay: sd, holdAccountId: holdId });
+        if (!holdId) delete d.holdAccountId;
         const a = b.accounts.find((x) => x.id === d.accountId);
         if (a) a.name = name.trim();
+        // Storing the payment elsewhere: keep a real send amount on the debt card. A $0 fixed amount
+        // would schedule nothing and hide Gem from the Planner.
+        if (holdId) {
+          const line = b.split.find((l) => l.accountId === d.accountId);
+          if (!line) b.split.push({ accountId: d.accountId, amount: 0, mode: 'exact' });
+          else if (line.mode !== 'fixed' || !(line.amount > 0)) { line.mode = 'exact'; delete line.auto; }
+        }
       } else {
         const id = newId();
         const groupId = b.groups.find((g) => g.id === 'debt')?.id ?? b.groups.find((g) => g.bucket === 'savings')?.id ?? b.groups[0]?.id ?? '';
         b.accounts.push({ id, name: name.trim(), kind: 'external', color: nextColor(b.accounts.map((x) => x.color)), groupId });
         b.split.push({ accountId: id, amount: 0, mode: 'exact' });
-        b.debts.push({ id, name: name.trim(), kind, rules: rl, accountId: id, limit: lim, rate: r, statementDay: sd, plans: [] });
+        b.debts.push({ id, name: name.trim(), kind, rules: rl, accountId: id, limit: lim, rate: r, statementDay: sd, ...(holdId ? { holdAccountId: holdId } : {}), plans: [] });
       }
       return b;
     });
@@ -509,7 +543,10 @@ export function DebtModal({ debt, onClose, onDelete, embedded }: { debt?: Debt; 
           </label>
           {(kind === 'card' || kind === 'bnpl') && (
             <label className="field">Purchase rules
-              <select value={rules} onChange={(e) => setRules(e.target.value)}>
+              <select value={rules} onChange={(e) => {
+                setRules(e.target.value);
+                if (e.target.value === 'gem' && !stmt.trim()) setStmt('21');
+              }}>
                 <option value="">None</option>
                 <option value="gem">Gem ($250+ is 6 months interest-free)</option>
                 <option value="mastercard">3 months interest-free on everything</option>
@@ -535,7 +572,15 @@ export function DebtModal({ debt, onClose, onDelete, embedded }: { debt?: Debt; 
             </label>
           )}
         </div>
-        {kind === 'card' && <p className="small muted">With a statement day, payments are planned for that day each month (Gem: the 21st). Paying earlier can go on the oldest plan instead of being split.</p>}
+        {kind === 'card' && (
+          <label className="field">Store payment in until statement day
+            <select value={hold} onChange={(e) => setHold(e.target.value)} disabled={!stmt.trim()}>
+              <option value="">Send on payday (no holding account)</option>
+              {holdOptions.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+            </select>
+          </label>
+        )}
+        {kind === 'card' && <p className="small muted">With a statement day, payments are planned for that day each month (Gem: the 21st). Store the payment in Misc bills (or similar) so payday still shows this card’s amount, but the money sits there until the {stmt.trim() || '21'}st — paying Gem earlier can go on the oldest plan instead of this month’s payment.</p>}
         {err && <p className="error" role="alert">{err}</p>}
         <div className="between">
           {debt ? <button className="btn ghost danger" onClick={() => { if (confirm(`Remove ${debt.name} and its plans?`)) onDelete(debt); }}>Remove debt</button> : <span />}
@@ -653,7 +698,7 @@ export function PaymentModal({ debt, onClose, pick, embedded }: { debt: Debt; on
   const [err, setErr] = useState('');
   const amount = parseMoney(text);
 
-  const due = debtSchedules(debt, s, debtPerPay(budget, debt)).flatMap((x) => x.payments).sort((a, b) => a.date.localeCompare(b.date));
+  const due = debtSchedules(debt, s, debtPay(budget, debt)).flatMap((x) => x.payments).sort((a, b) => a.date.localeCompare(b.date));
   const total = owed(debt);
   const nextDate = due[0]?.date;
   const nextTotal = due.filter((p) => p.date === nextDate).reduce((t, p) => t + p.amount, 0);
@@ -734,16 +779,18 @@ export function PaymentModal({ debt, onClose, pick, embedded }: { debt: Debt; on
 /** Recommended vs allocated for a debt, editable in place, with a one-tap Apply. */
 function AllocationRow({ advice: a, onApply }: { advice: DebtAdvice; onApply: () => void }) {
   const { update } = useBudget();
-  const [text, setText] = useState(centsToInput(a.sending));
+  // The steady amount each pay; extra for this pay only is shown beside it.
+  const each = a.extra ? a.usual : a.sending;
+  const [text, setText] = useState(centsToInput(each));
   const [focused, setFocused] = useState(false);
-  useEffect(() => { if (!focused) setText(centsToInput(a.sending)); }, [a.sending, focused]);
-  const diff = a.sending - a.recommended;
+  useEffect(() => { if (!focused) setText(centsToInput(each)); }, [each, focused]);
+  const diff = each - a.recommended;
 
   function commit() {
     setFocused(false);
     const c = parseMoney(text);
-    if (c === null || c < 0) { setText(centsToInput(a.sending)); return; }
-    if (c === a.sending) return;
+    if (c === null || c < 0) { setText(centsToInput(each)); return; }
+    if (c === each) return;
     // Typing an amount sets a fixed payday amount for this debt.
     update((b) => {
       const line = b.split.find((l) => l.accountId === a.debt.accountId);
@@ -775,6 +822,7 @@ function AllocationRow({ advice: a, onApply }: { advice: DebtAdvice; onApply: ()
         </>
       )}
       {diff === 0 && <span className="small muted" style={{ paddingBottom: 12 }}>As recommended</span>}
+      {a.extra ? <span className="small muted" style={{ paddingBottom: 12, flexBasis: '100%' }}>Plus {cash(a.extra)} extra this pay only, so {cash(a.sending)} goes to {a.debt.name}. It comes off what's owed in the forecast.</span> : null}
     </div>
   );
 }
@@ -791,7 +839,7 @@ function BankPayments({ debt: d }: { debt: Debt }) {
           <div key={`${p.date}-${i}`} className="list-row small">
             <span style={{ flex: '0 0 56px' }} className="muted">{fmtShort(p.date)}</span>
             <span className="grow min0">From {name(p.from)}
-              <span className="xs muted block">{p.counted === p.amount ? 'Taken off what’s owed' : p.counted > 0 ? `${cash(p.amount - p.counted)} was a planned payment; ${cash(p.counted)} extra taken off` : 'A planned payment (already counted)'}</span>
+              <span className="xs muted block">{p.counted === p.amount ? 'Taken off what’s owed' : p.counted > 0 ? `${cash(p.amount - p.counted)} was a planned payment; ${cash(p.counted)} extra taken off` : 'Already counted: a planned payment, or in a balance checked since'}</span>
             </span>
             <b className="num">{cash(p.amount)}</b>
           </div>
@@ -815,11 +863,13 @@ function DebtEditModal({ debt: d, tab: first = 'balance', onClose, onDelete }: {
     { id: 'details', label: 'Details' },
   ];
   return (
-    <Modal title={d.name} width={560} onClose={onClose}>
+    <Modal title={d.name} width={560} className="pinned" onClose={onClose}>
       {(close) => (
         <>
-          <div className="seg fill modal-tabs" role="tablist" aria-label={`${d.name}: what to change`}>
-            {tabs.map((t) => <button key={t.id} role="tab" aria-selected={tab === t.id} onClick={() => setTab(t.id)}>{t.label}</button>)}
+          <div className="modal-tabs">
+            <div className="seg fill" role="tablist" aria-label={`${d.name}: what to change`}>
+              {tabs.map((t) => <button key={t.id} role="tab" aria-selected={tab === t.id} onClick={() => setTab(t.id)}>{t.label}</button>)}
+            </div>
           </div>
           <div role="tabpanel" className="stack gap-16">
             {tab === 'balance' && <BalanceEditor debt={d} used={used} editing onDone={close} onAddPlan={() => setTab('purchase')} />}

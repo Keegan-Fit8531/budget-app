@@ -2,11 +2,11 @@ import { SyncPill } from '../components/SyncPill';
 import { useMemo, useState, type ReactNode } from 'react';
 import { Donut } from '../components/Donut';
 import { Icon } from '../components/Icon';
-import { AccIcon, Modal, MoveButtons, ReorderToggle, useFlip } from '../components/ui';
+import { AccIcon, Disclosure, Modal, MoveButtons, ReorderToggle, useFlip } from '../components/ui';
 import { moveAmong } from '../lib/order';
 import { bankSync } from '../lib/bank';
 import { GoalCosts } from '../components/GoalCosts';
-import { GoalGifts, PeopleChips, savedSlices, tracksPeople } from '../components/GoalGifts';
+import { AddMoneyButton, GoalGifts, PeopleChips, savedSlices, tracksPeople } from '../components/GoalGifts';
 import { summariseCosts } from '../lib/goalcosts';
 import { paidDirect } from '../lib/contributions';
 import { PaydayControl } from '../components/PaydayControl';
@@ -93,6 +93,28 @@ export function Savings() {
 
 
 /** One savings goal: a short summary (pie, saved, one status line), then tabs for costs, money in and out, and payday. */
+/** Money paid into or taken out of a goal's fund, seen in your bank accounts (ANZ → Kernel). */
+function BankMoves({ goal: g }: { goal: SavingsGoal }) {
+  const { budget } = useBudget();
+  const list = (g.bankMoves ?? []).slice().reverse();
+  const name = (id: string) => budget.accounts.find((a) => a.id === id)?.name ?? 'your bank';
+  return (
+    <Disclosure title="Moved from your bank" meta={`${list.length} · latest ${fmtShort(list[0].date)}`}>
+      <div>
+        {list.slice(0, 12).map((m, i) => (
+          <div key={`${m.date}-${i}`} className="list-row small">
+            <span style={{ flex: '0 0 56px' }} className="muted">{fmtShort(m.date)}</span>
+            <span className="grow min0">{m.amount > 0 ? `From ${name(m.from)}` : `To ${name(m.from)}`}
+              <span className="xs muted block">{m.counted ? `${m.amount > 0 ? 'Added to' : 'Taken off'} the balance (after it was last updated)` : 'Already in the balance'}</span>
+            </span>
+            <b className={`num${m.amount < 0 ? ' neg' : ''}`}>{m.amount > 0 ? '+' : '−'}{cash(Math.abs(m.amount))}</b>
+          </div>
+        ))}
+      </div>
+    </Disclosure>
+  );
+}
+
 function GoalCard({ f, plan, period, onEdit, extra }: { f: ReturnType<typeof forecast>; plan: ReturnType<typeof planFor>; period: ReturnType<typeof useViewPeriod>['period']; onEdit: () => void; extra?: ReactNode }) {
   const { budget } = useBudget();
   const today = todayISO();
@@ -177,9 +199,16 @@ function GoalCard({ f, plan, period, onEdit, extra }: { f: ReturnType<typeof for
         </div>
       </div>
 
+      {/* One-off deposits (payday sends are separate, under Money and payday). */}
+      <div className="row wrap gap-8">
+        <AddMoneyButton goal={g} />
+      </div>
+
       {people && <PeopleChips goal={g} />}
 
       {costs.length > 0 && <div style={{ borderTop: '1px solid var(--line)', paddingTop: 'var(--s-4)' }}><GoalCosts goal={g} /></div>}
+
+      {(g.bankMoves?.length ?? 0) > 0 && <BankMoves goal={g} />}
 
       {settings && (
         <Modal title={g.name} sub="Money in and out, and what payday sends" width={640} onClose={() => setSettings(false)}>

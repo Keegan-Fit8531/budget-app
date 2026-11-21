@@ -78,6 +78,11 @@ export function ViewModes() {
  */
 export function PayNav({ title, compact }: { title?: string; compact?: boolean }) {
   const { offset, setOffset, period, earliest } = useViewPeriod();
+  // "Next pay" keeps its place even when hidden, so the arrows don't move as you step through pays.
+  const back = (
+    <button className="btn small ghost" style={offset !== 0 ? undefined : { visibility: 'hidden' }} aria-hidden={offset === 0} tabIndex={offset !== 0 ? 0 : -1}
+      onClick={() => setOffset(0)}>Next pay</button>
+  );
   const steps = (
     <div className="pay-nav-steps">
       <button className="icon-btn plain" aria-label="Previous pay period" disabled={period.start <= earliest.start} onClick={() => setOffset(offset - 1)}><Icon name="left" /></button>
@@ -87,12 +92,12 @@ export function PayNav({ title, compact }: { title?: string; compact?: boolean }
   if (compact) {
     return (
       <div className="pay-nav compact">
-        <div className="min0">
+        <div className="grow" style={{ minWidth: '10.5rem' }}>
           <b className="block">{monthName(period.start)} pay</b>
           <span className="xs muted block">{fmtShort(period.start)} – {fmtShort(period.end)} · {period.days} days</span>
         </div>
-        <div className="row gap-4">
-          {offset !== 0 && <button className="btn small ghost" onClick={() => setOffset(0)}>Next pay</button>}
+        <div className="row nowrap gap-4">
+          {back}
           {steps}
         </div>
       </div>
@@ -100,14 +105,14 @@ export function PayNav({ title, compact }: { title?: string; compact?: boolean }
   }
   return (
     <div className="pay-nav grow">
-      <div className="min0">
-        <h1 className="h1">{title ?? `${monthName(period.start)} pay`}</h1>
-        <p className="small muted">
+      <div className="grow">
+        <h1 className="h1 clip">{title ?? `${monthName(period.start)} pay`}</h1>
+        <p className="small muted clip">
           {title ? `${monthName(period.start)} pay · ${fmtShort(period.start)} – ${fmtShort(period.end)}` : `${fmtDay(period.start)} – ${fmtDay(period.end)}`} · {period.days} days
         </p>
       </div>
       {steps}
-      {offset !== 0 && <button className="btn small ghost" onClick={() => setOffset(0)}>Next pay</button>}
+      {back}
     </div>
   );
 }

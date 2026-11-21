@@ -15,8 +15,14 @@ function said(result: BankResult[]): string {
   const parts = [
     added && `${added} new transaction${added === 1 ? '' : 's'} (${result.filter((r) => r.added).map((r) => `${r.name} ${r.added}`).join(', ')})`,
     ...result.filter((r) => r.balance !== undefined).map((r) => `${r.name} now ${cash(r.balance!, { whole: true })}`),
-    // Payments to Gem Visa, Q Mastercard and other cards seen leaving a bank account.
-    ...result.flatMap((r) => r.cardPayments ?? []).map((p) => `${cash(p.amount)} paid to ${p.debt}`),
+    // Payments to Gem Visa, Q Mastercard and other cards seen leaving a bank account, and money moved to
+    // or from a savings fund (Kernel). Ones that changed a balance are named; ones it already had are counted.
+    ...result.flatMap((r) => r.cardPayments ?? []).filter((p) => p.counted).map((p) => `${cash(p.amount)} paid to ${p.debt}`),
+    ...result.flatMap((r) => r.goalMoves ?? []).filter((m) => m.counted).map((m) => m.amount > 0 ? `${cash(m.amount)} into ${m.goal}` : `${cash(-m.amount)} out of ${m.goal}`),
+    (() => {
+      const n = result.reduce((t, r) => t + (r.cardPayments ?? []).filter((p) => !p.counted).length + (r.goalMoves ?? []).filter((m) => !m.counted).length, 0);
+      return n ? `${n} earlier payment${n === 1 ? '' : 's'} to cards and savings noted in their history` : '';
+    })(),
   ].filter(Boolean);
   return parts.length ? `Added ${parts.join('; ')}.` : 'Up to date: nothing new.';
 }
@@ -141,7 +147,7 @@ export async function syncBank(update: (f: (b: Budget) => Budget) => void, force
       const got = result.some((r) => r.added || r.balance !== undefined || r.cardPayments?.length);
       showToast(`${got ? `${said(result)} ` : 'Nothing new yet. '}ANZ hasn’t sent its latest, so this checks again in a minute.`);
       setTimeout(() => { void syncAgain(update); }, 60_000);
-    } else if (force || result.some((r) => r.added || r.cardPayments?.length)) showToast(`Bank sync: ${said(result)}`);
+    } else if (force || result.some((r) => r.added || r.cardPayments?.length || r.goalMoves?.length)) showToast(`Bank sync: ${said(result)}`);
   } catch (e) {
     if (force) showToast(`Bank sync didn’t work: ${bankMessage(e)}`);
   } finally { setRunning(false); }

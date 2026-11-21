@@ -66,6 +66,17 @@ export interface Item {
    * It starts on the first payday on or after `start`.
    */
   setAside?: boolean;
+  /**
+   * Cap for money put aside (e.g. Haircut $60): once the account already has this much spare after
+   * covering bills, payday stops adding more for this cost until some is spent.
+   */
+  maxSaved?: Cents;
+  /**
+   * Calendar-month envelope (e.g. Gas $200/month): amount is this month's budget. Synced purchases
+   * that match (fuel for Gas) count against it. What's left at month end is yours — it does not roll
+   * into next month. Mutually exclusive with `setAside`.
+   */
+  monthEnvelope?: boolean;
 }
 
 /** How much of each pay is sent to each account on payday. */
@@ -76,9 +87,9 @@ export interface SplitLine {
   /** Older saves: true meant 'exact'. Use `mode` instead. */
   auto?: boolean;
   /**
-   * fixed: the same set amount every payday
-   * exact: exactly what this period's costs need (4 or 5 weeks of rent)
-   * smooth: a steady amount, worked out from the balance, so a buffer covers 5-week periods
+   * fixed: Set amount — you choose the figure
+   * smooth: Level amount — same every payday; 4-week pays buffer the 5th week
+   * exact: This pay's costs — sends exactly what this period needs
    */
   mode?: PaydayMode;
 }
@@ -143,8 +154,15 @@ export interface Debt {
   kind: 'card' | 'bnpl' | 'person' | 'loan';
   /** Card rules used to suggest the plan type for new purchases. */
   rules?: 'gem' | 'mastercard' | 'afterpay';
-  /** The payday-split account that payments are sent to. */
+  /** The payday-split account shown for this debt (e.g. Gem Visa): Planner still shows how much is sent. */
   accountId: string;
+  /**
+   * Bank account that holds the payment until statement day (e.g. Misc bills). Payday still lists the
+   * debt with its amount; the money sits here so you don't send it to the card before the statement
+   * (Gem would treat an early transfer as an extra payment). Payments leave this account on/after
+   * statement day. When unset, money is planned against `accountId` as usual.
+   */
+  holdAccountId?: string;
   limit?: Cents;
   /** Standard interest rate, % per year. */
   rate?: number;
@@ -237,6 +255,23 @@ export interface SavingsGoal {
   funds?: { name: string; color: string }[];
   /** Its balance over time (and each fund's), oldest first, one per day. */
   readings?: KiwiReading[];
+  /**
+   * Money moved in or out seen in a linked bank account (ANZ → Kernel, or a Kernel withdrawal back),
+   * oldest first. One after the balance was last updated is added to it.
+   */
+  bankMoves?: GoalBankMove[];
+  /** The balance the bank connection last sent for it, and the day the bank had it as at. */
+  bankBalance?: BalanceEntry;
+}
+
+export interface GoalBankMove {
+  date: ISODate;
+  /** + paid in, − taken out. */
+  amount: Cents;
+  /** The bank account it left or went to. */
+  from: string;
+  /** How much of it was added to the balance (0 when the balance was updated after it, so already had it). */
+  counted: Cents;
 }
 
 /** A KiwiSaver balance on a day: from the bank connection, a statement, or typed in. */
@@ -365,6 +400,12 @@ export interface Budget {
   accountHistory?: Record<string, AccountEvent[]>;
   /** One-pay adjustments: pay period start → account id → amount sent that pay instead of the usual. */
   overrides?: Record<ISODate, Record<string, Cents>>;
+  /**
+   * What payday actually sent to each account once that pay is locked (payslip in, or payday has
+   * passed). The Planner keeps these figures for that cycle so later debt/cost changes don’t rewrite
+   * the split you already made. Future pays still recalculate.
+   */
+  splitSent?: Record<ISODate, Record<string, Cents>>;
   /**
    * What automatic balancing changed: pay start → account id → the amount before (null = none), the
    * amount it set, and why. Lets it redo a pay from scratch when something changes, without touching

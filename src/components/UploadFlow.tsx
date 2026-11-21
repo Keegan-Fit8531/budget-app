@@ -3,7 +3,7 @@ import { addMonths, fmtShort, fmtSpan, todayISO, type ISODate } from '../lib/dat
 import { owed, planEnds } from '../lib/debts';
 import { cash, centsToInput } from '../lib/money';
 import { applyProposal, fingerprint, preview } from '../lib/reader/apply';
-import { csvBalance, csvTargets, NEW_DEBT, NEW_GOAL, NOT_MINE, purchaseRows, resolvePlanRow, review, toCents, toDraft, type Draft, type DraftFig } from '../lib/reader/check';
+import { balanceTargets, csvBalance, csvTargets, NEW_DEBT, NEW_GOAL, NOT_MINE, purchaseRows, resolvePlanRow, review, toCents, toDraft, type Draft, type DraftFig } from '../lib/reader/check';
 import { CATEGORY_LABEL, shopMap, summarize } from '../lib/spending';
 import { DEVICE_FALLBACK, errorMessage, ReaderError } from '../lib/reader/errors';
 import { isKiwiSaver } from '../lib/kiwisaver';
@@ -25,7 +25,7 @@ type Phase =
   | { s: 'error'; err: ReaderError }
   | { s: 'review'; draft: Draft };
 
-const KIND_TITLE: Record<DocKind, string> = { payslip: 'Check this payslip', statement: 'Check this statement', afterpay: 'Check these Afterpay orders', kiwisaver: 'Check this KiwiSaver statement', transactions: 'Check these transactions', unknown: 'Check this document' };
+const KIND_TITLE: Record<DocKind, string> = { payslip: 'Check this payslip', statement: 'Check this statement', afterpay: 'Check these Afterpay orders', kiwisaver: 'Check this KiwiSaver statement', transactions: 'Check these transactions', balances: 'Check these balances', unknown: 'Check this document' };
 const RETRY = new Set(['too_fast', 'overloaded', 'offline', 'unreachable', 'timeout', 'unusable']);
 const titleOf = (d: Draft) => (d.kind === 'statement' && d.statement.appScreen ? 'Check this card screenshot' : KIND_TITLE[d.kind]);
 
@@ -221,7 +221,7 @@ function Rundown({ draft, sourceLabel, onEdit, onCancel, cancelLabel, onConfirm 
   const edit = (fn: (d: Draft) => void) => { const d = structuredClone(draft); fn(d); onEdit(d); };
   const blocks = r.issues.filter((i) => i.level === 'block');
   const notes = r.issues.filter((i) => i.level === 'note');
-  const debts = (budget.debts ?? []).filter((d) => !d.payroll);
+  const debts = (budget.debts ?? []).filter((d) => !d.payroll || d.kind === 'loan');
   const s = draft.statement;
   const debt = debts.find((d) => d.id === s.debtId);
   // Purchases on a card app screen that its rules make plans of their own (Gem: $250 or more).
@@ -233,8 +233,8 @@ function Rundown({ draft, sourceLabel, onEdit, onCancel, cancelLabel, onConfirm 
       <span className="pill" style={{ alignSelf: 'flex-start' }}>{sourceLabel}</span>
       {draft.kind !== 'transactions' && (
         <div className="seg" role="group" aria-label="What this is" style={{ alignSelf: 'flex-start' }}>
-          {(['payslip', 'statement', 'kiwisaver', 'afterpay'] as const).map((k) => (
-            <button key={k} aria-pressed={draft.kind === k} onClick={() => edit((d) => { d.kind = k; })}>{k === 'payslip' ? 'Payslip' : k === 'statement' ? 'Card or loan' : k === 'kiwisaver' ? 'KiwiSaver' : 'Afterpay'}</button>
+          {(['payslip', 'statement', 'balances', 'kiwisaver', 'afterpay'] as const).map((k) => (
+            <button key={k} aria-pressed={draft.kind === k} onClick={() => edit((d) => { d.kind = k; })}>{k === 'payslip' ? 'Payslip' : k === 'statement' ? 'Card or loan' : k === 'balances' ? 'Bank balances' : k === 'kiwisaver' ? 'KiwiSaver' : 'Afterpay'}</button>
           ))}
         </div>
       )}
@@ -270,7 +270,7 @@ function Rundown({ draft, sourceLabel, onEdit, onCancel, cancelLabel, onConfirm 
             <label className="field">{s.appScreen ? 'As at' : 'As at (statement date)'}
               <input type="date" value={s.date} max={today} onChange={(e) => edit((d) => { d.statement.date = e.target.value; })} />
             </label>
-            <Money label="Credit limit (optional)" fig={s.limit} onChange={(v) => edit((d) => { d.statement.limit.value = v; })} />
+            {!debt?.payroll && <Money label="Credit limit (optional)" fig={s.limit} onChange={(v) => edit((d) => { d.statement.limit.value = v; })} />}
           </div>
           {toCents(s.minimum.value)?.cents !== undefined && <p className="small muted">The {s.appScreen ? 'last statement’s' : 'statement’s'} minimum payment is {cash(toCents(s.minimum.value)!.cents)}.</p>}
           {buys.length > 0 && (
@@ -319,20 +319,32 @@ function Rundown({ draft, sourceLabel, onEdit, onCancel, cancelLabel, onConfirm 
       )}
 
       {draft.kind === 'kiwisaver' && <KiwiSaverCheck draft={draft} edit={edit} />}
+      {draft.kind === 'balances' && <BalancesCheck draft={draft} edit={edit} />}
 
-      {draft.kind === 'afterpay' && ap && draft.afterpay.orders.map((o, i) => (
-        <div key={o.newId} className="inset stack gap-8" style={{ padding: 'var(--s-3)' }}>
-          <span className="small"><b>{o.merchant || 'Order'}</b>{o.purchaseDate ? `, bought ${fmtShort(o.purchaseDate)}` : ''}{toCents(o.total.value) ? `, ${cash(toCents(o.total.value)!.cents)} total` : ''}</span>
-          <span className="xs muted">{o.instalments.map((x) => `${x.label ?? ''} ${toCents(x.amount) ? cash(toCents(x.amount)!.cents) : x.amount} on ${x.date ? fmtShort(x.date) : '?'}${x.paid ? ' (paid)' : ''}`.trim()).join(' · ') || 'No instalments read'}</span>
-          <label className="field">It’s
-            <select value={o.planId && ap.plans.some((p) => p.id === o.planId) ? o.planId : o.planId === NOT_MINE ? NOT_MINE : ''} onChange={(e) => edit((d) => { d.afterpay.orders[i].planId = e.target.value; })}>
-              <option value="">Match automatically</option>
-              {ap.plans.map((p) => <option key={p.id} value={p.id}>{p.name} ({cash(p.remaining)} left)</option>)}
-              <option value={NOT_MINE}>A new order</option>
-            </select>
+      {draft.kind === 'afterpay' && ap && (
+        <>
+          <label className="check-row" style={{ alignItems: 'flex-start' }}>
+            <input type="checkbox" checked={draft.afterpay.listsAllDue} onChange={(e) => edit((d) => { d.afterpay.listsAllDue = e.target.checked; })} style={{ width: 20, height: 20, flex: 'none', marginTop: 2, accentColor: 'var(--brand)' }} />
+            <span>
+              Upcoming payments — everything still due
+              <span className="small muted block">Tick for Afterpay’s Upcoming payments screen: orders not listed are marked paid off. Leave off for a single order.</span>
+            </span>
           </label>
-        </div>
-      ))}
+          {draft.afterpay.orders.map((o, i) => (
+            <div key={o.newId} className="inset stack gap-8" style={{ padding: 'var(--s-3)' }}>
+              <span className="small"><b>{o.merchant || 'Order'}</b>{o.purchaseDate ? `, bought ${fmtShort(o.purchaseDate)}` : ''}{toCents(o.total.value) ? `, ${cash(toCents(o.total.value)!.cents)} total` : ''}</span>
+              <span className="xs muted">{o.instalments.map((x) => `${x.label ?? ''} ${toCents(x.amount) ? cash(toCents(x.amount)!.cents) : x.amount} on ${x.date ? fmtShort(x.date) : '?'}${x.paid ? ' (paid)' : ''}`.trim()).join(' · ') || 'No instalments read'}</span>
+              <label className="field">It’s
+                <select value={o.planId && ap.plans.some((p) => p.id === o.planId) ? o.planId : o.planId === NOT_MINE ? NOT_MINE : ''} onChange={(e) => edit((d) => { d.afterpay.orders[i].planId = e.target.value; })}>
+                  <option value="">Match automatically</option>
+                  {ap.plans.map((p) => <option key={p.id} value={p.id}>{p.name} ({cash(p.remaining)} left)</option>)}
+                  <option value={NOT_MINE}>A new order</option>
+                </select>
+              </label>
+            </div>
+          ))}
+        </>
+      )}
 
       {blocks.length > 0 && (
         <div className="alert small" role="alert"><Icon name="alert" /><div>{blocks.map((b) => <div key={b.text}>{b.text}</div>)}</div></div>
@@ -378,6 +390,54 @@ function Rundown({ draft, sourceLabel, onEdit, onCancel, cancelLabel, onConfirm 
 }
 
 /** A KiwiSaver statement or screen: which goal, the balance and its date, each fund, and what went in and was earned. */
+/** A bank's list of accounts: each line's balance, and which of your accounts it goes to (matched by number or name, to check). */
+function BalancesCheck({ draft, edit }: { draft: Draft; edit: (fn: (d: Draft) => void) => void }) {
+  const { budget } = useBudget();
+  const t = draft.balances;
+  const accounts = balanceTargets(budget);
+  return (
+    <>
+      <div className="form-grid">
+        <label className="field">As at
+          <input type="date" value={t.date} onChange={(e) => edit((d) => { d.balances.date = e.target.value; })} />
+          <span className="xs muted">{t.bank ? `${t.bank} · ` : ''}{t.rows.length} account{t.rows.length === 1 ? '' : 's'} read</span>
+        </label>
+      </div>
+      {t.rows.length === 0 && <p className="small muted">No accounts were read from it.</p>}
+      <div className="stack gap-12">
+        {t.rows.map((r, i) => {
+          const acc = accounts.find((a) => a.id === r.accountId);
+          const prev = acc ? budget.balances?.[acc.id] : undefined;
+          return (
+            <div key={i} className="stack gap-6" style={{ borderTop: i ? '1px solid var(--line)' : undefined, paddingTop: i ? 'var(--s-3)' : 0 }}>
+              <div className="between gap-8 small">
+                <b className="clip">{r.name || 'Account'}</b>
+                <span className="xs muted clip">{r.number || 'no number shown'}</span>
+              </div>
+              <div className="row nowrap top gap-8">
+                <label className="field grow">
+                  <span className="sr-only">Your account for {r.name || 'this account'}</span>
+                  <select value={r.accountId} onChange={(e) => edit((d) => { d.balances.rows[i].accountId = e.target.value; d.balances.rows[i].matchedBy = undefined; })}>
+                    {!r.accountId && <option value="">Choose your account…</option>}
+                    {accounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+                    <option value={NOT_MINE}>Not one of mine (leave out)</option>
+                  </select>
+                  <span className="xs muted">{r.matchedBy === 'number' ? 'Matched by account number' : r.matchedBy === 'name' ? 'Matched by name: check it' : r.accountId === NOT_MINE ? 'Left out' : 'Choose which account this is'}</span>
+                </label>
+                <label className="field" style={{ width: 120, flex: '0 0 auto' }}>
+                  <span className="sr-only">{r.name || 'This account'}’s balance</span>
+                  <input inputMode="decimal" value={r.balance} placeholder={r.available || '0.00'} aria-label={`${r.name || 'This account'} balance`} onChange={(e) => edit((d) => { d.balances.rows[i].balance = e.target.value; })} />
+                  <span className="xs muted">{prev ? `was ${cash(prev.amount)}` : '\u00a0'}</span>
+                </label>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </>
+  );
+}
+
 function KiwiSaverCheck({ draft, edit }: { draft: Draft; edit: (fn: (d: Draft) => void) => void }) {
   const { budget } = useBudget();
   const k = draft.kiwisaver;

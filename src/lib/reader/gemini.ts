@@ -43,7 +43,7 @@ export async function call(opts: ProviderOptions, body: unknown, fetchImpl: type
 }
 
 /** The kinds the form can come back as ("account" is a bank account, turned into "transactions"). */
-const KINDS = ['payslip', 'statement', 'account', 'afterpay', 'kiwisaver', 'unknown'];
+const KINDS = ['payslip', 'statement', 'account', 'balances', 'afterpay', 'kiwisaver', 'unknown'];
 
 type RawRow = { date?: string; description?: string; amount?: string; balance?: string };
 interface RawAccount {
@@ -130,7 +130,19 @@ export function mergeReads(list: Extraction[]): Extraction {
   const notes = [...new Set(list.map((x) => x.notes).filter(Boolean))].join(' ');
   const withNotes = (e: Extraction): Extraction => (notes ? { ...e, notes } : e);
   if (kind === 'transactions') return withNotes({ kind, transactions: joinReads(same.flatMap((x) => (x.transactions ? [x.transactions] : []))) });
-  if (kind === 'afterpay') return withNotes({ kind, afterpay: { orders: same.flatMap((x) => x.afterpay?.orders ?? []) } });
+  if (kind === 'afterpay') {
+    return withNotes({
+      kind,
+      afterpay: {
+        listsAllDue: same.some((x) => x.afterpay?.listsAllDue),
+        orders: same.flatMap((x) => x.afterpay?.orders ?? []),
+      },
+    });
+  }
+  if (kind === 'balances') {
+    const first = same.find((x) => x.balances)?.balances ?? {};
+    return withNotes({ kind, balances: { ...first, accounts: same.flatMap((x) => x.balances?.accounts ?? []) } });
+  }
   if (kind === 'kiwisaver') {
     // The first part to give a figure gives it; funds are listed once each.
     const k: RawKiwiSaver = {};

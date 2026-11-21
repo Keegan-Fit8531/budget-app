@@ -1,7 +1,9 @@
-import { addDays, todayISO, type ISODate } from './dates';
-import { accountHasPlans, debtPaymentsIn, debtPerPay, projectedOwed } from './debts';
+import { addDays, dateInMonth, todayISO, type ISODate } from './dates';
+import { accountHasPlans, debtAdvice, debtPaymentsIn, debtPay, heldDebtPaymentsIn, isHoldDisplayAccount, projectedOwed } from './debts';
+import type { Debt } from './types';
 import {
-  averageNeed, firstBudgetPay, hasSetAsides, isSetAside, itemDates, periodContaining, setAsideOn, setAsidesOn, shiftPeriod, type Period,
+  asideSpareNow, averageNeed, firstBudgetPay, hasMonthEnvelopes, hasSetAsides, isHeldInAccount, itemDates,
+  monthEnvelopeOn, monthEnvelopesOn, periodContaining, setAsideOn, setAsidesOn, shiftPeriod, type Period,
 } from './engine';
 import { accountHasGoals, savingsNeedIn } from './savings';
 import type { Budget, Cents, PaydayMode, SplitLine } from './types';
@@ -18,32 +20,91 @@ export interface Outflow { date: ISODate; amount: Cents; name: string }
 
 /**
  * Money leaving an account between two dates (inclusive): its costs and debt plan payments. Money put
- * aside (a WOF, tyres) stays in the account, so it isn't here; see `fundedOut`.
+ * aside (a WOF, tyres) or held in a month envelope (Gas) stays in the account, so it isn't here; see
+ * `fundedOut`.
  */
 export function outflows(b: Budget, accountId: string, from: ISODate, to: ISODate): Outflow[] {
   if (from > to) return [];
   const out: Outflow[] = [];
   for (const item of b.items) {
-    if (item.accountId !== accountId || isSetAside(item)) continue;
+    if (item.accountId !== accountId || isHeldInAccount(item)) continue;
     for (const date of itemDates(item, from, to, b.settings)) out.push({ date, amount: item.amount, name: item.name });
   }
-  for (const p of debtPaymentsIn(b, accountId, from, to)) out.push({ date: p.date, amount: p.amount, name: p.plan.name });
+  for (const p of debtPaymentsIn(b, accountId, from, to)) {
+    // Hold account (Misc bills): show the debt name so Accounts can note Gem Visa on the 21st.
+    const name = p.debt.holdAccountId === accountId ? p.debt.name : p.plan.name;
+    out.push({ date: p.date, amount: p.amount, name });
+  }
+  // Gem held here: reserve at least Latitude's recommended amount (and a frozen payday send).
+  topUpGemHoldOutflows(b, accountId, from, to, out);
+  // Held-elsewhere debts (Gem → Misc bills): still count on the debt card for need/display.
+  if (isHoldDisplayAccount(b, accountId)) {
+    for (const p of heldDebtPaymentsIn(b, accountId, from, to)) out.push({ date: p.date, amount: p.amount, name: p.plan.name });
+  }
   return out.sort((x, y) => x.date.localeCompare(y.date) || y.amount - x.amount);
 }
 
 /**
+ * Misc bills must keep enough for Gem's statement-day send: Gem's own recommended allocation, or
+ * what this pay already froze for Gem — whichever is higher — so leftover isn't shown as spare.
+ */
+function topUpGemHoldOutflows(b: Budget, accountId: string, from: ISODate, to: ISODate, out: Outflow[]): void {
+  const today = todayISO();
+  for (const debt of b.debts ?? []) {
+    if (debt.holdAccountId !== accountId || debt.rules !== 'gem' || !debt.statementDay) continue;
+    const period = periodContaining(from, b.settings);
+    if (period.start > to || period.end < from) continue;
+    const adv = debtAdvice(b, debt, period);
+    let need = adv.recommended;
+    const frozen = b.splitSent?.[period.start]?.[debt.accountId];
+    if (frozen !== undefined && paySplitLocked(b, period, today)) need = Math.max(need, frozen);
+    if (need <= 0) continue;
+    const rows = out.filter((o) => o.name === debt.name);
+    const sum = rows.reduce((t, o) => t + o.amount, 0);
+    if (need <= sum) continue;
+    const bump = need - sum;
+    const stmt = gemStatementInRange(debt, from, to) ?? rows[0]?.date;
+    if (!stmt || stmt < from || stmt > to) continue;
+    const hit = rows.find((o) => o.date === stmt) ?? rows[0];
+    if (hit) hit.amount += bump;
+    else out.push({ date: stmt, amount: bump, name: debt.name });
+  }
+}
+
+function gemStatementInRange(debt: Debt, from: ISODate, to: ISODate): ISODate | undefined {
+  if (!debt.statementDay) return undefined;
+  const y = Number(from.slice(0, 4));
+  const m0 = Number(from.slice(5, 7)) - 1;
+  for (let i = 0; i < 3; i++) {
+    const d = dateInMonth(y, m0 + i, debt.statementDay);
+    if (d >= from && d <= to) return d;
+  }
+  return undefined;
+}
+
+/**
  * What payday has to fund between two dates: the payments (`outflows`), plus what each payday in that
- * time puts aside, as if it were paid out on payday. Working out the payday amounts this way means money
- * put aside is never counted as free to pay the bills (or as spare), however much has built up.
+ * time puts aside or funds into a month envelope, as if it were paid out on payday. Working out the
+ * payday amounts this way means that money is never counted as free to pay the bills (or as spare).
  */
 export function fundedOut(b: Budget, accountId: string, from: ISODate, to: ISODate): Outflow[] {
   const out = outflows(b, accountId, from, to);
-  if (from > to || !hasSetAsides(b, accountId)) return out;
+  if (from > to || (!hasSetAsides(b, accountId) && !hasMonthEnvelopes(b, accountId))) return out;
   const s = b.settings;
   let p = periodContaining(from, s);
   if (p.start < from) p = shiftPeriod(p, 1, s);
+  // Running spare so maxSaved caps apply across several pays without re-reading the same balance.
+  let spare = asideSpareNow(b, accountId, from);
   for (; p.start <= to; p = shiftPeriod(p, 1, s)) {
-    for (const x of setAsidesOn(b, accountId, p.start)) out.push({ date: p.start, amount: x.amount, name: x.item.name });
+    const asides = setAsidesOn(b, accountId, p.start, spare === undefined ? undefined : { spare });
+    for (const x of asides) {
+      if (x.amount <= 0) continue;
+      out.push({ date: p.start, amount: x.amount, name: x.item.name });
+      if (spare !== undefined) spare += x.amount;
+    }
+    for (const x of monthEnvelopesOn(b, accountId, p.start)) {
+      out.push({ date: p.start, amount: x.amount, name: x.item.name });
+    }
   }
   return out.sort((x, y) => x.date.localeCompare(y.date) || y.amount - x.amount);
 }
@@ -58,7 +119,7 @@ export function exactNeed(b: Budget, accountId: string, p: Period): Cents {
  * pay puts aside is simply put aside less, not money the account is owed, so later pays don't catch it up.
  */
 const pausedAside = (b: Budget, accountId: string, date: ISODate, usual: Cents, sent: Cents): Cents =>
-  sent >= usual ? 0 : Math.min(setAsideOn(b, accountId, date), usual - sent);
+  sent >= usual ? 0 : Math.min(setAsideOn(b, accountId, date) + monthEnvelopeOn(b, accountId, date), usual - sent);
 
 const HORIZON = 24;
 const RUN_PAYS = 40;
@@ -79,8 +140,8 @@ function window(b: Budget, accountId: string, pay: Period, count: number): { slo
   return { slots, out: fundedOut(b, accountId, pay.start, addDays(slots[count].date, -1)) };
 }
 
-/** The usual steady amount: the long-run average, to the dollar. */
-const usualSteady = (b: Budget, accountId: string) => Math.ceil(averageNeed(b, accountId) / 100) * 100;
+/** The usual steady amount: the long-run average, to the cent (no dollar rounding). */
+const usualSteady = (b: Budget, accountId: string) => averageNeed(b, accountId);
 
 /**
  * Core of the steady amount, worked out at one payday (slots[0]) from `balance` the day before:
@@ -110,7 +171,8 @@ function steadyAt(slots: PaySlot[], out: Outflow[], usual: Cents, balance: Cents
   }
   const extra = low === Infinity ? 0 : Math.max(0, low - cushion);
   const steady = Math.max(need, usual - extra / Math.max(1, pays.filter((x) => x.fixed === undefined).length));
-  return Math.ceil(steady / 100) * 100;
+  // Nearest cent: dollar rounding left a few cents of drift in the buffer each pay.
+  return Math.round(steady);
 }
 
 /** Payments in `out` from `from` up to (not including) `to`, using a moving index into the sorted list. */
@@ -131,7 +193,12 @@ function runStart(b: Budget, accountId: string, today: ISODate, useBalance: bool
   // An account that keeps money put aside (a car fund): its balance is mostly that money, which isn't
   // there to pay the bills, so its amounts are worked out from the budget's start instead.
   const known = useBalance && entry && entry.asOf <= today && !hasSetAsides(b, accountId) ? entry : undefined;
-  if (known) return { pay: shiftPeriod(periodContaining(known.asOf, b.settings), 1, b.settings), bal: known.amount, cursor: known.asOf };
+  if (known) {
+    // Payday morning before the split lands: count the deposit so later pays aren't topped up for a false short.
+    const p = periodContaining(known.asOf, b.settings);
+    const pending = depositPending(b, accountId, known) ? depositSansBalance(b, accountId, p) : 0;
+    return { pay: shiftPeriod(p, 1, b.settings), bal: known.amount + pending, cursor: known.asOf };
+  }
   const pay = firstBudgetPay(b, today);
   return { pay, bal: priorLeftover(b, accountId, today), cursor: addDays(pay.start, -1) };
 }
@@ -231,13 +298,135 @@ export function smoothAmount(b: Budget, accountId: string, today: ISODate = toda
 }
 
 /**
+ * True once this pay’s split should stop moving: payday has passed, or the payslip / pay amount is in.
+ * Future pays still recalculate; this cycle’s deposits stay put unless you change them by hand.
+ */
+export function paySplitLocked(b: Budget, p: Period, today: ISODate = todayISO()): boolean {
+  return p.start < today || b.payActuals[p.start] !== undefined;
+}
+
+/**
+ * What to lock in for one account when freezing a pay. Prefers what actually landed in the bank,
+ * then an earlier auto-balance amount before the live figure collapsed (e.g. Gem/Afterpay → $0),
+ * then a one-pay override, then the live calculation.
+ */
+function snapshotDeposit(b: Budget, accountId: string, p: Period, today: ISODate): Cents {
+  const live = liveDepositFor(b, accountId, p, today);
+  // Bank credits on payday = what you already deposited for this cycle.
+  const credited = (b.accountTransactions?.[accountId] ?? [])
+    .filter((t) => t.date === p.start && t.amount > 0)
+    .reduce((s, t) => s + t.amount, 0);
+  if (credited > 0) return credited;
+
+  const auto = b.autoBalanced?.[p.start]?.[accountId];
+  // Balancing later zeroed a deposit: keep what it was before (often this morning’s figure).
+  if (auto && auto.prev !== null && auto.prev > live) return auto.prev;
+  if (auto && auto.to > live) return auto.to;
+
+  const override = b.overrides?.[p.start]?.[accountId];
+  if (override !== undefined && override > live) return override;
+  if (override !== undefined) return override;
+  return live;
+}
+
+/** Drop auto-balance overrides for a pay so they don’t fight the frozen split. Manual edits stay. */
+function clearAutoOverridesForPay(b: Budget, start: ISODate): void {
+  const mine = b.autoBalanced?.[start];
+  if (!mine) return;
+  const o = { ...(b.overrides?.[start] ?? {}) };
+  for (const [id, x] of Object.entries(mine)) {
+    // Remove the auto-set figure only (leave a hand edit). Don’t put `prev` back — the freeze holds it.
+    if (o[id] === x.to) delete o[id];
+  }
+  b.overrides = b.overrides ?? {};
+  if (Object.keys(o).length) b.overrides[start] = o; else delete b.overrides[start];
+  delete b.autoBalanced![start];
+  if (b.autoBalanced && !Object.keys(b.autoBalanced).length) delete b.autoBalanced;
+}
+
+/**
+ * Snapshot what payday sends to each account for a locked pay. First lock wins unless `replace`.
+ * Call when a payslip is saved, when viewing a locked pay, or when restoring from a morning copy.
+ */
+export function freezePaySplit(b: Budget, p: Period, today: ISODate = todayISO(), opts: { replace?: boolean } = {}): void {
+  if (!paySplitLocked(b, p, today)) return;
+  if (b.splitSent?.[p.start] && !opts.replace) return;
+  const sent: Record<string, Cents> = {};
+  for (const a of b.accounts) {
+    if (a.archived || a.id === b.settings.payAccountId) continue;
+    sent[a.id] = snapshotDeposit(b, a.id, p, today);
+  }
+  b.splitSent = { ...(b.splitSent ?? {}), [p.start]: sent };
+  // Auto one-pay amounts for this cycle are replaced by the freeze (manual overrides kept above).
+  clearAutoOverridesForPay(b, p.start);
+}
+
+/**
+ * Copy another budget’s deposit figures into this one’s frozen split for a locked pay (e.g. today’s
+ * morning copy, before the Planner drifted). Replaces any freeze already on that pay.
+ */
+export function freezePaySplitFrom(b: Budget, p: Period, source: Budget, today: ISODate = todayISO()): void {
+  if (!paySplitLocked(b, p, today)) return;
+  const src = structuredClone(source);
+  if (src.splitSent?.[p.start]) delete src.splitSent[p.start];
+  const sent: Record<string, Cents> = {};
+  for (const a of b.accounts) {
+    if (a.archived || a.id === b.settings.payAccountId) continue;
+    // Read the source as it planned that pay (overrides + live), not this budget’s drifted figures.
+    sent[a.id] = snapshotDeposit(src, a.id, p, today);
+  }
+  b.splitSent = { ...(b.splitSent ?? {}), [p.start]: sent };
+  clearAutoOverridesForPay(b, p.start);
+}
+
+/** Freeze every pay that is already locked and missing a snapshot (past payslips / payday passed). */
+export function freezeLockedPays(b: Budget, today: ISODate = todayISO()): void {
+  const starts = new Set<ISODate>([
+    ...Object.keys(b.payActuals ?? {}),
+    ...Object.keys(b.splitSent ?? {}),
+  ]);
+  // The pay that contains today, when payday has passed or the payslip is in.
+  starts.add(periodContaining(today, b.settings).start);
+  for (const start of starts) {
+    const p = periodContaining(start, b.settings);
+    if (p.start !== start) continue;
+    freezePaySplit(b, p, today);
+  }
+}
+
+/** Drop a frozen split (e.g. you cleared the payslip on payday so the pay can be planned again). */
+export function unfreezePaySplit(b: Budget, start: ISODate): void {
+  if (!b.splitSent?.[start]) return;
+  delete b.splitSent[start];
+  if (!Object.keys(b.splitSent).length) delete b.splitSent;
+}
+
+/**
  * What payday sends to an account in a period, by its mode. The Planner and every balance projection
  * use this, so they always agree. `usual`: ignore a one-pay adjustment (what it would normally send).
  */
 export function depositFor(b: Budget, accountId: string, p: Period, today: ISODate = todayISO(), opts: { usual?: boolean } = {}): Cents {
-  // A one-pay adjustment (e.g. from Balance this pay) replaces the usual amount for that pay.
-  const override = opts.usual ? undefined : b.overrides?.[p.start]?.[accountId];
-  if (override !== undefined) return override;
+  if (!opts.usual) {
+    const frozen = b.splitSent?.[p.start]?.[accountId];
+    const override = b.overrides?.[p.start]?.[accountId];
+    // Locked freeze is the cycle’s record; a hand edit (override ≠ freeze) still wins.
+    if (frozen !== undefined && paySplitLocked(b, p, today)) {
+      if (override !== undefined && !isHoldDisplayAccount(b, accountId) && override !== frozen) return override;
+      return frozen;
+    }
+    // A one-pay adjustment (e.g. from Balance this pay) replaces the usual amount for that pay.
+    if (override !== undefined && !isHoldDisplayAccount(b, accountId)) return override;
+  }
+  return liveDepositFor(b, accountId, p, today);
+}
+
+/** Live (unfrozen) deposit amount — used to build the freeze snapshot and for unlocked pays. */
+function liveDepositFor(b: Budget, accountId: string, p: Period, today: ISODate): Cents {
+  // Debt card whose money is held elsewhere (e.g. Gem → Misc bills): always show this pay's send amount
+  // on the debt card. One-pay adjustments apply to the hold account (where the money actually sits), not here.
+  if (isHoldDisplayAccount(b, accountId)) {
+    return heldDebtPaymentsIn(b, accountId, p.start, p.end).reduce((t, x) => t + x.amount, 0);
+  }
   // A pay before the budget started (already split): what it actually sent.
   const sentEarlier = sentBeforeBudget(b, accountId, p);
   if (sentEarlier !== undefined) return sentEarlier;
@@ -255,9 +444,61 @@ export function depositFor(b: Budget, accountId: string, p: Period, today: ISODa
     // What it owed going into this pay: for a pay already under way, that's what it owes now plus the
     // payments that have gone out since (so its last payment doesn't turn into $0 once it's made).
     const since = (debt.paid ?? []).reduce((t, x) => t + (x.date >= p.start ? x.amount : 0), 0);
-    return Math.min(amount, Math.max(0, projectedOwed(debt, b.settings, addDays(p.start, -1), debtPerPay(b, debt)) + since));
+    return Math.min(amount, Math.max(0, projectedOwed(debt, b.settings, addDays(p.start, -1), debtPay(b, debt)) + since));
   }
-  return amount;
+  // A cost put aside or held in a month envelope is always sent, even with a fixed amount below it.
+  return Math.max(amount, setAsideOn(b, accountId, p.start) + monthEnvelopeOn(b, accountId, p.start));
+}
+
+/**
+ * What payday is meant to send, without reading balance-based steady/exact runs. Used to tell whether
+ * a payday-morning balance already includes the deposit (calling depositFor here would recurse through
+ * runStart).
+ */
+function depositSansBalance(b: Budget, accountId: string, p: Period): Cents {
+  if (isHoldDisplayAccount(b, accountId)) {
+    return heldDebtPaymentsIn(b, accountId, p.start, p.end).reduce((t, x) => t + x.amount, 0);
+  }
+  const override = b.overrides?.[p.start]?.[accountId];
+  if (override !== undefined) return override;
+  const start = b.settings.budgetStart;
+  if (start && p.start < start) {
+    const line = b.split.find((l) => l.accountId === accountId);
+    const acc = b.accounts.find((a) => a.id === accountId);
+    return acc?.kind === 'bank' && line && line.amount > 0 ? line.amount : 0;
+  }
+  const goals = (b.savings ?? []).filter((g) => g.accountId === accountId);
+  if (goals.length && goals.every((g) => g.targetDate && g.targetDate <= p.start)) return 0;
+  const line = b.split.find((l) => l.accountId === accountId);
+  const mode = modeOf(line);
+  if (mode === 'exact') return exactNeed(b, accountId, p);
+  if (mode === 'smooth') return usualSteady(b, accountId);
+  return Math.max(line?.amount ?? 0, setAsideOn(b, accountId, p.start) + monthEnvelopeOn(b, accountId, p.start));
+}
+
+/**
+ * A balance dated on payday often still excludes that payday's deposit: pay can land late in the
+ * day, and the split into this account may not have run. True when the entered balance still looks
+ * like the pre-deposit amount.
+ */
+export function depositPending(b: Budget, accountId: string, entry: { amount: Cents; asOf: ISODate }): boolean {
+  const p = periodContaining(entry.asOf, b.settings);
+  if (entry.asOf !== p.start) return false;
+  const deposit = depositSansBalance(b, accountId, p);
+  if (deposit <= 0) return false;
+  // Money already paid into the account on payday (the split, or pay landing).
+  const credited = (b.accountTransactions?.[accountId] ?? [])
+    .filter((t) => t.date === entry.asOf && t.amount > 0)
+    .reduce((s, t) => s + t.amount, 0);
+  if (credited >= deposit) return false;
+  // Last balance before payday: if this one hasn't risen by the deposit, it isn't in yet.
+  // (Bank sync on payday morning often only bumps the date, leaving the amount unchanged.)
+  const prior = (b.accountHistory?.[accountId] ?? [])
+    .filter((e) => e.kind === 'balance' && e.date < entry.asOf)
+    .reduce<{ amount: Cents; date: ISODate } | undefined>((best, e) => (!best || e.date >= best.date ? e : best), undefined);
+  if (prior) return entry.amount - prior.amount + credited < deposit;
+  // No earlier reading: a balance below the deposit itself can't include it.
+  return entry.amount + credited < deposit;
 }
 
 /** Estimated balance at the end of `date`, from the last balance you entered. Undefined if unknown. */
@@ -266,6 +507,10 @@ export function estimateBalance(b: Budget, accountId: string, date: ISODate, tod
   if (!entry || date < entry.asOf) return undefined;
   let bal = entry.amount;
   let p = periodContaining(entry.asOf, b.settings);
+  // Balance as-of payday: count this payday's deposit when the bank still shows the pre-deposit amount.
+  if (entry.asOf === p.start && p.start <= date && depositPending(b, accountId, entry)) {
+    bal += depositFor(b, accountId, p, today);
+  }
   // Paydays after the balance date, up to and including `date`.
   while (p.nextPayday <= date) {
     p = shiftPeriod(p, 1, b.settings);
@@ -296,10 +541,12 @@ export interface PeriodForecast { period: Period; deposit: Cents; out: Cents; en
 /** Balance forecast for `count` pay periods starting with the one containing `today`. */
 export function forecastBalances(b: Budget, accountId: string, count: number, today: ISODate = todayISO()): PeriodForecast[] {
   const entry = b.balances?.[accountId];
+  const pending = !!entry && depositPending(b, accountId, entry);
   const rows: PeriodForecast[] = [];
   let p = periodContaining(today, b.settings);
   for (let i = 0; i < count; i++) {
-    const received = !entry || p.start > entry.asOf;
+    // Deposit still counts when the balance is as-of this payday but the money hasn't landed yet.
+    const received = !entry || p.start > entry.asOf || (p.start === entry.asOf && pending);
     rows.push({
       period: p,
       deposit: received ? depositFor(b, accountId, p, today) : 0,
@@ -342,13 +589,56 @@ export interface BillTracker {
   next: { period: Period; deposit: Cents; rows: Outflow[] };
 }
 
+/**
+ * How much has already left the account today (bank sync / stored transactions). Used so a Thursday
+ * transfer that already hit the balance isn't still counted as "to come".
+ */
+function debitedToday(b: Budget, accountId: string, today: ISODate): Cents {
+  const seen = [...(b.accountTransactions?.[accountId] ?? []), ...(b.pendingTransactions?.[accountId] ?? [])];
+  return seen.filter((t) => t.date === today && t.amount < 0).reduce((s, t) => s - t.amount, 0);
+}
+
+/**
+ * True when today's entered/synced balance already has today's bills out (e.g. $1,000 in, $200
+ * transferred, balance now $800). Without this, those bills stay "to come" and the account looks short.
+ */
+function todaysBillsAlreadyOut(b: Budget, accountId: string, today: ISODate, todayOut: Cents): boolean {
+  if (todayOut <= 0) return false;
+  if (debitedToday(b, accountId, today) >= todayOut) return true;
+  const entry = b.balances?.[accountId];
+  if (!entry || entry.asOf !== today) return false;
+  const period = periodContaining(today, b.settings);
+  // Payday: balance + today's bills ≈ what payday sent (you deposited, then the Thursday transfer left).
+  if (today === period.start) {
+    const sent = b.splitSent?.[period.start]?.[accountId]
+      ?? b.overrides?.[period.start]?.[accountId]
+      ?? depositSansBalance(b, accountId, period);
+    if (Math.abs(entry.amount + todayOut - sent) <= 100) return true;
+  }
+  const prior = estimateBalance(b, accountId, addDays(today, -1), today);
+  if (prior === undefined) return false;
+  const dep = today === period.start && !depositPending(b, accountId, entry) ? depositSansBalance(b, accountId, period) : 0;
+  const beforeBills = prior + dep;
+  // Balance matches "deposit in, today's bills out" (within $1), not the pre-bill figure.
+  return entry.amount <= beforeBills - todayOut + 100 && entry.amount < beforeBills - 100;
+}
+
 export function billTracker(b: Budget, accountId: string, today: ISODate = todayISO()): BillTracker {
   const s = b.settings;
   const period = periodContaining(today, s);
   const rows: BillRow[] = outflows(b, accountId, period.start, period.end).map((o) => {
     const days = Math.round((Date.parse(o.date) - Date.parse(today)) / 86400000);
-    return { ...o, days, status: days < 0 ? 'paid' : days === 0 ? 'today' : 'due' };
+    return { ...o, days, status: (days < 0 ? 'paid' : days === 0 ? 'today' : 'due') as BillRow['status'] };
   });
+  // Bank already shows today's bill(s) out: treat them as paid so $800 after a $200 transfer isn't
+  // "short $200" against five weeks still listed as to come.
+  const todayOut = rows.filter((r) => r.status === 'today').reduce((t, r) => t + r.amount, 0);
+  let cover = todaysBillsAlreadyOut(b, accountId, today, todayOut) ? todayOut : debitedToday(b, accountId, today);
+  for (const r of rows) {
+    if (r.status !== 'today' || cover < r.amount) continue;
+    r.status = 'paid';
+    cover -= r.amount;
+  }
   const paid = rows.filter((r) => r.status === 'paid').reduce((t, r) => t + r.amount, 0);
   const toCome = rows.filter((r) => r.status !== 'paid').reduce((t, r) => t + r.amount, 0);
   const deposit = depositFor(b, accountId, period, today);

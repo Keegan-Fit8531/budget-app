@@ -1,8 +1,8 @@
 import {
-  addDays, dateInMonth, diffDays, toDate, todayISO, weekday, type ISODate,
+  addDays, dateInMonth, daysInMonth, diffDays, ordinal, toDate, todayISO, weekday, type ISODate,
 } from './dates';
-import { balanceOn, depositFor, exactNeed, modeOf, topsUp } from './balances';
-import { accountHasPlans, debtPaymentsIn } from './debts';
+import { balanceOn, depositFor, exactNeed, freezePaySplit, modeOf, topsUp } from './balances';
+import { accountHasPlans, debtPaymentsIn, heldDebtPaymentsIn, isHoldDisplayAccount } from './debts';
 import { accountHasGoals, savingsNeedIn } from './savings';
 import type { Account, Budget, Cents, Frequency, Item, Settings } from './types';
 
@@ -86,10 +86,13 @@ export function firstBudgetPay(b: Pick<Budget, 'settings'>, today: ISODate): Per
   return p.start < s.budgetStart ? shiftPeriod(p, 1, s) : p;
 }
 
-/** The next pay still to come (its payday is after today), never before the budget start. */
+/**
+ * The next pay still to come, never before the budget start. Includes today's pay while it is still
+ * payday (pay often lands late in the day); from the day after, that pay is treated as already split.
+ */
 export function upcomingPayPeriod(b: Pick<Budget, 'settings'>, today: ISODate): Period {
   const p = budgetPeriod(b, today);
-  return p.start > today ? p : shiftPeriod(p, 1, b.settings);
+  return p.start >= today ? p : shiftPeriod(p, 1, b.settings);
 }
 
 /** Move `n` pay periods forward (or back, if negative). */
@@ -109,7 +112,7 @@ const MOVE_DAYS = 6;
 /** Move everything kept for one pay (its pay, payslip and one-pay adjustments) to that pay's new start date. */
 function rekeyPay(b: Budget, from: ISODate, to: ISODate): void {
   if (from === to) return;
-  for (const map of [b.payActuals, b.payslips, b.overrides, b.autoBalanced] as (Record<ISODate, unknown> | undefined)[]) {
+  for (const map of [b.payActuals, b.payslips, b.overrides, b.autoBalanced, b.splitSent] as (Record<ISODate, unknown> | undefined)[]) {
     if (!map || !(from in map)) continue;
     if (!(to in map)) map[to] = map[from];
     delete map[from];
@@ -207,6 +210,13 @@ export function skippedDates(item: Pick<Item, 'frequency' | 'start' | 'end' | 's
 /** A cost that's put aside each pay and kept in its account until needed (a WOF, tyres), not paid out on a date. */
 export const isSetAside = (item: Pick<Item, 'setAside'>): boolean => item.setAside === true;
 
+/** Calendar-month envelope (Gas $200/month): funded on payday, spent from synced purchases, resets each month. */
+export const isMonthEnvelope = (item: Pick<Item, 'monthEnvelope'>): boolean => item.monthEnvelope === true;
+
+/** Held in the account (put-aside or month envelope): not paid out on a scheduled date. */
+export const isHeldInAccount = (item: Pick<Item, 'setAside' | 'monthEnvelope'>): boolean =>
+  isSetAside(item) || isMonthEnvelope(item);
+
 /** What a set-aside puts aside each pay: its average per month (pay is monthly), or the whole amount once. */
 export function setAsidePerPay(item: Pick<Item, 'amount' | 'frequency'>): Cents {
   return item.frequency === 'once' ? item.amount : convert(item.amount, item.frequency, 'month');
@@ -218,21 +228,137 @@ function paydayFrom(date: ISODate, s: PayRules): ISODate {
   return p.start === date ? date : p.nextPayday;
 }
 
+/**
+ * Spare in an account for put-aside money, without calling depositFor (avoids recursion).
+ * Entered balance, less bills still to come this pay. Undefined when no balance is entered.
+ */
+export function asideSpareNow(b: Budget, accountId: string, today: ISODate = todayISO()): Cents | undefined {
+  const entry = b.balances?.[accountId];
+  if (!entry || entry.asOf > today) return undefined;
+  let bal = entry.amount;
+  if (entry.asOf < today) {
+    // Roll forward by bills only (deposits would recurse through set-asides).
+    bal -= b.items
+      .filter((i) => i.accountId === accountId && !isHeldInAccount(i))
+      .reduce((t, i) => t + i.amount * itemDates(i, addDays(entry.asOf, 1), addDays(today, -1), b.settings).length, 0);
+    bal -= debtPaymentsIn(b, accountId, addDays(entry.asOf, 1), addDays(today, -1)).reduce((t, x) => t + x.amount, 0);
+  }
+  const period = periodContaining(today, b.settings);
+  const toCome = b.items
+    .filter((i) => i.accountId === accountId && !isHeldInAccount(i))
+    .reduce((t, i) => t + i.amount * itemDates(i, today, period.end, b.settings).filter((d) => d >= today).length, 0)
+    + debtPaymentsIn(b, accountId, today, period.end).reduce((t, x) => t + x.amount, 0);
+  return Math.max(0, bal - toCome);
+}
+
 /** What a payday puts aside in an account: each set-aside from the first payday on or after its start, up to its end. */
-export function setAsidesOn(b: Pick<Budget, 'items' | 'settings'>, accountId: string, payday: ISODate): { item: Item; amount: Cents }[] {
-  return b.items
+export function setAsidesOn(
+  b: Budget,
+  accountId: string,
+  payday: ISODate,
+  opts?: { spare?: Cents; today?: ISODate },
+): { item: Item; amount: Cents }[] {
+  const list = b.items
     .filter((i) => i.accountId === accountId && isSetAside(i) && i.start <= payday && (!i.end || payday <= i.end)
       && (i.frequency !== 'once' || paydayFrom(i.start, b.settings) === payday))
     .map((item) => ({ item, amount: setAsidePerPay(item) }));
+  if (!list.some((x) => x.item.maxSaved && x.item.maxSaved > 0)) return list;
+
+  // Cap each maxSaved item so payday stops topping up once spare is at the cap.
+  let spare = opts?.spare;
+  if (spare === undefined) spare = asideSpareNow(b, accountId, opts?.today ?? todayISO());
+  if (spare === undefined) return list; // no balance entered: keep putting aside
+
+  const capped = list.filter((x) => x.item.maxSaved && x.item.maxSaved > 0);
+  const uncapped = list.filter((x) => !(x.item.maxSaved && x.item.maxSaved > 0));
+  // Attribute current spare to capped items in name order, each up to its max.
+  let left = spare;
+  const built = new Map<string, Cents>();
+  for (const x of [...capped].sort((a, b) => a.item.name.localeCompare(b.item.name))) {
+    const take = Math.min(left, x.item.maxSaved!);
+    built.set(x.item.id, take);
+    left -= take;
+  }
+  return [
+    ...capped.map((x) => {
+      const have = built.get(x.item.id) ?? 0;
+      const room = Math.max(0, x.item.maxSaved! - have);
+      return { item: x.item, amount: Math.min(x.amount, room) };
+    }),
+    ...uncapped,
+  ];
 }
 
 /** The total a payday puts aside in an account. */
-export function setAsideOn(b: Pick<Budget, 'items' | 'settings'>, accountId: string, payday: ISODate): Cents {
-  return setAsidesOn(b, accountId, payday).reduce((t, x) => t + x.amount, 0);
+export function setAsideOn(b: Budget, accountId: string, payday: ISODate, opts?: { spare?: Cents; today?: ISODate }): Cents {
+  return setAsidesOn(b, accountId, payday, opts).reduce((t, x) => t + x.amount, 0);
 }
 
 export function hasSetAsides(b: Pick<Budget, 'items'>, accountId: string): boolean {
   return b.items.some((i) => i.accountId === accountId && isSetAside(i));
+}
+
+export function hasMonthEnvelopes(b: Pick<Budget, 'items'>, accountId: string): boolean {
+  return b.items.some((i) => i.accountId === accountId && isMonthEnvelope(i));
+}
+
+/**
+ * Account-level cap for money put aside: the sum of each set-aside's maxSaved, only when every
+ * set-aside on the account has a max (e.g. Haircut $60). Undefined when any set-aside is uncapped —
+ * those can keep building without a ceiling.
+ */
+export function asideMaxSaved(b: Pick<Budget, 'items'>, accountId: string): Cents | undefined {
+  const asides = b.items.filter((i) => i.accountId === accountId && isSetAside(i));
+  if (!asides.length || !asides.every((i) => i.maxSaved && i.maxSaved > 0)) return undefined;
+  return asides.reduce((t, i) => t + (i.maxSaved ?? 0), 0);
+}
+
+/** This month's budget for an envelope item (amount converted to a monthly figure). */
+export function monthBudget(item: Pick<Item, 'amount' | 'frequency'>): Cents {
+  return item.frequency === 'once' ? item.amount : convert(item.amount, item.frequency, 'month');
+}
+
+/** First and last day of a calendar month ("YYYY-MM"). */
+function calendarMonthRange(ym: string): { from: ISODate; to: ISODate } {
+  const [y, m] = ym.split('-').map(Number);
+  return { from: `${ym}-01`, to: dateInMonth(y, m - 1, daysInMonth(y, m - 1)) };
+}
+
+/** Paydays whose actual pay date falls in this calendar month. */
+export function paydaysInMonth(ym: string, s: PayRules): ISODate[] {
+  const { from, to } = calendarMonthRange(ym);
+  const out: ISODate[] = [];
+  let p = periodContaining(from, s);
+  if (p.start < from) p = shiftPeriod(p, 1, s);
+  for (; p.start <= to; p = shiftPeriod(p, 1, s)) out.push(p.start);
+  return out;
+}
+
+/**
+ * What a payday puts into a month-envelope item: an even share of this calendar month's budget
+ * across the paydays in that month (last payday gets any remainder).
+ */
+export function monthEnvelopePerPay(item: Item, payday: ISODate, s: PayRules): Cents {
+  if (!isMonthEnvelope(item) || item.start > payday || (item.end && payday > item.end)) return 0;
+  const budget = monthBudget(item);
+  const pays = paydaysInMonth(payday.slice(0, 7), s);
+  const i = pays.indexOf(payday);
+  if (i < 0) return 0;
+  if (pays.length <= 1) return budget;
+  const each = Math.floor(budget / pays.length);
+  return i === pays.length - 1 ? budget - each * (pays.length - 1) : each;
+}
+
+/** Month-envelope amounts a payday funds in an account. */
+export function monthEnvelopesOn(b: Budget, accountId: string, payday: ISODate): { item: Item; amount: Cents }[] {
+  return b.items
+    .filter((i) => i.accountId === accountId && isMonthEnvelope(i))
+    .map((item) => ({ item, amount: monthEnvelopePerPay(item, payday, b.settings) }))
+    .filter((x) => x.amount > 0);
+}
+
+export function monthEnvelopeOn(b: Budget, accountId: string, payday: ISODate): Cents {
+  return monthEnvelopesOn(b, accountId, payday).reduce((t, x) => t + x.amount, 0);
 }
 
 // ---------- Frequency conversion ----------
@@ -299,6 +425,8 @@ export function planFor(b: Budget, period: Period, today: ISODate = todayISO()):
   // No payslip for this period yet: plan with the most recent pay received before it.
   const prevKey = actual === undefined ? Object.keys(b.payActuals).filter((k) => k < period.start).sort().pop() : undefined;
   const pay = actual ?? (prevKey ? b.payActuals[prevKey] : b.settings.expectedPay);
+  // Once this pay is locked (payslip in / payday passed), freeze the split so later changes don’t rewrite it.
+  freezePaySplit(b, period, today);
   const live = b.accounts.filter((a) => !a.archived);
   const payId = b.settings.payAccountId;
 
@@ -307,16 +435,36 @@ export function planFor(b: Budget, period: Period, today: ISODate = todayISO()):
   const base = live.map((account) => {
     const items = b.items.filter((i) => i.accountId === account.id);
     const dues: Due[] = [];
-    const breakdown = items.filter((i) => !isSetAside(i)).map((item) => {
+    const breakdown = items.filter((i) => !isHeldInAccount(i)).map((item) => {
       const dates = itemDates(item, period.start, period.end, b.settings);
       dates.forEach((date) => dues.push({ item, date }));
       return { item, count: dates.length };
     }).filter((x) => x.count > 0);
     // Debt plan payments and savings goals linked to this account count as its costs too.
-    for (const p of debtPaymentsIn(b, account.id, period.start, period.end)) {
+    // Held-elsewhere debts (Gem in Misc bills) still list their payments on the debt card for display.
+    const debtPays = isHoldDisplayAccount(b, account.id)
+      ? heldDebtPaymentsIn(b, account.id, period.start, period.end)
+      : debtPaymentsIn(b, account.id, period.start, period.end);
+    for (const p of debtPays) {
+      // Hold account (e.g. Misc bills): list under that account's costs as the debt (Gem Visa), with a note.
+      // Debt's own display account: keep plan names so opening Gem still shows what the payment covers.
+      const heldHere = !!p.debt.holdAccountId && p.debt.holdAccountId === account.id;
       const item: Item = {
-        id: `${p.plan.id}@${p.date}`, name: p.plan.name, amount: p.amount,
-        frequency: 'once', start: p.date, accountId: account.id,
+        id: `${p.plan.id}@${p.date}`,
+        name: heldHere ? p.debt.name : p.plan.name,
+        amount: p.amount,
+        frequency: 'once',
+        start: p.date,
+        accountId: account.id,
+        ...(heldHere
+          ? {
+              note: [
+                p.debt.statementDay ? `Stored until the ${ordinal(p.debt.statementDay)}` : 'Stored until statement day',
+                `set on ${p.debt.name}`,
+                p.plan.name !== p.debt.name ? p.plan.name : undefined,
+              ].filter(Boolean).join(' · '),
+            }
+          : {}),
       };
       dues.push({ item, date: p.date });
       breakdown.push({ item, count: 1 });
@@ -328,22 +476,34 @@ export function planFor(b: Budget, period: Period, today: ISODate = todayISO()):
       breakdown.push({ item, count: 1 });
     }
     // Money put aside on payday (a WOF, tyres): part of what the account needs, though nothing is paid out.
-    for (const x of setAsidesOn(b, account.id, period.start)) {
-      const item: Item = { ...x.item, id: `aside-${x.item.id}`, amount: x.amount, frequency: 'once', start: period.start, end: undefined };
+    for (const x of setAsidesOn(b, account.id, period.start, { today })) {
+      if (x.amount <= 0) continue;
+      const item: Item = { ...x.item, id: `aside-${x.item.id}`, amount: x.amount, frequency: 'once', start: period.start, end: undefined, setAside: true };
+      dues.push({ item, date: period.start });
+      breakdown.push({ item, count: 1 });
+    }
+    // Month envelopes (Gas $200/month): share of this month's budget, spent from synced purchases.
+    for (const x of monthEnvelopesOn(b, account.id, period.start)) {
+      if (x.amount <= 0) continue;
+      const item: Item = { ...x.item, id: `env-${x.item.id}`, amount: x.amount, frequency: 'once', start: period.start, end: undefined, monthEnvelope: true };
       dues.push({ item, date: period.start });
       breakdown.push({ item, count: 1 });
     }
     dues.sort((x, y) => x.date.localeCompare(y.date));
-    // The pay's list of payments leaves out what's only put aside.
-    allDues.push(...dues.filter((d) => !isSetAside(d.item)));
+    // The pay's list of payments leaves out what's only put aside or held in a month envelope.
+    allDues.push(...dues.filter((d) => !isHeldInAccount(d.item)));
     const need = dues.reduce((s, d) => s + d.item.amount, 0);
     // …then what payday sends: the same amount the balance projections use (one source of truth).
     const funded = account.id === payId ? 0 : depositFor(b, account.id, period, today);
-    const hasCosts = items.length > 0 || accountHasPlans(b, account.id) || accountHasGoals(b, account.id);
+    const hasCosts = items.length > 0 || accountHasPlans(b, account.id) || accountHasGoals(b, account.id)
+      || isHoldDisplayAccount(b, account.id);
     return { account, items, dues, breakdown, need, funded, hasCosts };
   });
 
-  const totalSplit = base.filter((x) => x.account.id !== payId).reduce((s, x) => s + x.funded, 0);
+  // Debts that store their payment in another account (e.g. Gem → Misc bills) still show a funded
+  // amount on the debt card, but that money is already in the hold account's deposit — don't count twice.
+  const totalSplit = base.filter((x) => x.account.id !== payId && !isHoldDisplayAccount(b, x.account.id))
+    .reduce((s, x) => s + x.funded, 0);
   const leftover = pay - totalSplit;
 
   const accounts = base.map(({ account, dues, breakdown, need, funded, hasCosts }): AccountPlan => {
@@ -367,10 +527,10 @@ export function planFor(b: Budget, period: Period, today: ISODate = todayISO()):
 /** Steady per-pay amount for an account: its items' long-run monthly average. */
 export function averageNeed(b: Budget, accountId: string): Cents {
   const mine = b.items.filter((i) => i.accountId === accountId && i.frequency !== 'once');
-  let items = mine.filter((i) => !i.skipIfWithin || isSetAside(i)).reduce((s, i) => s + convert(i.amount, i.frequency, 'month'), 0);
-  // Costs with a skip-near-payday rule: count the real dates over the next 12 pays. (Set-asides never skip:
-  // the line above counts each at its average per month, which is what it puts aside each pay.)
-  const skippy = mine.filter((i) => i.skipIfWithin && !isSetAside(i));
+  let items = mine.filter((i) => !i.skipIfWithin || isHeldInAccount(i)).reduce((s, i) => s + convert(i.amount, i.frequency, 'month'), 0);
+  // Costs with a skip-near-payday rule: count the real dates over the next 12 pays. (Held-in-account
+  // costs never skip: the line above counts each at its average per month.)
+  const skippy = mine.filter((i) => i.skipIfWithin && !isHeldInAccount(i));
   if (skippy.length) {
     const first = periodContaining(todayISO(), b.settings);
     const last = shiftPeriod(first, 11, b.settings);
@@ -380,12 +540,13 @@ export function averageNeed(b: Budget, accountId: string): Cents {
   // Debts: average of the next 12 pays' plan payments. Savings: the per-pay amount goals need.
   let extra = 0;
   // (A card balance with no payment plans still gets paid off, e.g. a Mastercard balance.)
-  const hasDebt = (b.debts ?? []).some((d) => d.accountId === accountId && !d.payroll);
+  const hasDebt = (b.debts ?? []).some((d) => (d.accountId === accountId || d.holdAccountId === accountId) && !d.payroll);
   if (hasDebt || accountHasPlans(b, accountId) || accountHasGoals(b, accountId)) {
     let p = periodContaining(todayISO(), b.settings);
     let total = 0;
     for (let i = 0; i < 12; i++) {
       total += debtPaymentsIn(b, accountId, p.start, p.end).reduce((s, x) => s + x.amount, 0);
+      total += heldDebtPaymentsIn(b, accountId, p.start, p.end).reduce((s, x) => s + x.amount, 0);
       total += savingsNeedIn(b, accountId, p.start);
       p = shiftPeriod(p, 1, b.settings);
     }
@@ -400,7 +561,7 @@ export function averageSplit(b: Budget, accountId: string): Cents {
   if (!line) return 0;
   const mode = modeOf(line);
   // Steady: its usual amount (not the next pay's, which can include a one-off catch-up).
-  return mode === 'exact' ? averageNeed(b, accountId) : mode === 'smooth' ? Math.ceil(averageNeed(b, accountId) / 100) * 100 : line.amount;
+  return mode === 'exact' ? averageNeed(b, accountId) : mode === 'smooth' ? averageNeed(b, accountId) : line.amount;
 }
 
 /**

@@ -1,12 +1,16 @@
 import { describe, expect, it } from 'vitest';
-import { balanceToday, billTracker, depositFor, estimateBalance, outflows } from './balances';
+import {
+  balanceToday, billTracker, depositFor, depositPending, estimateBalance, freezePaySplit, freezePaySplitFrom,
+  outflows, unfreezePaySplit,
+} from './balances';
 import { applyAllocation, existingExtras, undoAllocation } from './allocate';
 import { addDays } from './dates';
-import { applyPayment, debtPaymentsIn, debtSchedules, owed, paidIn, planSchedule, recordHistory, settleDue } from './debts';
+import { applyPayment, debtAdvice, debtPay, debtPaymentsIn, debtPerPay, debtSchedules, owed, projectedOwed, paidIn, planSchedule, recordHistory, settleDue, syncGemToRecommended } from './debts';
 import { classifyText, matchDebt, parseDate, parseStatementText, recordStatement } from './documents';
-import { averageNeed, clearPaydayMove, periodContaining, planFor, recordPayday, setAsidePerPay, shiftPeriod } from './engine';
+import { asideMaxSaved, averageNeed, clearPaydayMove, monthEnvelopeOn, monthEnvelopePerPay, periodContaining, planFor, recordPayday, setAsidePerPay, shiftPeriod, upcomingPayPeriod } from './engine';
+import { accountEnvelopes, envelopeHeld, envelopeStatus, matchesEnvelope } from './envelope';
 import { projectedAt, removeSpend, spendFromGoal } from './goalcosts';
-import { autoBalance, balancedMode, balancePay } from './rebalance';
+import { autoBalance, autoPays, balancedMode, balancePay } from './rebalance';
 import { accountHistory, recordCost, removeCost, setBalance } from './history';
 import { parseMoney } from './money';
 import { forecast } from './savings';
@@ -14,7 +18,7 @@ import { seedBudget } from './seed';
 import type { Budget, Debt, SavingsGoal } from './types';
 import { looksLikeBudget } from './valid';
 import { applyProposal, preview, windBack } from './reader/apply';
-import { csvTargets, NEW_DEBT, review, toCents, toDraft, validDate, type Draft } from './reader/check';
+import { csvTargets, NEW_DEBT, NOT_MINE, review, toCents, toDraft, validDate, type Draft } from './reader/check';
 import { classifyHttpError, nextPacificMidnight, nzTime, ReaderError } from './reader/errors';
 import { geminiProvider, parseReply } from './reader/gemini';
 import { prepareFile } from './reader/prepare';
@@ -61,6 +65,21 @@ describe('pay periods', () => {
     expect(periodContaining('2025-06-01', s)).toMatchObject({ start: '2025-04-30', end: '2025-06-01', nextPayday: '2025-06-02' });
     expect(periodContaining('2025-06-02', s).start).toBe('2025-06-02');
   });
+
+  it('on payday the current pay is still upcoming (pay can land late); the day after it is not', () => {
+    const b = budget();
+    expect(upcomingPayPeriod(b, '2026-11-18').start).toBe('2026-11-19');
+    expect(upcomingPayPeriod(b, '2026-11-19').start).toBe('2026-11-19');
+    expect(upcomingPayPeriod(b, '2026-11-20').start).toBe('2026-12-18');
+    expect(autoPays(b, '2026-11-19')[0].start).toBe('2026-11-19');
+    expect(autoPays(b, '2026-11-20')[0].start).toBe('2026-12-18');
+  });
+
+  it('once the payslip is in, automatic balancing leaves that pay alone', () => {
+    const b = budget();
+    b.payActuals['2026-11-19'] = 500000;
+    expect(autoPays(b, '2026-11-19')[0].start).toBe('2026-12-18');
+  });
 });
 
 describe('savings goals', () => {
@@ -106,6 +125,14 @@ describe('savings goals', () => {
     g.balance = 10000; g.asOf = '2026-11-25';
     expect(projectedAt(b, g, '2027-01-20', '2026-11-25')).toEqual({ amount: 30000, pays: 2 });
     expect(forecast(b, g, '2026-11-25')).toMatchObject({ onTrack: true, reachedBy: '2027-01-19', projected: 30000 });
+  });
+
+  it('counts extra sent for one pay only (Optimise) in the forecast', () => {
+    // $100 a pay, plus $100 extra in the 18 Dec pay: $400 by 19 Jan instead of $300.
+    const b = withGoal(40000);
+    b.overrides = { '2026-12-18': { sv: 20000 } };
+    const f = forecast(b, b.savings![0], '2026-11-12');
+    expect(f).toMatchObject({ reachedBy: '2027-01-19', onTrack: true, projected: 40000 });
   });
 });
 
@@ -197,6 +224,157 @@ describe('debt payments that have gone out', () => {
   });
 });
 
+describe('frozen payday split once the cycle has started', () => {
+  function withBills() {
+    const b = budget();
+    b.accounts.push(
+      { id: 'bills', name: 'Misc bills', kind: 'bank', color: '#000', groupId: 'needs' },
+      { id: 'gem', name: 'Gem Visa', kind: 'external', color: '#000', groupId: 'debt' },
+      { id: 'ap', name: 'Afterpay', kind: 'external', color: '#000', groupId: 'debt' },
+    );
+    b.split.push(
+      { accountId: 'bills', amount: 0, mode: 'exact' },
+      { accountId: 'gem', amount: 0, mode: 'exact' },
+      { accountId: 'ap', amount: 50400, mode: 'fixed' },
+    );
+    b.items.push({ id: 'power', name: 'Power', amount: 20000, frequency: 'monthly', start: '2026-01-25', accountId: 'bills' });
+    b.debts = [{
+      id: 'gem', name: 'Gem Visa', kind: 'card', rules: 'gem', accountId: 'gem', holdAccountId: 'bills',
+      plans: [{ id: 'p1', name: 'TV', type: 'interest-free', original: 100000, remaining: 50400, asOf: '2026-10-01', purchaseDate: '2026-10-01', months: 6 }],
+      balance: { amount: 50400, asOf: '2026-11-18' },
+      statementDay: 21,
+    }, {
+      id: 'ap', name: 'Afterpay', kind: 'bnpl', rules: 'afterpay', accountId: 'ap',
+      plans: [{ id: 'photo', name: 'PHOTOGEAR', type: 'afterpay', original: 14900, remaining: 3725, asOf: '2026-11-01', purchaseDate: '2026-11-01' }],
+      balance: { amount: 3725, asOf: '2026-11-18' },
+    }];
+    return b;
+  }
+
+  it('keeps the frozen deposits after debts are paid down later in the cycle', () => {
+    const b = withBills();
+    const p = periodContaining('2026-11-19', b.settings);
+    b.payActuals[p.start] = 600000;
+    const gemBefore = depositFor(b, 'gem', p, '2026-11-19');
+    const apBefore = depositFor(b, 'ap', p, '2026-11-19');
+    expect(gemBefore).toBeGreaterThan(0);
+    expect(apBefore).toBeGreaterThan(0);
+    freezePaySplit(b, p, '2026-11-19');
+    expect(b.splitSent?.[p.start]?.gem).toBe(gemBefore);
+    expect(b.splitSent?.[p.start]?.ap).toBe(apBefore);
+
+    // Later in the cycle: Afterpay cleared and Gem schedule gone — live would be $0.
+    b.debts![1].plans = [];
+    b.debts![1].balance = { amount: 0, asOf: '2026-11-19' };
+    b.debts![0].plans = [];
+    b.debts![0].balance = { amount: 0, asOf: '2026-11-19' };
+    expect(depositFor(b, 'gem', p, '2026-11-20')).toBe(gemBefore);
+    expect(depositFor(b, 'ap', p, '2026-11-20')).toBe(apBefore);
+    // Future pays still recalculate.
+    const next = shiftPeriod(p, 1, b.settings);
+    expect(depositFor(b, 'ap', next, '2026-11-20')).toBe(0);
+  });
+
+  it('recovers a collapsed auto-balance amount when freezing (this morning’s figure)', () => {
+    const b = withBills();
+    const p = periodContaining('2026-11-19', b.settings);
+    b.payActuals[p.start] = 600000;
+    // Balancing had Afterpay at $150, then live collapsed to $0.
+    b.autoBalanced = { [p.start]: { ap: { prev: 15000, to: 0, reason: 'Trimmed' } } };
+    b.overrides = { [p.start]: { ap: 0 } };
+    b.debts![1].plans = [];
+    b.debts![1].balance = { amount: 0, asOf: '2026-11-19' };
+    freezePaySplit(b, p, '2026-11-19');
+    expect(b.splitSent?.[p.start]?.ap).toBe(15000);
+    expect(depositFor(b, 'ap', p, '2026-11-19')).toBe(15000);
+  });
+
+  it('prefers payday bank credits when freezing', () => {
+    const b = withBills();
+    const p = periodContaining('2026-11-19', b.settings);
+    b.payActuals[p.start] = 600000;
+    b.accountTransactions = { bills: [{ date: '2026-11-19', amount: 77500, description: 'Payday' }] };
+    freezePaySplit(b, p, '2026-11-19');
+    expect(b.splitSent?.[p.start]?.bills).toBe(77500);
+  });
+
+  it('can restore the freeze from a morning budget copy', () => {
+    const morning = withBills();
+    const p = periodContaining('2026-11-19', morning.settings);
+    morning.payActuals[p.start] = 600000;
+    const gemMorning = depositFor(morning, 'gem', p, '2026-11-19');
+    expect(gemMorning).toBeGreaterThan(0);
+
+    const now = structuredClone(morning);
+    now.debts![0].plans = [];
+    now.debts![0].balance = { amount: 0, asOf: '2026-11-19' };
+    freezePaySplit(now, p, '2026-11-19'); // would lock $0 without a morning source
+    expect(now.splitSent?.[p.start]?.gem).toBe(0);
+
+    freezePaySplitFrom(now, p, morning, '2026-11-19');
+    expect(now.splitSent?.[p.start]?.gem).toBe(gemMorning);
+    expect(depositFor(now, 'gem', p, '2026-11-20')).toBe(gemMorning);
+  });
+
+  it('unfreezes when the payslip is cleared on payday', () => {
+    const b = withBills();
+    const p = periodContaining('2026-11-19', b.settings);
+    b.payActuals[p.start] = 600000;
+    freezePaySplit(b, p, '2026-11-19');
+    expect(b.splitSent?.[p.start]).toBeDefined();
+    delete b.payActuals[p.start];
+    unfreezePaySplit(b, p.start);
+    expect(b.splitSent?.[p.start]).toBeUndefined();
+  });
+});
+
+describe('payday morning before the deposit lands', () => {
+  function withRent() {
+    const b = budget();
+    b.accounts.push({ id: 'rent', name: 'Rent', kind: 'bank', color: '#000', groupId: 'needs' });
+    b.split.push({ accountId: 'rent', amount: 0, mode: 'smooth' });
+    b.items.push({ id: 'r', name: 'Rent', amount: 41500, frequency: 'weekly', start: '2026-01-05', accountId: 'rent' });
+    return b;
+  }
+
+  it('a balance refreshed on payday before the split still counts what payday sends', () => {
+    // $500 left on Wed 18 Nov; bank sync on Thu 19 Nov (payday) before the split lands.
+    const b = withRent();
+    setBalance(b, 'rent', 50000, '2026-11-18', 'h1');
+    setBalance(b, 'rent', 50000, '2026-11-19', 'h2');
+    const p = periodContaining('2026-11-19', b.settings);
+    expect(depositPending(b, 'rent', b.balances!.rent)).toBe(true);
+    // What's in the bank right now is still $500…
+    expect(balanceToday(b, 'rent', '2026-11-19')).toBe(50000);
+    // …but the period's end still counts today's deposit (to the cent), so it isn't falsely short.
+    // Steady ≈ $1,804.51; 4 × $415 out → ends $644.51.
+    expect(depositFor(b, 'rent', p, '2026-11-19')).toBe(180451);
+    expect(estimateBalance(b, 'rent', p.end, '2026-11-19')).toBe(64451);
+    expect(balancePay(b, p, '2026-11-19').shortAccounts).toEqual([]);
+  });
+
+  it('bank sync on payday does not bump asOf when the balance is unchanged', () => {
+    const b = withRent();
+    setBalance(b, 'rent', 50000, '2026-11-18', 'h1');
+    applyBank(b, {
+      accounts: [{ id: 'a1', name: 'Rent', number: '06-0115-0000001-00', type: 'CHECKING', institution: 'ANZ', balance: 500, transactions: true }],
+      transactions: [],
+    }, { a1: 'account:rent' }, '2026-11-19');
+    expect(b.balances?.rent).toEqual({ amount: 50000, asOf: '2026-11-18' });
+    expect(balancePay(b, periodContaining('2026-11-19', b.settings), '2026-11-19').shortAccounts).toEqual([]);
+  });
+
+  it('once the deposit is in the balance, it is not counted twice', () => {
+    const b = withRent();
+    setBalance(b, 'rent', 50000, '2026-11-18', 'h1');
+    setBalance(b, 'rent', 230451, '2026-11-19', 'h2'); // $500 + steady $1,804.51
+    const p = periodContaining('2026-11-19', b.settings);
+    expect(depositPending(b, 'rent', b.balances!.rent)).toBe(false);
+    expect(estimateBalance(b, 'rent', p.end, '2026-11-19')).toBe(64451);
+    expect(balancePay(b, p, '2026-11-19').shortAccounts).toEqual([]);
+  });
+});
+
 describe('bill tracker', () => {
   it('on payday, counts the deposit that lands that day', () => {
     const b = budget();
@@ -209,6 +387,36 @@ describe('bill tracker', () => {
     expect(payday.spare).toBe(6000);
     expect(payday.rows[0].covered).toBe(true);
     expect(billTracker(b, 'bills', '2026-11-20').balance).toBe(31000);
+  });
+
+  it("payday deposit then today's weekly transfer: balance $800 is enough for the 4 weeks left", () => {
+    // $1,000 put in on payday, $200 transferred to weekly allowance today → $800 left for 4 Thursdays.
+    const b = budget();
+    b.accounts.push({ id: 'storage', name: 'Allowance storage', kind: 'bank', color: '#000', groupId: 'lifestyle' });
+    b.split.push({ accountId: 'storage', amount: 100000, mode: 'fixed' });
+    b.items.push({ id: 'wa', name: 'Weekly allowance transfer', amount: 20000, frequency: 'weekly', start: '2026-01-01', accountId: 'storage' });
+    b.balances = { storage: { amount: 80000, asOf: '2026-11-19' } };
+    b.accountTransactions = { storage: [{ date: '2026-11-19', amount: -20000, description: 'Weekly allowance' }] };
+
+    const t = billTracker(b, 'storage', '2026-11-19');
+    expect(t.paid).toBe(20000);
+    expect(t.toCome).toBe(80000);
+    expect(t.spare).toBe(0);
+    expect(t.rows.find((r) => r.date === '2026-11-19')?.status).toBe('paid');
+    expect(t.rows.filter((r) => r.status !== 'paid').every((r) => r.covered)).toBe(true);
+  });
+
+  it("same after a bank balance sync with no matching transaction line", () => {
+    const b = budget();
+    b.accounts.push({ id: 'storage', name: 'Allowance storage', kind: 'bank', color: '#000', groupId: 'lifestyle' });
+    b.split.push({ accountId: 'storage', amount: 100000, mode: 'fixed' });
+    b.items.push({ id: 'wa', name: 'Weekly allowance transfer', amount: 20000, frequency: 'weekly', start: '2026-01-01', accountId: 'storage' });
+    // Synced balance today is post-transfer; payday sent $1,000.
+    b.balances = { storage: { amount: 80000, asOf: '2026-11-19' } };
+    b.overrides = { '2026-11-19': { storage: 100000 } };
+    const t = billTracker(b, 'storage', '2026-11-19');
+    expect(t.spare).toBe(0);
+    expect(t.toCome).toBe(80000);
   });
 
   it('on a day a payment is due, the card headline and "In the account" are the same amount', () => {
@@ -291,9 +499,33 @@ describe('recording a debt payment', () => {
     };
     applyPayment(debt, 20000, s, '2026-11-19');
     expect(debt.plans[0].remaining).toBe(80000);
+    expect(debt.paid).toEqual([expect.objectContaining({ date: '2026-11-19', amount: 20000, name: 'Car', planId: 'p' })]);
     expect(settleDue(debt, s, '2026-11-20')).toBe(false);
     expect(debt.plans[0].remaining).toBe(80000);
     expect(planSchedule(debt, debt.plans[0], s).payments[0].date).toBe('2026-12-18');
+  });
+
+  it('Gem payment that clears the card keeps the amount on the hold-display pay', () => {
+    const b = budget();
+    b.accounts.push(
+      { id: 'bills', name: 'Misc bills', kind: 'bank', color: '#000', groupId: 'needs' },
+      { id: 'gem', name: 'Gem Visa', kind: 'external', color: '#000', groupId: 'debt' },
+    );
+    b.split.push({ accountId: 'bills', amount: 0, mode: 'exact' }, { accountId: 'gem', amount: 0, mode: 'exact' });
+    b.debts = [{
+      id: 'gem', name: 'Gem Visa', kind: 'card', rules: 'gem', accountId: 'gem', holdAccountId: 'bills',
+      plans: [{ id: 'p1', name: 'TV', type: 'interest-free', original: 100000, remaining: 50400, asOf: '2026-10-01', purchaseDate: '2026-10-01', months: 6 }],
+      balance: { amount: 50400, asOf: '2026-11-18' },
+      statementDay: 21,
+    }];
+    const p = periodContaining('2026-11-19', b.settings);
+    const before = depositFor(b, 'gem', p, '2026-11-19');
+    expect(before).toBeGreaterThan(0);
+    // Paying off the whole card clears the Nov 21 schedule; `paid` keeps this pay’s send amount.
+    applyPayment(b.debts[0], 50400, b.settings, '2026-11-19');
+    expect(b.debts[0].plans).toEqual([]);
+    expect(b.debts[0].paid?.some((x) => x.amount === before)).toBe(true);
+    expect(depositFor(b, 'gem', p, '2026-11-19')).toBe(before);
   });
 
   it('a payment between paydays leaves the next payday\'s payment in place', () => {
@@ -468,6 +700,146 @@ describe('automatic balancing', () => {
   });
 });
 
+describe('max saved on money put aside', () => {
+  it('stops adding once spare after bills reaches the cap (e.g. Haircut $60)', () => {
+    const b = budget();
+    b.accounts.push({ id: 'bills', name: 'Misc bills', kind: 'bank', color: '#000', groupId: 'needs' });
+    b.split.push({ accountId: 'bills', amount: 0, mode: 'exact' });
+    b.items.push(
+      { id: 'power', name: 'Power', amount: 10000, frequency: 'monthly', start: '2026-11-25', accountId: 'bills' },
+      { id: 'cut', name: 'Haircut', amount: 2000, frequency: 'monthly', start: '2026-11-01', accountId: 'bills', setAside: true, maxSaved: 6000 },
+    );
+    // $100 bill still to come + $60 already aside → spare for Haircut is $60 → add nothing.
+    b.balances = { bills: { amount: 16000, asOf: '2026-11-14' } };
+    const p = periodContaining('2026-11-19', b.settings);
+    expect(depositFor(b, 'bills', p, '2026-11-14')).toBe(10000);
+    // Only $40 aside so far → still room for $20.
+    b.balances = { bills: { amount: 14000, asOf: '2026-11-14' } };
+    expect(depositFor(b, 'bills', p, '2026-11-14')).toBe(12000);
+  });
+
+  it('exposes the account max so Accounts can show it (Haircut max $60)', () => {
+    const b = budget();
+    b.accounts.push({ id: 'bills', name: 'Misc bills', kind: 'bank', color: '#000', groupId: 'needs' });
+    b.items.push(
+      { id: 'cut', name: 'Haircut', amount: 2000, frequency: 'monthly', start: '2026-11-01', accountId: 'bills', setAside: true, maxSaved: 6000 },
+    );
+    expect(asideMaxSaved(b, 'bills')).toBe(6000);
+    // Uncapped set-aside on the same account → no single account max.
+    b.items.push({ id: 'tyres', name: 'Tyres', amount: 5000, frequency: 'monthly', start: '2026-11-01', accountId: 'bills', setAside: true });
+    expect(asideMaxSaved(b, 'bills')).toBeUndefined();
+  });
+
+  it('does not treat an over-max Haircut account as having no spare at all', () => {
+    const b = budget();
+    b.settings.expectedPay = 500000;
+    b.accounts.push(
+      { id: 'bills', name: 'Misc bills', kind: 'bank', color: '#000', groupId: 'needs' },
+      { id: 'short', name: 'Short', kind: 'bank', color: '#000', groupId: 'needs' },
+    );
+    b.split.push({ accountId: 'bills', amount: 0, mode: 'exact' }, { accountId: 'short', amount: 0, mode: 'exact' });
+    b.items.push(
+      { id: 'cut', name: 'Haircut', amount: 2000, frequency: 'monthly', start: '2026-11-01', accountId: 'bills', setAside: true, maxSaved: 6000 },
+      { id: 'bill', name: 'Power', amount: 50000, frequency: 'monthly', start: '2026-11-25', accountId: 'short' },
+    );
+    // $189.73 left → $60 for Haircut, $129.73 above the max (already in the account).
+    b.balances = { bills: { amount: 18973, asOf: '2026-11-14' } };
+    const p = periodContaining('2026-11-19', b.settings);
+    const r = balancePay(b, p, '2026-11-14');
+    expect(r.notSpare.find((x) => x.accountId === 'bills')?.reason ?? '').not.toMatch(/none of it is spare/);
+  });
+});
+
+describe('month envelope (Gas)', () => {
+  it('funds a share of the monthly budget on each payday and tracks fuel spend', () => {
+    const b = budget();
+    b.accounts.push({ id: 'food', name: 'Food and gas', kind: 'bank', color: '#000', groupId: 'needs' });
+    b.split.push({ accountId: 'food', amount: 0, mode: 'exact' });
+    b.items.push(
+      { id: 'gas', name: 'Gas', amount: 20000, frequency: 'monthly', start: '2026-11-01', accountId: 'food', monthEnvelope: true },
+      { id: 'food', name: 'Food', amount: 15000, frequency: 'weekly', start: '2026-11-03', accountId: 'food' },
+    );
+    const p = periodContaining('2026-11-19', b.settings);
+    // Gas has no dated outflows — only its payday share.
+    expect(outflows(b, 'food', p.start, p.end).every((o) => o.name !== 'Gas')).toBe(true);
+    const share = monthEnvelopeOn(b, 'food', p.start);
+    expect(share).toBeGreaterThan(0);
+    expect(share).toBeLessThanOrEqual(20000);
+    // Exact need includes food weeks + gas share.
+    expect(depositFor(b, 'food', p, '2026-11-14')).toBeGreaterThanOrEqual(share);
+
+    b.accountTransactions = {
+      food: [
+        { date: '2026-11-05', description: 'Z ENERGY WELLINGTON', amount: -4500 },
+        { date: '2026-11-12', description: 'BP CONNECT', amount: -3800 },
+        { date: '2026-11-08', description: 'COUNTDOWN', amount: -9000 },
+      ],
+    };
+    expect(matchesEnvelope({ name: 'Gas' }, b.accountTransactions!.food[0])).toBe(true);
+    expect(matchesEnvelope({ name: 'Gas' }, b.accountTransactions!.food[2])).toBe(false);
+    const st = envelopeStatus(b, b.items[0], '2026-11-14');
+    expect(st.budget).toBe(20000);
+    expect(st.spent).toBe(8300);
+    expect(st.left).toBe(11700);
+    expect(st.over).toBe(false);
+    expect(accountEnvelopes(b, 'food', '2026-11-14')).toHaveLength(1);
+  });
+
+  it('marks over when fuel spend exceeds the month budget, and resets next month', () => {
+    const b = budget();
+    b.accounts.push({ id: 'food', name: 'Food and gas', kind: 'bank', color: '#000', groupId: 'needs' });
+    b.items.push(
+      { id: 'gas', name: 'Gas', amount: 10000, frequency: 'monthly', start: '2026-11-01', accountId: 'food', monthEnvelope: true },
+    );
+    b.accountTransactions = {
+      food: [
+        { date: '2026-11-05', description: 'GULL', amount: -6000 },
+        { date: '2026-11-20', description: 'CALTEX', amount: -5500 },
+        { date: '2026-12-02', description: 'BP', amount: -4000 },
+      ],
+    };
+    const nov = envelopeStatus(b, b.items[0], '2026-11-25');
+    expect(nov.spent).toBe(11500);
+    expect(nov.over).toBe(true);
+    expect(nov.left).toBe(-1500);
+    const dec = envelopeStatus(b, b.items[0], '2026-12-05');
+    expect(dec.budget).toBe(10000);
+    expect(dec.spent).toBe(4000);
+    expect(dec.left).toBe(6000);
+    expect(dec.over).toBe(false);
+  });
+
+  it('splits the monthly budget across paydays in the month', () => {
+    const b = budget();
+    const item = { id: 'gas', name: 'Gas', amount: 20000, frequency: 'monthly' as const, start: '2026-11-01', accountId: 'food', monthEnvelope: true };
+    const pays = ['2026-11-19']; // one payday in Nov for paydayDay 19
+    // With one payday, the whole month budget goes on that pay.
+    expect(monthEnvelopePerPay(item, '2026-11-19', b.settings)).toBe(20000);
+    expect(monthEnvelopePerPay(item, pays[0], b.settings)).toBe(20000);
+  });
+
+  it('treats unspent gas budget as reserved: food + gas can make the account short', () => {
+    const b = budget();
+    b.accounts.push({ id: 'food', name: 'Food and gas', kind: 'bank', color: '#000', groupId: 'needs' });
+    b.split.push({ accountId: 'food', amount: 0, mode: 'smooth' });
+    // $200/week food × 5 = $1,000 this pay; gas month budgets $271.76 + $54.35 = $326.11.
+    b.items.push(
+      { id: 'food', name: 'Food', amount: 20000, frequency: 'weekly', start: '2026-11-19', accountId: 'food' },
+      { id: 'car', name: 'Car gas', amount: 27176, frequency: 'monthly', start: '2026-11-01', accountId: 'food', monthEnvelope: true },
+      { id: 'scooter', name: 'Scooter gas', amount: 5435, frequency: 'monthly', start: '2026-11-01', accountId: 'food', monthEnvelope: true },
+    );
+    b.balances = { food: { amount: 119575, asOf: '2026-11-19' } };
+    const today = '2026-11-19';
+    const t = billTracker(b, 'food', today);
+    expect(t.toCome).toBe(100000);
+    expect(t.spare).toBe(19575); // $195.75 after food alone — looked like buffer before
+    const held = envelopeHeld(b, 'food', today);
+    expect(held).toBe(32611);
+    // Food $1,000 + gas $326.11 = $1,326.11 needed vs $1,195.75 → short $130.36
+    expect(t.spare - held).toBe(-13036);
+  });
+});
+
 describe('money put aside (a car fund)', () => {
   const today = '2026-11-14';
   /** A car account: $130 a month for maintenance and tyres, and $70 a month for the WOF, both put aside. */
@@ -509,6 +881,16 @@ describe('money put aside (a car fund)', () => {
     // Not put aside before its start: a set-aside starting 1 Dec is first funded on Fri 18 Dec.
     b.items.push({ id: 't', name: 'Tyres', amount: 2000, frequency: 'monthly', start: '2026-12-01', accountId: 'car', setAside: true });
     expect([depositFor(b, 'car', pay(b), today), depositFor(b, 'car', pay(b, 1), today)]).toEqual([20000, 22000]);
+  });
+
+  it('moved to an account with a fixed amount (a savings account sending $0), it is still sent', () => {
+    const b = car();
+    b.split.find((l) => l.accountId === 'car')!.mode = 'fixed';
+    expect(depositFor(b, 'car', pay(b), today)).toBe(20000);
+    expect(planFor(b, pay(b), today).accounts.find((a) => a.account.id === 'car')!.funded).toBe(20000);
+    // A fixed amount above it is kept as it is.
+    b.split.find((l) => l.accountId === 'car')!.amount = 50000;
+    expect(depositFor(b, 'car', pay(b), today)).toBe(50000);
   });
 
   it('with bills in the same account: the bills are paid as usual, and what has built up is never spent on them', () => {
@@ -802,7 +1184,7 @@ describe('reading documents: figures, dates and errors', () => {
       return Response.json({ candidates: [{ content: { parts: [{ text: '{"kind":"unknown"}' }] } }] });
     }) as unknown as typeof fetch;
     const ctx = buildContext(debtBudget(), '2026-11-16');
-    expect(ctx.debts.find((d) => d.id === 'studentloan')).toMatchObject({ neverAStatement: true });
+    expect(ctx.debts.find((d) => d.id === 'studentloan')).toMatchObject({ studentLoan: true });
     // A card plan goes by name only: given its expiry and balance, Gemini copied them over the
     // statement's (or misread the printed date towards them). The app matches plans by expiry itself.
     expect(ctx.debts.find((d) => d.id === 'gem')!.plans[0]).toEqual({ id: 'g1', name: 'Purchases Jun – Jul 2026', type: 'interest-free' });
@@ -879,15 +1261,32 @@ const gemStatement = (date: string, plans: { planId?: string | null; remaining: 
 const debt = (b: Budget, id: string) => b.debts!.find((d) => d.id === id)!;
 
 describe('reading documents: statements', () => {
-  it('asks first when the debt isn’t one of yours, is the student loan, or is Afterpay', () => {
+  it('asks first when the debt isn’t one of yours, or is Afterpay', () => {
     const b = debtBudget();
     const blocks = (debtId: string) => checkDoc(b, { kind: 'statement', statement: { debtId, balance: { amount: '100.00' }, statementDate: '2026-11-10' } }, '2026-11-16').issues.filter((i) => i.level === 'block').map((i) => i.text).join(' ');
-    expect(blocks('studentloan')).toMatch(/Choose which debt/);
     expect(blocks('made-up')).toMatch(/Choose which debt/);
     expect(blocks('afterpay')).toMatch(/worked out from its orders/);
     expect(blocks('qcard')).toBe('');
     // A missing date or a silly amount is never saved.
     expect(checkDoc(b, { kind: 'statement', statement: { debtId: 'qcard', balance: { amount: 'lots' } } }, '2026-11-16').proposal).toBeNull();
+  });
+
+  it('an IRD myIR loan breakdown updates the student loan', () => {
+    const b = debtBudget();
+    const ird: Extraction = { kind: 'statement', statement: { debtId: null, nameOnDocument: 'myIR Loan breakdown', balance: { amount: '13158.52', label: 'Total loan balance' }, statementDate: '2026-11-16' } };
+    const r = checkDoc(b, ird, '2026-11-16');
+    expect(r.issues.filter((i) => i.level === 'block')).toEqual([]);
+    expect(r.proposal).toMatchObject({ kind: 'statement', debtId: 'studentloan', balance: 1315852 });
+    upload(b, ird, '2026-11-16');
+    expect(owed(debt(b, 'studentloan'))).toBe(1315852);
+    // Read into another field, or with the breakdown's lines as plans, it's still the total that counts.
+    const odd: Extraction = { kind: 'statement', statement: { debtId: 'studentloan', appScreen: true, available: { amount: '13158.52', label: 'Total loan balance' },
+      plans: [{ description: 'Compulsory fees', remaining: { amount: '22981.00' } }, { description: 'Total loan balance', remaining: { amount: '13158.52' } }] } };
+    expect(checkDoc(b, odd, '2026-11-16').proposal).toMatchObject({ debtId: 'studentloan', balance: 1315852, date: '2026-11-16', plans: [], newPlans: [] });
+    const blank = checkDoc(b, { kind: 'statement', statement: { debtId: 'studentloan' } }, '2026-11-16');
+    expect(blank.issues.map((i) => i.text).join(' ')).toMatch(/Total loan balance/);
+    // Later payslip deductions still come off it.
+    expect(debt(b, 'studentloan').payroll).toBeTruthy();
   });
 
   it('matches Gem plans by their expiry date, not by name or a wrong id', () => {
@@ -1028,6 +1427,45 @@ describe('reading documents: Afterpay', () => {
     upload(b, { kind: 'afterpay', afterpay: { orders: [{ merchant: 'Kmart', purchaseDate: '2026-11-01', total: { amount: '40.00' }, instalments: [{ date: '2026-11-01', amount: '10.00' }, { date: '2026-11-15', amount: '10.00' }, { date: '2026-11-29', amount: '10.00' }, { date: '2026-12-13', amount: '10.00' }] }] } }, '2026-11-16');
     expect(debt(b, 'afterpay').plans.find((p) => p.name === 'Kmart')!.instalments!.map((i) => i.date)).toEqual(['2026-11-29', '2026-12-13']);
   });
+
+  it('Upcoming payments: only what’s still due stays; other orders are marked paid off', () => {
+    const b = debtBudget();
+    // Screen like Afterpay’s Upcoming payments: only PHOTOGEAR $37.25 left (4 of 4).
+    const upcoming: Extraction = {
+      kind: 'afterpay',
+      afterpay: {
+        listsAllDue: true,
+        orders: [{
+          merchant: 'PHOTOGEAR',
+          instalments: [{ date: '2026-12-31', amount: '37.25', label: '4 of 4', paid: false }],
+        }],
+      },
+    };
+    // Existing orders that should clear, plus Photogear still owing more than one instalment.
+    const ap = debt(b, 'afterpay');
+    ap.plans.push({
+      id: 'ap-photo', name: 'Photogear', type: 'afterpay', original: 14900, remaining: 7450, asOf: '2026-11-01', purchaseDate: '2026-10-01',
+      instalments: [
+        { date: '2026-11-19', amount: 3725, label: '3 of 4' },
+        { date: '2026-12-31', amount: 3725, label: '4 of 4' },
+      ],
+    });
+    const before = ap.plans.length;
+    expect(before).toBeGreaterThan(1);
+    const pay = periodContaining('2026-11-19', b.settings);
+    const sentBefore = depositFor(b, ap.accountId, pay, '2026-11-19');
+    expect(sentBefore).toBeGreaterThan(0);
+    const r = upload(b, upcoming, '2026-11-19');
+    expect(r.issues.filter((i) => i.level === 'block')).toEqual([]);
+    const after = debt(b, 'afterpay');
+    expect(after.plans.map((p) => p.name)).toEqual(['Photogear']);
+    expect(after.plans[0].instalments).toEqual([{ date: '2026-12-31', amount: 3725, label: '4 of 4' }]);
+    expect(after.plans[0].remaining).toBe(3725);
+    expect(r.issues.some((i) => i.level === 'note' && /paid off/i.test(i.text))).toBe(true);
+    // Dropped in-period instalments stay on this pay (so leftover doesn’t invent spare cash).
+    expect(after.paid?.some((x) => x.date === '2026-11-19' && x.amount === 3725)).toBe(true);
+    expect(depositFor(b, ap.accountId, pay, '2026-11-19')).toBe(sentBefore);
+  });
 });
 
 describe('reading documents: payslips', () => {
@@ -1086,7 +1524,8 @@ describe('reading documents: card app screenshots', () => {
       { date: '2026-11-14', description: 'Harvey Norman Westgate', amount: '499.00' },
       { date: '2026-11-12', description: 'Countdown Henderson', amount: '82.13' },
     ]), '2026-11-16');
-    expect(r.proposal).toMatchObject({ newPlans: [{ name: 'Harvey Norman Westgate', type: 'interest-free', months: 6, original: 49900, remaining: 49900, purchaseDate: '2026-11-14', ends: '2027-05-14' }] });
+    // Gem months end on the 20th: 6 months from 14 Nov → 20 Apr 2027.
+    expect(r.proposal).toMatchObject({ newPlans: [{ name: 'Harvey Norman Westgate', type: 'interest-free', months: 6, original: 49900, remaining: 49900, purchaseDate: '2026-11-14', ends: '2027-04-20' }] });
     expect(r.ignored).toContain('A purchase on the screenshot: already in what’s owed.');
     expect(debt(b, 'gem').plans.map((p) => p.name)).toContain('Harvey Norman Westgate');
     expect(owed(debt(b, 'gem'))).toBe(361240);
@@ -1499,10 +1938,47 @@ describe('card payments seen in a bank account', () => {
     expect(debt(b, 'qcard').bankPayments?.[0].counted).toBe(0);
   });
 
+  it('old Afterpay payments in a bank account’s history never clear today’s orders', () => {
+    const b = debtBudget();
+    const ap = debt(b, 'afterpay');
+    const before = owed(ap);
+    // A sync that brings in a year of history: Afterpay instalments paid long before these orders.
+    const old = Array.from({ length: 30 }, (_, i) => tx(`o${i}`, `2025-${String(6 + Math.floor(i / 5)).padStart(2, '0')}-0${1 + (i % 5)}`, 'Afterpay', -41.69));
+    applyBank(b, { accounts: [go], transactions: old }, links, '2026-11-16');
+    expect(owed(ap)).toBe(before);
+    expect(ap.plans).toHaveLength(2);
+    expect(ap.bankPayments?.every((p) => p.counted === 0)).toBe(true);
+  });
+
   it('a card linked to the bank itself is left to the bank', () => {
     const b = debtBudget();
     b.bankLinks = { c1: 'debt:qcard' };
     expect(cardPaid(b, { date: '2026-11-16', description: 'Q Mastercard', amount: -100 })).toBeUndefined();
+  });
+
+  it('a $50 Q Mastercard transfer is not swallowed by a larger nearby planned payment', () => {
+    const b = debtBudget();
+    const q = debt(b, 'qcard');
+    // Payday already planned $200 for Q; an ad-hoc $50 from ANZ is a separate payment.
+    q.paid = [{ date: '2026-11-14', amount: 20000, name: 'Other purchases', synthetic: true }];
+    q.balance = { amount: 50000, asOf: '2026-11-10' };
+    applyBank(b, { accounts: [go], transactions: [tx('t1', '2026-11-15', 'Q Mastercard Fitzgerald Id1105532418', -50)] }, links, '2026-11-16');
+    // Must count the full $50 (a $200 planned nearby must not cover it).
+    expect(q.bankPayments?.[0]).toMatchObject({ amount: 5000, counted: 5000 });
+    expect((q.bankPayments?.[0].planned ?? []).some((k) => k.includes('|20000|'))).toBe(false);
+    expect(owed(q)).toBe(45000);
+  });
+
+  it('a pending ANZ transfer to Q Mastercard still reduces what Q owes', () => {
+    const b = debtBudget();
+    debt(b, 'qcard').balance = { amount: 50000, asOf: '2026-11-10' };
+    applyBank(b, {
+      accounts: [go],
+      transactions: [],
+      pending: [{ account: 'a1', date: '2026-11-16', description: 'Q Mastercard Fitzgerald Id1105532418', amount: -50, merchant: null }],
+    }, links, '2026-11-16');
+    expect(debt(b, 'qcard').bankPayments?.[0]).toMatchObject({ amount: 5000, counted: 5000, date: '2026-11-16' });
+    expect(owed(debt(b, 'qcard'))).toBe(45000);
   });
 });
 
@@ -1535,5 +2011,267 @@ describe('telling cards and accounts apart', () => {
     b.accounts.push({ id: 'rent', name: 'Rent', kind: 'bank', color: '#000', groupId: 'g', number: '06-0115-0324910-055' });
     expect(transferTo(b, 'To: 06-0115-0324910-55 Debit Transfer 083615')).toEqual({ dir: 'to', name: 'Rent' });
     expect(transferTo(b, 'From: 06-0115-0324910-00 Credit Transfer 071301')).toBeUndefined();
+  });
+});
+
+describe('Gem payment held in Misc bills until statement day', () => {
+  it('Planner still funds Gem’s amount, but the money is in the hold account and only counted once in the payday total', () => {
+    const b = budget();
+    b.accounts.push(
+      { id: 'gem', name: 'Gem Visa', kind: 'external', color: '#000', groupId: b.groups[0].id },
+      { id: 'bills', name: 'Misc bills', kind: 'bank', color: '#000', groupId: b.groups[0].id },
+    );
+    b.split.push({ accountId: 'gem', amount: 0, mode: 'exact' }, { accountId: 'bills', amount: 0, mode: 'exact' });
+    b.debts = [{
+      id: 'gem', name: 'Gem Visa', kind: 'card', rules: 'gem', accountId: 'gem', holdAccountId: 'bills', statementDay: 21,
+      balance: { amount: 180000, asOf: '2026-11-01' },
+      plans: [{ id: 'g1', name: 'Purchases', type: 'interest-free', original: 180000, remaining: 180000, asOf: '2026-11-01', purchaseDate: '2026-07-09', ends: '2027-01-20' }],
+    }];
+    const p = periodContaining('2026-11-19', b.settings);
+    const plan = planFor(b, p, '2026-11-19');
+    const gem = plan.accounts.find((a) => a.account.id === 'gem')!;
+    const bills = plan.accounts.find((a) => a.account.id === 'bills')!;
+    expect(gem.funded).toBeGreaterThan(0);
+    expect(bills.funded).toBe(gem.funded);
+    // Payday total includes Misc bills once, not Gem again.
+    expect(plan.totalSplit).toBe(bills.funded);
+    expect(debtPaymentsIn(b, 'bills', p.start, p.end).reduce((t, x) => t + x.amount, 0)).toBe(gem.funded);
+    expect(debtPaymentsIn(b, 'gem', p.start, p.end)).toEqual([]);
+    // Misc bills lists the payment as Gem Visa, noted as stored until statement day / set on the debt.
+    const gemLine = bills.dues.find((d) => d.item.name === 'Gem Visa');
+    expect(gemLine).toBeTruthy();
+    expect(gemLine!.item.note).toMatch(/Stored until the 21st/);
+    expect(gemLine!.item.note).toMatch(/set on Gem Visa/);
+  });
+
+  it('Gem Visa stays on the payday split when its fixed amount is $0 (pay what’s due into Misc bills)', () => {
+    const b = budget();
+    b.accounts.push(
+      { id: 'gem', name: 'Gem Visa', kind: 'external', color: '#000', groupId: b.groups[0].id },
+      { id: 'bills', name: 'Misc bills', kind: 'bank', color: '#000', groupId: b.groups[0].id },
+    );
+    // A $0 fixed line used to schedule nothing — Gem disappeared from the Planner.
+    b.split.push({ accountId: 'gem', amount: 0, mode: 'fixed' }, { accountId: 'bills', amount: 0, mode: 'exact' });
+    b.debts = [{
+      id: 'gem', name: 'Gem Visa', kind: 'card', rules: 'gem', accountId: 'gem', holdAccountId: 'bills', statementDay: 21,
+      balance: { amount: 180000, asOf: '2026-11-01' },
+      plans: [{ id: 'g1', name: 'Purchases', type: 'interest-free', original: 180000, remaining: 180000, asOf: '2026-11-01', purchaseDate: '2026-07-09', ends: '2027-01-20' }],
+    }];
+    const p = periodContaining('2026-11-19', b.settings);
+    const plan = planFor(b, p, '2026-11-19');
+    const gem = plan.accounts.find((a) => a.account.id === 'gem')!;
+    expect(gem.funded).toBeGreaterThan(0);
+    expect(gem.need).toBe(gem.funded);
+    const cards = plan.accounts.filter((a) => a.account.id !== b.settings.payAccountId && (a.funded !== 0 || a.need !== 0));
+    expect(cards.map((a) => a.account.name)).toContain('Gem Visa');
+  });
+
+  it('a one-pay override on Gem does not wipe the Planner card when money is held in Misc bills', () => {
+    const b = budget();
+    b.accounts.push(
+      { id: 'gem', name: 'Gem Visa', kind: 'external', color: '#000', groupId: b.groups[0].id },
+      { id: 'bills', name: 'Misc bills', kind: 'bank', color: '#000', groupId: b.groups[0].id },
+    );
+    b.split.push({ accountId: 'gem', amount: 30000, mode: 'fixed' }, { accountId: 'bills', amount: 0, mode: 'exact' });
+    b.debts = [{
+      id: 'gem', name: 'Gem Visa', kind: 'card', rules: 'gem', accountId: 'gem', holdAccountId: 'bills', statementDay: 21,
+      balance: { amount: 180000, asOf: '2026-11-01' },
+      plans: [{ id: 'g1', name: 'Purchases', type: 'interest-free', original: 180000, remaining: 180000, asOf: '2026-11-01', purchaseDate: '2026-07-09', ends: '2027-01-20' }],
+    }];
+    b.overrides = { '2026-11-19': { gem: 0 } };
+    const p = periodContaining('2026-11-19', b.settings);
+    const plan = planFor(b, p, '2026-11-19');
+    const gem = plan.accounts.find((a) => a.account.id === 'gem')!;
+    expect(gem.funded).toBeGreaterThan(0);
+  });
+
+  it('auto-updates Gem to Latitude’s recommended allocation and reserves that in Misc bills', () => {
+    const b = budget();
+    b.accounts.push(
+      { id: 'gem', name: 'Gem Visa', kind: 'external', color: '#000', groupId: b.groups[0].id },
+      { id: 'bills', name: 'Misc bills', kind: 'bank', color: '#000', groupId: b.groups[0].id },
+    );
+    // Fixed below recommended — used to leave false spare in Misc bills above Haircut max.
+    b.split.push({ accountId: 'gem', amount: 50000, mode: 'fixed' }, { accountId: 'bills', amount: 0, mode: 'exact' });
+    b.debts = [{
+      id: 'gem', name: 'Gem Visa', kind: 'card', rules: 'gem', accountId: 'gem', holdAccountId: 'bills', statementDay: 21,
+      balance: { amount: 180000, asOf: '2026-11-01' },
+      plans: [{ id: 'g1', name: 'Purchases', type: 'interest-free', original: 180000, remaining: 180000, asOf: '2026-11-01', purchaseDate: '2026-07-09', ends: '2027-01-20' }],
+    }];
+    b.items.push({ id: 'cut', name: 'Haircut', amount: 2000, frequency: 'monthly', start: '2026-11-01', accountId: 'bills', setAside: true, maxSaved: 6000 });
+    const p = periodContaining('2026-11-19', b.settings);
+    const adv = debtAdvice(b, b.debts[0], p);
+    expect(adv.recommended).toBeGreaterThan(50000);
+    // Before sync: outflows still reserve at least recommended (so spare isn’t overstated).
+    const gemOut = outflows(b, 'bills', p.start, p.end).filter((o) => o.name === 'Gem Visa').reduce((t, o) => t + o.amount, 0);
+    expect(gemOut).toBe(adv.recommended);
+    const changed = syncGemToRecommended(b, p);
+    expect(changed).toHaveLength(1);
+    expect(changed[0].to).toBe(adv.recommended);
+    expect(b.split.find((l) => l.accountId === 'gem')).toMatchObject({ mode: 'exact', amount: 0 });
+    // On a day in the pay that includes the 21st (not the pay before payday).
+    b.balances = { bills: { amount: adv.recommended + 6000 + 5000, asOf: '2026-11-20' } }; // recommended + Haircut max + $50
+    const t = billTracker(b, 'bills', '2026-11-20');
+    expect(t.toCome).toBeGreaterThanOrEqual(adv.recommended);
+    // After Gem and Haircut max, only the $50 above is spare.
+    expect(Math.max(0, t.spare - 6000)).toBe(5000);
+  });
+});
+
+describe('extra paid off a debt for one pay', () => {
+  it('Gem: a pay with extra (Optimise, this pay only) pays that much on its statement day, and owes that much less after', () => {
+    const b = budget();
+    b.accounts.push({ id: 'gem', name: 'Gem', kind: 'external', color: '#000', groupId: b.groups[0].id });
+    b.split.push({ accountId: 'gem', amount: 10000, mode: 'fixed' });
+    const gem: Debt = {
+      id: 'gem', name: 'Gem Visa', kind: 'card', rules: 'gem', accountId: 'gem', statementDay: 21, balance: { amount: 400000, asOf: '2026-11-01' },
+      plans: [{ id: 'g1', name: 'Purchases', type: 'interest-free', original: 400000, remaining: 400000, asOf: '2026-11-01', purchaseDate: '2026-07-09', ends: '2028-01-20' }],
+    };
+    b.debts = [gem];
+    const steady = projectedOwed(gem, b.settings, '2027-03-31', debtPerPay(b, gem));
+    expect(projectedOwed(gem, b.settings, '2027-03-31', debtPay(b, gem))).toBe(steady);
+    b.overrides = { '2027-03-19': { gem: 160000 } };
+    const pays = debtSchedules(gem, b.settings, debtPay(b, gem)).flatMap((x) => x.payments);
+    expect(pays.find((p) => p.date === '2027-03-21')?.amount).toBe(160000);
+    expect(pays.find((p) => p.date === '2027-04-21')?.amount).toBe(10000);
+    expect(projectedOwed(gem, b.settings, '2027-03-20', debtPay(b, gem))).toBe(projectedOwed(gem, b.settings, '2027-03-20', debtPerPay(b, gem)));
+    expect(projectedOwed(gem, b.settings, '2027-03-31', debtPay(b, gem))).toBe(steady - 150000);
+  });
+});
+
+describe('a screenshot of a bank’s accounts and balances', () => {
+  const screen = {
+    kind: 'balances', notes: null,
+    balances: {
+      bank: 'ANZ', asOf: null,
+      accounts: [
+        ['Rent', '06-0115-0324910-53', '278.00'], ['Misc Bills', '06-0115-0324910-54', '0.06'], ['Car Maintenance', '06-0115-0324910-56', '0.00'],
+        ['Food / Gas', '06-0115-0324910-55', '0.00'], ['Misc Saving', '06-0115-0324910-50', '0.00'], ['Weekly Allowance', '06-0115-0324910-00', '0.00'],
+        ['Allowance Storage', '06-0115-0324910-57', '0.00'],
+      ].map(([name, number, amount]) => ({ name, number, balance: { amount, label: 'Balance' }, available: { amount, label: 'Available' } })),
+    },
+  };
+  const reply = { candidates: [{ finishReason: 'STOP', content: { parts: [{ text: JSON.stringify(screen) }] } }] };
+  const accounts = [['rent', 'Rent', '53'], ['bills', 'Misc bills', '54'], ['car', 'Car maintenance', '56'], ['foodgas', 'Food and gas', '55'], ['miscsave', 'Misc savings', '50'], ['weekly', 'Weekly allowance', '00'], ['storage', 'Allowance storage', '57']];
+  function bank(withNumbers: boolean): Budget {
+    const b = budget();
+    for (const [id, name, suffix] of accounts) {
+      b.accounts.push({ id, name, kind: 'bank', color: '#000', groupId: b.groups[0].id, ...(withNumbers ? { number: `06-0115-0324910-${suffix}` } : {}) });
+      b.balances = { ...(b.balances ?? {}), [id]: { amount: 5000, asOf: '2026-11-10' } };
+    }
+    return b;
+  }
+
+  it('updates every account on it, matched by number, as at today', () => {
+    const b = bank(true);
+    const ex = parseReply(reply);
+    expect(ex.kind).toBe('balances');
+    const d = toDraft(ex, b, 'gemini', seq(), '2026-11-18');
+    expect(d.balances.rows.map((r) => [r.accountId, r.matchedBy])).toEqual(accounts.map(([id]) => [id, 'number']));
+    const r = review(d, b, '2026-11-18');
+    expect(r.issues.filter((i) => i.level === 'block')).toEqual([]);
+    const after = applyProposal(structuredClone(b), r.proposal!, '2026-11-18');
+    expect(after.balances!.rent).toEqual({ amount: 27800, asOf: '2026-11-18' });
+    expect(after.balances!.bills).toEqual({ amount: 6, asOf: '2026-11-18' });
+    expect(after.balances!.storage).toEqual({ amount: 0, asOf: '2026-11-18' });
+    expect(preview(b, r.proposal!, '2026-11-18').lines[0]).toBe("Rent: balance $50 → $278, as at 18 Nov");
+  });
+
+  it('without saved numbers, matches by name ("Food / Gas" is Food and gas) and keeps the numbers for next time', () => {
+    const b = bank(false);
+    const d = toDraft(parseReply(reply), b, 'gemini', seq(), '2026-11-18');
+    expect(d.balances.rows.map((r) => [r.accountId, r.matchedBy])).toEqual(accounts.map(([id]) => [id, 'name']));
+    const after = applyProposal(structuredClone(b), review(d, b, '2026-11-18').proposal!, '2026-11-18');
+    expect(after.accounts.find((a) => a.id === 'foodgas')!.number).toBe('06-0115-0324910-55');
+  });
+
+  it('an account it can’t match is asked about, and can be left out', () => {
+    const b = bank(true);
+    b.accounts = b.accounts.filter((a) => a.id !== 'car');
+    const d = toDraft(parseReply(reply), b, 'gemini', seq(), '2026-11-18');
+    expect(d.balances.rows[2].accountId).toBe('');
+    expect(review(d, b, '2026-11-18').proposal).toBeNull();
+    d.balances.rows[2].accountId = NOT_MINE;
+    const r = review(d, b, '2026-11-18');
+    expect(r.proposal).toMatchObject({ kind: 'balances' });
+    expect(r.ignored).toEqual(['Car Maintenance: left out.']);
+  });
+});
+
+describe('payments to cards and savings funds, from every stored bank transaction', () => {
+  const go = { id: 'a1', name: 'Go', number: '06-0999-0123456-00', type: 'CHECKING', institution: 'ANZ', balance: 500, transactions: true };
+  const tx = (id: string, date: string, description: string, amount: number) => ({ account: 'a1', id, date, description, amount, balance: null, merchant: null });
+
+  it('a card payment already in the account before payments were looked for is noted once', () => {
+    const b = debtBudget();
+    // Already stored (an earlier sync, or the history trimmed): not new to the account.
+    b.accountTransactions = { everyday: [{ date: '2026-11-10', description: 'Q Mastercard Fitzgerald Id1105532418', amount: -5000 }] };
+    debt(b, 'qcard').balance = { amount: 50000, asOf: '2026-11-05' };
+    const data = { accounts: [go], transactions: [tx('t1', '2026-11-10', 'Q Mastercard Fitzgerald Id1105532418', -50)] };
+    applyBank(b, data, { a1: 'account:everyday' }, '2026-11-16');
+    expect(debt(b, 'qcard').bankPayments).toEqual([expect.objectContaining({ date: '2026-11-10', amount: 5000, counted: 5000 })]);
+    expect(owed(debt(b, 'qcard'))).toBe(45000);
+    applyBank(b, data, { a1: 'account:everyday' }, '2026-11-17');
+    expect(debt(b, 'qcard').bankPayments).toHaveLength(1);
+    expect(owed(debt(b, 'qcard'))).toBe(45000);
+  });
+
+  function fund(linked: boolean) {
+    const b = debtBudget();
+    b.accounts.push({ id: 'kernel', name: 'Wedding · Kernel', kind: 'external', color: '#000', groupId: 'savings' });
+    b.savings = [{ id: 'wedding', name: 'Wedding', accountId: 'kernel', balance: 1000000, asOf: '2026-11-10' }];
+    const links: Record<string, string> = { a1: 'account:everyday', ...(linked ? { k1: 'saving:wedding' } : {}) };
+    return { b, links };
+  }
+  const kernel = (updated: string, balance: number) => ({ id: 'k1', name: 'Kernel Cash Plus', number: null, type: 'INVESTMENT', institution: 'Kernel', balance, transactions: false, updated });
+
+  it('Kernel, from the bank connection: money paid in or out after its balance date is added on, once', () => {
+    const { b, links } = fund(true);
+    const data = {
+      accounts: [kernel('2026-11-14T10:00:00+13:00', 10000), go],
+      transactions: [
+        tx('t1', '2026-11-12', 'Kernel - Adminis Cus Fitzgerald K F W7H7Ghge', -1000), // before: already in Kernel's balance
+        tx('t2', '2026-11-15', 'Kernel - Adminis Cus Fitzgerald K F W7H7Ghge', -250), // after: added
+        tx('t3', '2026-11-16', 'Kernel Consols Withdrawal For Suit And', 550), // taken out after: off
+        tx('t4', '2026-11-16', 'Countdown', -20),
+      ],
+    };
+    const r = applyBank(b, data, links, '2026-11-17');
+    const g = b.savings![0];
+    expect(g.balance).toBe(1000000 + 25000 - 55000);
+    expect(g.asOf).toBe('2026-11-16');
+    expect(g.bankMoves?.map((m) => [m.date, m.amount, m.counted])).toEqual([['2026-11-12', 100000, 0], ['2026-11-15', 25000, 25000], ['2026-11-16', -55000, -55000]]);
+    expect(r.find((x) => x.name === 'Wedding')).toMatchObject({ balance: 970000 });
+    // Synced again: nothing added twice. Then Kernel catches up: its balance has them, so they're not added on.
+    applyBank(b, data, links, '2026-11-17');
+    expect(g.balance).toBe(970000);
+    applyBank(b, { ...data, accounts: [kernel('2026-11-17T08:00:00+13:00', 9700), go] }, links, '2026-11-17');
+    expect(g.balance).toBe(970000);
+    expect(g.bankMoves?.every((m) => m.counted === 0)).toBe(true);
+  });
+
+  it('Kernel typed in or uploaded (not linked): a move after that balance is added once; one before is only noted', () => {
+    const { b, links } = fund(false);
+    const data = { accounts: [go], transactions: [tx('t1', '2026-11-08', 'Kernel - Adminis Cus', -1000), tx('t2', '2026-11-15', 'Kernel - Adminis Cus', -250)] };
+    applyBank(b, data, links, '2026-11-17');
+    const g = b.savings![0];
+    expect(g.balance).toBe(1025000);
+    expect(g.asOf).toBe('2026-11-15');
+    expect(g.bankMoves?.map((m) => m.counted)).toEqual([0, 25000]);
+    applyBank(b, data, links, '2026-11-18');
+    expect(g.balance).toBe(1025000);
+  });
+
+  it('a statement older than a payment seen in the bank: the payment comes off it again', () => {
+    const b = debtBudget();
+    const q = debt(b, 'qcard');
+    q.balance = { amount: 50000, asOf: '2026-11-05' };
+    b.accountTransactions = { everyday: [] };
+    applyBank(b, { accounts: [go], transactions: [tx('t1', '2026-11-12', 'Q Mastercard', -100)] }, { a1: 'account:everyday' }, '2026-11-16');
+    expect(owed(q)).toBe(40000);
+    // A screenshot dated 10 Nov (before the payment): its $600 is the latest figure, less the $100 paid since.
+    const r = review({ ...toDraft({ kind: 'statement', statement: { debtId: 'qcard', balance: { amount: '600.00' }, statementDate: '2026-11-10' } }, b, 'gemini', seq(), '2026-11-16') }, b, '2026-11-16');
+    const after = applyProposal(structuredClone(b), r.proposal!, '2026-11-16');
+    expect(owed(debt(after, 'qcard'))).toBe(50000);
   });
 });

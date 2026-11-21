@@ -3,15 +3,17 @@ import { createPortal } from 'react-dom';
 import { Icon } from '../components/Icon';
 import { AccIcon, Chevron, Collapse, ColorPicker, Modal } from '../components/ui';
 import { ItemModal } from '../components/ItemModal';
-import { fmtShort, todayISO } from '../lib/dates';
+import { fmtShort, ordinal, todayISO } from '../lib/dates';
 import { depositFor, exactNeed, modeOf, smoothAmount, topsUp } from '../lib/balances';
-import { averageNeed, convert, isSetAside, itemDates, periodContaining, planFor, setAsidePerPay, shiftPeriod } from '../lib/engine';
+import { debtPerPay } from '../lib/debts';
+import { averageNeed, convert, isMonthEnvelope, isSetAside, itemDates, monthBudget, periodContaining, planFor, setAsidePerPay, shiftPeriod } from '../lib/engine';
 import { PayNav, useViewPeriod } from '../lib/period';
 import { cash, centsToInput, parseMoney } from '../lib/money';
 import { RoundSetting } from '../components/PaydayControl';
 import { nextColor } from '../lib/colors';
 import { newId, useBudget } from '../lib/store';
 import { asideNames, balancedMode } from '../lib/rebalance';
+import { PAYDAY_MODE_HINT, PAYDAY_MODE_LABEL } from '../lib/paydayModes';
 import type { Account, Budget, Item, PaydayMode } from '../lib/types';
 
 const items0 = (b: Budget, id: string) => b.items.some((i) => i.accountId === id);
@@ -50,7 +52,8 @@ export function DepositsModal({ openId, onClose }: { openId?: string; onClose: (
 
   // Debts and savings goals are managed in their own tabs.
   const managed = new Set([...(budget.debts ?? []).map((d) => d.accountId), ...(budget.savings ?? []).map((g) => g.accountId)]);
-  const shown = budget.accounts.filter((a) => !managed.has(a.id) && (showArchived || !a.archived));
+  // A goal's account that costs have been moved to is listed too, so they can be changed or moved back.
+  const shown = budget.accounts.filter((a) => (!managed.has(a.id) || budget.items.some((i) => i.accountId === a.id)) && (showArchived || !a.archived));
   const total = shown.filter((a) => !a.archived && a.id !== budget.settings.payAccountId)
     .reduce((t, a) => t + (plan.accounts.find((p) => p.account.id === a.id)?.funded ?? 0), 0);
 
@@ -120,9 +123,14 @@ function AccountSection({ account: a, open, bare, onToggle, periodNeed, periodSe
   const avgNeed = averageNeed(budget, a.id);
   const today = todayISO();
   // Money put aside here (a WOF, tyres) stays in the account; the bills are what really comes out.
-  const bills = items.filter((i) => !isSetAside(i));
+  const bills = items.filter((i) => !isSetAside(i) && !isMonthEnvelope(i));
   const asides = items.filter(isSetAside);
-  const asidePerPay = asides.filter((i) => !i.end || i.end >= today).reduce((t, i) => t + setAsidePerPay(i), 0);
+  const envelopes = items.filter(isMonthEnvelope);
+  const asidePerPay = asides.filter((i) => !i.end || i.end >= today).reduce((t, i) => t + setAsidePerPay(i), 0)
+    + envelopes.filter((i) => !i.end || i.end >= today).reduce((t, i) => t + monthBudget(i), 0);
+  // Debts that store their payday payment here until statement day (e.g. Gem Visa → Misc bills).
+  const heldDebts = (budget.debts ?? []).filter((d) => d.holdAccountId === a.id && !d.payroll);
+  const costCount = items.length + heldDebts.length;
 
   function set<K extends keyof Account>(k: K, val: Account[K]) {
     update((b) => { const acc = b.accounts.find((x) => x.id === a.id); if (acc) acc[k] = val; return b; });
@@ -157,7 +165,7 @@ function AccountSection({ account: a, open, bare, onToggle, periodNeed, periodSe
         <span className="grow">
           <b className="block">{a.name}</b>
           <span className="small muted">
-            {isPay ? 'Pay lands here' : a.kind === 'external' ? 'Sent elsewhere' : `${items.length} cost${items.length === 1 ? '' : 's'}`}
+            {isPay ? 'Pay lands here' : a.kind === 'external' ? 'Sent elsewhere' : `${costCount} cost${costCount === 1 ? '' : 's'}`}
             {a.archived ? ' · archived' : ''}
           </span>
         </span>
@@ -192,21 +200,34 @@ function AccountSection({ account: a, open, bare, onToggle, periodNeed, periodSe
 
           {!isPay && (
             <div className="stack gap-8">
-              <span className="small muted">Each payday, send</span>
-              <div className="seg" role="group" aria-label="Payday amount" style={{ alignSelf: 'flex-start' }}>
-                {!balanced && <button aria-pressed={mode === 'fixed'} onClick={() => setMode('fixed')}>Fixed amount</button>}
-                {bills.length > 0 && <button aria-pressed={mode === 'smooth'} onClick={() => setMode('smooth')}>Same each pay</button>}
-                {items.length > 0 && balanced !== 'smooth' && <button aria-pressed={mode === 'exact'} onClick={() => setMode('exact')}>Just what's due</button>}
-              </div>
-              {balanced && (
-                <p className="small muted">
-                  {balanced === 'smooth'
-                    ? 'Every cost here is weekly, so it gets the same amount each pay, with 4-week pays covering the 5th week.'
-                    : bills.length === 0
-                      ? 'Each payday sends what\u2019s put aside here, so it follows the amounts below rather than a fixed amount.'
-                      : 'This account has bills on set dates, so each pay is worked out from them rather than a fixed amount.'}
-                  {periodSends !== (mode === 'smooth' ? steady : periodNeed) && mode !== 'fixed' ? ` The pay being viewed sends ${cash(periodSends)}.` : ''}
-                </p>
+              <span className="small muted">How payday fills this account</span>
+              {(bills.length > 0 || items.length > 0 || heldDebts.length > 0) && (
+                <div className="seg" role="group" aria-label="How payday fills this account" style={{ alignSelf: 'flex-start', flexWrap: 'wrap' }}>
+                  {/* Set amount: when balancing is not choosing for you, or you already use it. */}
+                  {(!balanced || mode === 'fixed') && (
+                    <button aria-pressed={mode === 'fixed'} onClick={() => setMode('fixed')}>{PAYDAY_MODE_LABEL.fixed}</button>
+                  )}
+                  {bills.length > 0 && (
+                    <button aria-pressed={mode === 'smooth'} onClick={() => setMode('smooth')}>
+                      {PAYDAY_MODE_LABEL.smooth}{balanced === 'smooth' ? ' · recommended' : ''}
+                    </button>
+                  )}
+                  {items.length > 0 && (
+                    <button aria-pressed={mode === 'exact'} onClick={() => setMode('exact')}>
+                      {PAYDAY_MODE_LABEL.exact}{balanced === 'not-fixed' ? ' · recommended' : ''}
+                    </button>
+                  )}
+                </div>
+              )}
+              {(bills.length > 0 || items.length > 0) && (
+                <ul className="stack gap-4 small muted" style={{ margin: 0, paddingLeft: 18 }}>
+                  <li><b>{PAYDAY_MODE_LABEL.fixed}</b>{mode === 'fixed' ? ' (in use)' : ''}: {PAYDAY_MODE_HINT.fixed}</li>
+                  <li><b>{PAYDAY_MODE_LABEL.smooth}</b>{mode === 'smooth' ? ' (in use)' : ''}{balanced === 'smooth' && mode !== 'smooth' ? ' · recommended' : ''}: {PAYDAY_MODE_HINT.smooth}</li>
+                  <li><b>{PAYDAY_MODE_LABEL.exact}</b>{mode === 'exact' ? ' (in use)' : ''}{balanced === 'not-fixed' && mode !== 'exact' ? ' · recommended' : ''}: {PAYDAY_MODE_HINT.exact}</li>
+                </ul>
+              )}
+              {periodSends !== (mode === 'smooth' ? steady : periodNeed) && mode !== 'fixed' && (
+                <p className="small muted">This pay sends {cash(periodSends)}.</p>
               )}
 
               <RoundSetting accountId={a.id} />
@@ -230,9 +251,9 @@ function AccountSection({ account: a, open, bare, onToggle, periodNeed, periodSe
                     <div className="tip wrap" style={{ alignItems: 'center' }}>
                       <Icon name="bulb" />
                       <span style={{ flex: '1 1 220px' }}>
-                        A fixed amount goes short in 5-week pays and builds up in 4-week ones. <b>Same each pay</b> evens it out: about <b>{cash(Math.ceil(avgNeed / 100) * 100)}</b> every pay, with 4-week pays leaving enough over for the 5th week.
+                        A set amount goes short in 5-week pays and builds up in 4-week ones. <b>{PAYDAY_MODE_LABEL.smooth}</b> evens it out: about <b>{cash(avgNeed)}</b> every pay, with 4-week pays leaving enough over for the 5th week.
                       </span>
-                      <button className="btn small primary" onClick={() => setMode('smooth')}>Even it out</button>
+                      <button className="btn small primary" onClick={() => setMode('smooth')}>Use level amount</button>
                     </div>
                   )}
                 </>
@@ -242,9 +263,9 @@ function AccountSection({ account: a, open, bare, onToggle, periodNeed, periodSe
                 <div className="tip">
                   <Icon name="bulb" />
                   <span>
-                    {steady === Math.ceil(avgNeed / 100) * 100
+                    {steady === avgNeed
                       ? <>Sends <b>{cash(steady)}</b> every payday.</>
-                      : <>Sends <b>{cash(steady)}</b> next payday, then usually <b>{cash(Math.ceil(avgNeed / 100) * 100)}</b>. {steady > avgNeed ? 'The extra covers earlier transfers and leaves enough for the next 5-week pay, so later pays stay level.' : 'A little less while there\u2019s extra in the account.'}</>}
+                      : <>Sends <b>{cash(steady)}</b> next payday, then usually <b>{cash(avgNeed)}</b>. {steady > avgNeed ? 'The extra covers earlier transfers and leaves enough for the next 5-week pay, so later pays stay level.' : 'A little less while there\u2019s extra in the account.'}</>}
                     {' '}4-week periods leave a little over that covers the 5th week, so the account never goes below $0.
                     {hasBalance
                       ? ' Worked out from the balance in Accounts, and it updates when you change it.'
@@ -266,8 +287,8 @@ function AccountSection({ account: a, open, bare, onToggle, periodNeed, periodSe
                     })() : topsUp(budget, a.id) ? (() => {
                       const next = shiftPeriod(periodContaining(today, budget.settings), 1, budget.settings);
                       const sends = depositFor(budget, a.id, next, today);
-                      const bills = exactNeed(budget, a.id, next);
-                      return <>Sends what each pay's bills need, <b>less whatever is already left in the account</b>. Next pay ({fmtShort(next.start)}): bills {cash(bills)}{bills > sends ? `, ${cash(bills - sends)} already there` : ''}, so it sends <b>{cash(sends)}</b>.</>;
+                      const due = exactNeed(budget, a.id, next);
+                      return <>Sends what each pay's bills need, <b>less whatever is already left in the account</b>. Next pay ({fmtShort(next.start)}): bills {cash(due)}{due > sends ? `, ${cash(due - sends)} already there` : ''}, so it sends <b>{cash(sends)}</b>.</>;
                     })() : <>Sends exactly what each period needs. This period ({periodDays} days) that's <b>{cash(periodNeed)}</b>, averaging <b>{cash(avgNeed)}</b> a month.</>}
                   </span>
                 </div>
@@ -275,23 +296,42 @@ function AccountSection({ account: a, open, bare, onToggle, periodNeed, periodSe
             </div>
           )}
 
-          {(a.kind === 'bank' || items.length > 0) && (
+          {(a.kind === 'bank' || items.length > 0 || heldDebts.length > 0) && (
             <div>
               <div className="card-head" style={{ marginBottom: 4 }}>
-                <h3 className="h3">{asides.length === 0 ? 'Costs paid from here' : bills.length ? 'Costs and money put aside' : 'Money put aside here'}</h3>
+                <h3 className="h3">{asides.length === 0 && heldDebts.length === 0 ? 'Costs paid from here' : bills.length || heldDebts.length ? 'Costs and money put aside' : 'Money put aside here'}</h3>
                 <button className="btn small" onClick={onAddItem}><Icon name="plus" size={16} /> Add cost</button>
               </div>
-              {items.length === 0 && <p className="small muted">No costs yet.</p>}
+              {items.length === 0 && heldDebts.length === 0 && <p className="small muted">No costs yet.</p>}
+              {heldDebts.map((d) => {
+                const perPay = debtPerPay(budget, d);
+                const stmt = d.statementDay ? ordinal(d.statementDay) : 'statement day';
+                return (
+                  <a key={d.id} className="list-row" href="#/debts" title={`Open ${d.name} in Debts to change where the payment is stored`}>
+                    <span className="grow">
+                      {d.name}
+                      <span className="small muted block">
+                        Debt payment · stored here until the {stmt} · set on {d.name} in Debts
+                      </span>
+                    </span>
+                    <b>{perPay !== undefined ? cash(perPay) : '—'}</b>
+                    <Icon name="card" size={16} />
+                  </a>
+                );
+              })}
               {items.map((i) => {
                 const kept = isSetAside(i);
-                const next = kept ? undefined : itemDates(i, today, '2100-01-01', budget.settings)[0];
+                const env = isMonthEnvelope(i);
+                const next = kept || env ? undefined : itemDates(i, today, '2100-01-01', budget.settings)[0];
                 return (
                   <button key={i.id} className="list-row" onClick={() => onEditItem(i)}>
                     <span className="grow">
                       {i.name}
                       <span className="small muted block">
                         {kept
-                          ? `${FREQ_LABEL[i.frequency]} · put aside, ${cash(setAsidePerPay(i))} a pay${i.end && i.end < today ? ' · stopped' : i.start > today ? ` · from ${fmtShort(i.start)}` : ''}`
+                          ? `${FREQ_LABEL[i.frequency]} · put aside, ${cash(setAsidePerPay(i))} a pay${i.maxSaved ? ` · max ${cash(i.maxSaved)}` : ''}${i.end && i.end < today ? ' · stopped' : i.start > today ? ` · from ${fmtShort(i.start)}` : ''}`
+                          : env
+                          ? `${FREQ_LABEL[i.frequency]} · month envelope ${cash(monthBudget(i))}/mo · resets each month${i.end && i.end < today ? ' · stopped' : i.start > today ? ` · from ${fmtShort(i.start)}` : ''}`
                           : <>
                             {FREQ_LABEL[i.frequency]}{next ? ` · next ${fmtShort(next)}` : ' · finished'}
                             {i.frequency !== 'once' && i.frequency !== 'monthly' ? ` · ${cash(convert(i.amount, i.frequency, 'month'))}/mo avg` : ''}

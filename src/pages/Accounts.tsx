@@ -144,6 +144,9 @@ function BalanceCard({ account: a, view, day, mover, onPick }: {
   // What payday sends here: next pay's, or the pay being looked at.
   const pay = view ?? shiftPeriod(periodContaining(today, budget.settings), 1, budget.settings);
   const sends = depositFor(budget, a.id, pay, today);
+  // Nominal payday day-of-month can move for the weekend (e.g. 20th on Sunday → Friday 18th).
+  const nominalDay = budget.settings.paydayDay;
+  const movedForWeekend = Number(pay.start.slice(8, 10)) !== nominalDay;
 
   return (
     <section className={`card acct${open ? ' open' : ''}`} data-flip={a.id}>
@@ -151,11 +154,11 @@ function BalanceCard({ account: a, view, day, mover, onPick }: {
         <AccIcon color={a.color} name="bank" />
         <div className="grow min0">
           <h2 className="h2 clip">{a.name}</h2>
-          <p className="small muted clip">+{cash(sends)} on {fmtShort(pay.start)}</p>
+          <p className="small muted clip">+{cash(sends)} on {fmtShort(pay.start)}{movedForWeekend ? ` (${nominalDay}th falls on a weekend)` : ''}</p>
         </div>
         <div className="acct-side">
           {entry && <SyncPill source={sync.linked ? 'bank' : 'entered'} at={sync.at ?? entry.asOf} />}
-          {mover ?? <button className="icon-btn mini has-tip tip-left" data-tip="Edit" aria-label={`Edit ${a.name}: balance, one-off cost, payday`} onClick={() => setEditing(true)}><Icon name="edit" size={14} /></button>}
+          {mover ?? <button className="icon-btn mini has-tip tip-left" data-tip="Account settings" aria-label={`Edit ${a.name}: balance, payday send, costs`} onClick={() => setEditing(true)}><Icon name="edit" size={14} /></button>}
         </div>
       </div>
 
@@ -217,8 +220,7 @@ function BalanceCard({ account: a, view, day, mover, onPick }: {
 function BankOnlyCard({ account: a, mover }: { account: Account; mover: React.ReactNode }) {
   const { budget } = useBudget();
   const today = todayISO();
-  // Its transactions are all there is to see, so they show from the start; they can be put away.
-  const [open, setOpen] = useState(true);
+  const [open, setOpen] = useState(false); // every card starts closed
   const txns = budget.accountTransactions?.[a.id] ?? [];
   const isPay = a.id === budget.settings.payAccountId;
   const goal = (budget.savings ?? []).find((g) => g.accountId === a.id);

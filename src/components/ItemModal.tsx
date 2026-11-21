@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { convert, setAsidePerPay } from '../lib/engine';
+import { convert, monthBudget, setAsidePerPay } from '../lib/engine';
 import { todayISO } from '../lib/dates';
 import { cash, centsToInput, parseMoney } from '../lib/money';
 import { newId, useBudget } from '../lib/store';
@@ -27,18 +27,27 @@ export function ItemModal({ item, accountId, onClose }: { item?: Item; accountId
   const [inWeeks, setInWeeks] = useState(item?.showInWeeks ?? false);
   const [skip, setSkip] = useState(String(item?.skipIfWithin ?? 0));
   const [aside, setAside] = useState(item?.setAside ?? false);
+  const [envelope, setEnvelope] = useState(item?.monthEnvelope ?? false);
+  const [maxSaved, setMaxSaved] = useState(item?.maxSaved ? centsToInput(item.maxSaved) : '');
   const [err, setErr] = useState('');
 
   const cents = parseMoney(amount);
   // Money put aside each pay (a WOF, tyres): only for something that repeats.
-  const keep = aside && freq !== 'once';
-  const weekly = freq === 'weekly' && !keep;
+  const keep = aside && !envelope && freq !== 'once';
+  const monthEnv = envelope && freq !== 'once';
+  const weekly = freq === 'weekly' && !keep && !monthEnv;
 
   function save() {
     if (!name.trim()) return setErr('Enter a name.');
     if (cents === null || cents <= 0) return setErr('Enter an amount above $0.');
     if (!start) return setErr('Pick a date.');
     if (end && end < start) return setErr('The end date is before the start date.');
+    let cap: number | undefined;
+    if (keep && maxSaved.trim() !== '') {
+      const parsed = parseMoney(maxSaved);
+      if (parsed === null || parsed <= 0) return setErr('Max saved should be an amount above $0, or left blank.');
+      cap = parsed;
+    }
     const next: Item = {
       ...item, // keep anything this form doesn't edit
       id: item?.id ?? newId(), name: name.trim(), amount: cents, frequency: freq, start,
@@ -46,7 +55,12 @@ export function ItemModal({ item, accountId, onClose }: { item?: Item; accountId
       showInWeeks: weekly ? inWeeks : undefined,
       skipIfWithin: weekly && Number(skip) > 0 ? Number(skip) : undefined,
       setAside: keep || undefined,
+      monthEnvelope: monthEnv || undefined,
+      ...(cap ? { maxSaved: cap } : {}),
     };
+    if (!cap) delete next.maxSaved;
+    if (!keep) delete next.setAside;
+    if (!monthEnv) delete next.monthEnvelope;
     update((b) => {
       const i = b.items.findIndex((x) => x.id === next.id);
       if (i >= 0) b.items[i] = next; else b.items.push(next);
@@ -95,7 +109,7 @@ export function ItemModal({ item, accountId, onClose }: { item?: Item; accountId
 
         {freq !== 'once' && (
           <label className="check-row" style={{ alignItems: 'flex-start' }}>
-            <input type="checkbox" checked={aside} onChange={(e) => setAside(e.target.checked)} style={{ width: 20, height: 20, flex: 'none', marginTop: 2, accentColor: 'var(--brand)' }} />
+            <input type="checkbox" checked={aside} disabled={envelope} onChange={(e) => { setAside(e.target.checked); if (e.target.checked) setEnvelope(false); }} style={{ width: 20, height: 20, flex: 'none', marginTop: 2, accentColor: 'var(--brand)' }} />
             <span>
               Put aside, don't pay out
               <span className="small muted block">
@@ -107,21 +121,43 @@ export function ItemModal({ item, accountId, onClose }: { item?: Item; accountId
           </label>
         )}
 
+        {freq !== 'once' && (
+          <label className="check-row" style={{ alignItems: 'flex-start' }}>
+            <input type="checkbox" checked={envelope} disabled={aside} onChange={(e) => { setEnvelope(e.target.checked); if (e.target.checked) setAside(false); }} style={{ width: 20, height: 20, flex: 'none', marginTop: 2, accentColor: 'var(--brand)' }} />
+            <span>
+              Put aside for the month
+              <span className="small muted block">
+                {monthEnv && cents !== null && cents > 0
+                  ? <>This month’s budget is <b>{cash(monthBudget({ amount: cents, frequency: freq }))}</b>. Payday funds it; bank purchases that match (e.g. fuel for Gas) count against it. What’s left at month end is yours — it doesn’t roll over.</>
+                  : 'For irregular spending like gas: set a monthly total, track what is left from synced purchases, and keep any leftover as spare when the month ends.'}
+              </span>
+            </span>
+          </label>
+        )}
+
+        {keep && (
+          <label className="field">Max saved (optional)
+            <input inputMode="decimal" value={maxSaved} onChange={(e) => { setMaxSaved(e.target.value); setErr(''); }} placeholder="60.00" />
+            <span className="small muted">Once this much is already aside after bills, payday stops adding more until you spend some (e.g. Haircut $60).</span>
+          </label>
+        )}
+
         <div className="form-grid">
-          <label className="field">{keep ? 'Start putting aside from' : freq === 'once' ? 'Date' : 'First date'}
+          <label className="field">{keep || monthEnv ? 'Start putting aside from' : freq === 'once' ? 'Date' : 'First date'}
             <input type="date" value={start} onChange={(e) => setStart(e.target.value)} />
           </label>
           {freq !== 'once' && (
-            <label className="field">{keep ? 'Stop on (optional)' : 'End date (optional)'}
+            <label className="field">{keep || monthEnv ? 'Stop on (optional)' : 'End date (optional)'}
               <input type="date" value={end} onChange={(e) => setEnd(e.target.value)} />
             </label>
           )}
         </div>
         {keep ? <p className="small muted">Starts on the first payday on or after this date.</p> : null}
-        {!keep && (freq === 'weekly' || freq === 'fortnightly') ? <p className="small muted">Repeats on the same weekday as the first date.</p> : null}
-        {!keep && freq === 'monthly' ? <p className="small muted">Repeats on the same day each month (or the last day in shorter months).</p> : null}
+        {monthEnv ? <p className="small muted">Budget resets each calendar month. Leftover at month end is spare to spend on yourself.</p> : null}
+        {!keep && !monthEnv && (freq === 'weekly' || freq === 'fortnightly') ? <p className="small muted">Repeats on the same weekday as the first date.</p> : null}
+        {!keep && !monthEnv && freq === 'monthly' ? <p className="small muted">Repeats on the same day each month (or the last day in shorter months).</p> : null}
 
-        <label className="field">{keep ? 'Kept in' : 'Comes out of'}
+        <label className="field">{keep || monthEnv ? 'Kept in' : 'Comes out of'}
           <select value={acc} onChange={(e) => setAcc(e.target.value)}>
             {accounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
           </select>

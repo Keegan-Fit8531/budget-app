@@ -1,6 +1,7 @@
-import { applyPayrollDeduction, debtPerPay, owed, settleDue } from './debts';
+import { freezePaySplit } from './balances';
+import { applyPayrollDeduction, debtPay, owed, settleDue } from './debts';
 import { todayISO, type ISODate } from './dates';
-import { recordPayday } from './engine';
+import { periodContaining, recordPayday } from './engine';
 import { parsePayslipText, readPdfText, type Payslip } from './payslip';
 import type { Budget, Cents, Debt } from './types';
 
@@ -134,6 +135,8 @@ export function recordPayslip(b: Budget, slip: Payslip): { start: ISODate; loan:
   const start = recordPayday(b, slip.payDay);
   b.payActuals[start] = slip.net;
   b.payslips = { ...(b.payslips ?? {}), [start]: slip };
+  // Lock this pay’s deposits so later changes (debts paid, costs edited) don’t rewrite the split.
+  freezePaySplit(b, periodContaining(start, b.settings), start);
   // The student loan comes out before pay: count the payslip's deduction against the loan.
   const loan = slip.studentLoan ? !!applyPayrollDeduction(b, start, slip.studentLoan) : false;
   return { start, loan };
@@ -154,7 +157,7 @@ export function recordStatement(b: Budget, debtId: string, s: { balance: Cents; 
   // (Ones worked out from the earlier balance are dropped first, or they'd be counted twice.)
   if (asOf < today) {
     if (debt.paid) debt.paid = debt.paid.filter((x) => !(x.synthetic && x.date >= asOf));
-    settleDue(debt, b.settings, today, debtPerPay(b, debt));
+    settleDue(debt, b.settings, today, debtPay(b, debt));
   }
   return debt;
 }

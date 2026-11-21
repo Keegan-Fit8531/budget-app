@@ -1,6 +1,6 @@
 import type { ISODate } from './dates';
 import { modeOf } from './balances';
-import { periodContaining, shiftPeriod, upcomingPayPeriod, type Period } from './engine';
+import { periodContaining, shiftPeriod, type Period } from './engine';
 import type { Budget, Cents, SavingsGoal, Settings } from './types';
 
 export interface GoalForecast {
@@ -42,7 +42,8 @@ export function savedAsOf(goal: Pick<SavingsGoal, 'asOf'>, today: ISODate): ISOD
  * since the balance was updated still counts, instead of dropping out until the balance is updated.
  */
 export function firstPayToCome(b: Pick<Budget, 'settings'>, goal: Pick<SavingsGoal, 'asOf'>, today: ISODate): Period {
-  return upcomingPayPeriod(b, savedAsOf(goal, today));
+  const from = savedAsOf(goal, today);
+  return shiftPeriod(periodContaining(from, b.settings), 1, b.settings);
 }
 
 /** Per-pay amount needed by a goal (used for auto savings accounts). */
@@ -59,21 +60,31 @@ export function forecast(b: Budget, goal: SavingsGoal, today: ISODate): GoalFore
   const line = b.split.find((l) => l.accountId === goal.accountId);
   const required = requiredPerPay(goal, s, goal.asOf);
   const perPay = modeOf(line) !== 'fixed' ? (required ?? 0) : (line?.amount ?? 0);
-  const rate = perPay + (goal.otherPerPay ?? 0);
+  const other = goal.otherPerPay ?? 0;
+  // A pay with its own amount (extra from Optimise, or changed for that pay only) sends that instead.
+  // Only when this goal has the account to itself: otherwise there's no telling which goal it's for.
+  const solo = (b.savings ?? []).filter((g) => g.accountId === goal.accountId).length === 1;
+  const sentIn = (p: Period): Cents => ((solo ? b.overrides?.[p.start]?.[goal.accountId] : undefined) ?? perPay) + other;
   const periodsLeft = goal.targetDate ? countPeriods(today, goal.targetDate, s) : undefined;
   // The balance is as at the day it was last updated, so every pay since then is still to be added.
   const from = savedAsOf(goal, today);
-  const projected = goal.balance + rate * (goal.targetDate ? countPeriods(from, goal.targetDate, s) : 12);
+  const first = shiftPeriod(periodContaining(from, s), 1, s);
+  const pays = goal.targetDate ? countPeriods(from, goal.targetDate, s) : 12;
+  let projected = goal.balance;
+  for (let i = 0, p = first; i < pays; i++, p = shiftPeriod(p, 1, s)) projected += sentIn(p);
 
   let reachedBy: ISODate | undefined;
   let remaining: Cents | undefined;
   if (goal.target !== undefined) {
     remaining = Math.max(0, goal.target - goal.balance);
     if (remaining === 0) reachedBy = today;
-    else if (rate > 0) {
-      const n = Math.ceil(remaining / rate);
-      // The pay the balance was updated in is already in it, so the nth pay to come is n paydays on from there.
-      if (n <= 600) reachedBy = shiftPeriod(periodContaining(from, s), n, s).start;
+    else {
+      // The pay the balance was updated in is already in it, so add each pay to come until it's there.
+      let saved = 0;
+      for (let i = 0, p = first; i < 600; i++, p = shiftPeriod(p, 1, s)) {
+        saved += sentIn(p);
+        if (saved >= remaining) { reachedBy = p.start; break; }
+      }
     }
   }
   const onTrack = goal.target !== undefined && goal.targetDate

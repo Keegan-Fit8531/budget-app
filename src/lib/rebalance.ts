@@ -1,8 +1,12 @@
-import { accountMode, levelAmount, spareInfo } from './balances';
+import { accountMode, levelAmount, paySplitLocked, spareInfo } from './balances';
 import { fmtShort } from './dates';
-import { debtAdvice } from './debts';
+import { debtAdvice, fundingAccountId } from './debts';
 import { todayISO } from './dates';
-import { hasSetAsides, isSetAside, periodContaining, planFor, setAsideOn, shiftPeriod, upcomingPayPeriod, type Period } from './engine';
+import {
+  asideMaxSaved, asideSpareNow, hasMonthEnvelopes, hasSetAsides, isHeldInAccount, isSetAside,
+  monthEnvelopeOn, periodContaining, planFor, setAsideOn, shiftPeriod, upcomingPayPeriod, type Period,
+} from './engine';
+import { envelopeHeld } from './envelope';
 import type { ISODate } from './dates';
 import type { Budget, Cents } from './types';
 
@@ -19,8 +23,8 @@ export interface BalanceChange {
 export interface BalanceResult {
   changes: BalanceChange[];
   /**
-   * Accounts whose payday amount is changed as part of balancing: weekly costs → Steady (no ups and downs
-   * between 4- and 5-week pays); bills on a fixed amount → Exact (sends what the bills need, less what's left).
+   * Accounts whose payday amount is changed as part of balancing: weekly costs on a fixed amount →
+   * Level (no ups and downs between 4- and 5-week pays); other fixed bills → This pay's costs.
    */
   toSteady: { accountId: string; name: string; was: 'fixed' | 'exact'; to: 'smooth' | 'exact' }[];
   /** Left after the plan, before and after balancing. */
@@ -52,21 +56,23 @@ const dollarsUp = (c: Cents) => Math.ceil(c / 100) * 100;
  */
 /** `keep`: accounts with an amount you set yourself this pay; never trimmed or changed (except a top-up if it's short). */
 export function balancePay(input: Budget, period: Period, today: ISODate = todayISO(), keep: Set<string> = new Set()): BalanceResult {
-  // Even out first: accounts with weekly costs that aren't on Steady go up and down between 4- and
-  // 5-week pays, so balancing moves them to Steady (and works everything else out from there).
+  // Even out first: weekly costs on a fixed amount go up and down between 4- and 5-week pays, so
+  // balancing moves those to Level amount (and works everything else out from there).
   // The account's bills: what really comes out of it (money put aside stays in it).
-  const items = (id: string) => input.items.filter((i) => i.accountId === id && !isSetAside(i));
+  const items = (id: string) => input.items.filter((i) => i.accountId === id && !isHeldInAccount(i));
   const allWeekly = (id: string) => items(id).length > 0 && items(id).every((i) => i.frequency === 'weekly');
   const usable = (a: Budget['accounts'][number]) => !a.archived && a.kind === 'bank' && a.id !== input.settings.payAccountId
     && input.overrides?.[period.start]?.[a.id] === undefined && !(input.savings ?? []).some((g) => g.accountId === a.id)
     && !(input.debts ?? []).some((d) => d.accountId === a.id);
   const toSteady: BalanceResult['toSteady'] = [
-    // Only accounts whose costs are all weekly transfers (food and gas, allowance) go to Steady.
-    ...input.accounts.filter((a) => usable(a) && accountMode(input, a.id) !== 'smooth' && allWeekly(a.id))
-      .map((a) => ({ accountId: a.id, name: a.name, was: accountMode(input, a.id) as 'fixed' | 'exact', to: 'smooth' as const })),
+    // Weekly costs on a fixed amount go short in 5-week pays: move them to Level amount.
+    // Leave "This pay's costs" alone if you chose it in account settings.
+    ...input.accounts.filter((a) => usable(a) && accountMode(input, a.id) === 'fixed' && allWeekly(a.id))
+      .map((a) => ({ accountId: a.id, name: a.name, was: 'fixed' as const, to: 'smooth' as const })),
     // Accounts with bills on set dates (even with a weekly cost among them, e.g. a bills account), or
-    // money put aside (a car fund), go to Exact: payday follows them rather than a fixed amount.
-    ...input.accounts.filter((a) => usable(a) && accountMode(input, a.id) === 'fixed' && (items(a.id).length > 0 || hasSetAsides(input, a.id)) && !allWeekly(a.id))
+    // money put aside / month envelopes, go to Exact: payday follows them rather than a fixed amount.
+    ...input.accounts.filter((a) => usable(a) && accountMode(input, a.id) === 'fixed'
+      && (items(a.id).length > 0 || hasSetAsides(input, a.id) || hasMonthEnvelopes(input, a.id)) && !allWeekly(a.id))
       .map((a) => ({ accountId: a.id, name: a.name, was: 'fixed' as const, to: 'exact' as const })),
   ];
   const b = toSteady.length ? structuredClone(input) : input;
@@ -96,7 +102,7 @@ export function balancePay(input: Budget, period: Period, today: ISODate = today
     const from = funded(s.accountId);
     const st = step(s.accountId);
     const to = st ? Math.ceil((from + s.short) / st) * st : from + s.short;
-    const onlyAside = !b.items.some((i) => i.accountId === s.accountId && !isSetAside(i));
+    const onlyAside = !b.items.some((i) => i.accountId === s.accountId && !isHeldInAccount(i));
     changes.push({ accountId: s.accountId, name: s.name, from, to, topUp: true,
       reason: onlyAside ? `Needs ${fmt(s.short)} more to put aside what's planned for ${asideNames(b, s.accountId)}.` : `Needs ${fmt(s.short)} more to cover its costs before next payday.` });
     topUps += to - from;
@@ -123,13 +129,42 @@ export function balancePay(input: Budget, period: Period, today: ISODate = today
       if (id === b.settings.payAccountId || debtIds.has(id) || a.account.kind !== 'bank' || savingGroupIds.has(a.account.groupId)) continue;
       if (!b.items.some((i) => i.accountId === id)) continue;
       const name = a.account.name;
-      // What's built up in a car fund (a WOF, tyres) is waiting for those costs, whenever they come.
-      if (hasSetAsides(b, id)) { notSpare.push({ accountId: id, name, reason: `Its balance is money put aside for ${asideNames(b, id)}, so none of it is spare.` }); continue; }
+      // What's built up in a car fund (a WOF, tyres) is waiting for those costs — unless every
+      // set-aside has a max (Haircut $60) and the account is already over it: the excess is spare,
+      // and this pay's send can be trimmed when there's still a send to trim.
+      if (hasSetAsides(b, id)) {
+        const maxAside = asideMaxSaved(b, id);
+        if (maxAside === undefined) {
+          notSpare.push({ accountId: id, name, reason: `Its balance is money put aside for ${asideNames(b, id)}, so none of it is spare.` });
+          continue;
+        }
+        const spareNow = asideSpareNow(b, id, today);
+        if (spareNow === undefined) {
+          notSpare.push({ accountId: id, name, reason: 'No balance entered in Accounts, so the app can\u2019t tell if it has spare money.' });
+          continue;
+        }
+        const excess = Math.max(0, spareNow - maxAside);
+        if (excess <= 0) {
+          notSpare.push({ accountId: id, name, reason: `Put aside for ${asideNames(b, id)} is at its max (${fmt(maxAside)}), so none of it is spare.` });
+          continue;
+        }
+        if (funded(id) > 0) {
+          cut(id, name, excess,
+            `${asideNames(b, id)} is at its max (${fmt(maxAside)}); the rest after bills is spare.`);
+        }
+        continue;
+      }
       const info = spareInfo(b, id, period, 12, today);
       if (!info) { notSpare.push({ accountId: id, name, reason: 'No balance entered in Accounts, so the app can\u2019t tell if it has spare money.' }); continue; }
       if (protectedIds.has(id)) { notSpare.push({ accountId: id, name, reason: 'It\u2019s short this pay, so it was topped up instead.' }); continue; }
-      const spare = info.spare;
+      // Unspent month-envelope budget (Gas left this month) is spoken for until month end.
+      const heldEnv = envelopeHeld(b, id, today);
+      const spare = Math.max(0, info.spare - heldEnv);
       if (spare <= 0) {
+        if (heldEnv > 0) {
+          notSpare.push({ accountId: id, name, reason: `What's left covers this month's envelope (e.g. Gas) — leftover at month end is yours.` });
+          continue;
+        }
         // Steady accounts (e.g. rent) build a buffer for pays with an extra week: that money is spoken for.
         if (accountMode(b, id) === 'smooth') { notSpare.push({ accountId: id, name, reason: `Its balance is the buffer for pays with an extra week (e.g. 5 rent Mondays). Over the next 12 pays it drops to ${fmt(info.low)} (${fmtShort(info.lowAt)}), so none of it is spare.` }); continue; }
         notSpare.push({ accountId: id, name, reason: `Its lowest point over the next 12 pays is ${fmt(info.low)} (${fmtShort(info.lowAt)}), which isn't more than the ${fmt(info.reserve)} it keeps in reserve.` });
@@ -145,9 +180,11 @@ export function balancePay(input: Budget, period: Period, today: ISODate = today
       if (d.payroll) continue; // taken from salary, nothing to trim
       const adv = debtAdvice(b, d, period);
       const interestFree = d.rules === 'gem' || d.kind === 'bnpl' || !d.rate;
-      const extra = funded(d.accountId) - adv.recommended;
+      // Trim the account that actually holds the money (Misc bills when Gem stores payment there).
+      const fundId = fundingAccountId(d);
+      const extra = funded(fundId) - adv.recommended;
       if (interestFree && extra > 0) {
-        cut(d.accountId, d.name, extra,
+        cut(fundId, d.name, extra,
           `Paying more than ${fmt(adv.recommended)} saves no interest: ${d.rules === 'gem' ? 'every Gem plan still clears before it expires' : 'it’s interest-free'}.`);
       }
     }
@@ -161,8 +198,10 @@ export function balancePay(input: Budget, period: Period, today: ISODate = today
     //    Only what's put aside is paused; bills paid from the same account still get their money.
     for (const a of plan.accounts) {
       if (a.account.id === b.settings.payAccountId) continue; // pay lands there: nothing is sent to it to trim
-      const aside = Math.min(a.funded, setAsideOn(b, a.account.id, period.start));
-      cut(a.account.id, a.account.name, aside, `Puts aside less for ${asideNames(b, a.account.id)} this pay only (there's no date to meet). Back to the usual amount next pay.`);
+      const aside = Math.min(a.funded, setAsideOn(b, a.account.id, period.start) + monthEnvelopeOn(b, a.account.id, period.start));
+      const label = hasSetAsides(b, a.account.id) ? asideNames(b, a.account.id)
+        : b.items.filter((i) => i.accountId === a.account.id && i.monthEnvelope).map((i) => i.name).join(' and ') || 'month budgets';
+      cut(a.account.id, a.account.name, aside, `Puts aside less for ${label} this pay only (there's no date to meet). Back to the usual amount next pay.`);
     }
   }
 
@@ -233,7 +272,7 @@ export function balancedMode(b: Budget, accountId: string): 'smooth' | 'not-fixe
   if ((b.savings ?? []).some((g) => g.accountId === a.id) || (b.debts ?? []).some((d) => d.accountId === a.id)) return undefined;
   // Weekly bills (money put aside alongside them or not) → Steady. Bills on set dates, or only money put
   // aside (a car fund), are never a fixed amount: payday follows them, so it can't quietly send too little.
-  const bills = items.filter((i) => !isSetAside(i));
+  const bills = items.filter((i) => !isHeldInAccount(i));
   return bills.length && bills.every((i) => i.frequency === 'weekly') ? 'smooth' : 'not-fixed';
 }
 
@@ -243,10 +282,15 @@ export function asideNames(b: Budget, accountId: string): string {
   return names.length <= 1 ? names[0] ?? 'later costs' : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
 }
 
-/** The pays automatic balancing covers: from the next payday on (a pay already split is left as it is). */
+/**
+ * The pays automatic balancing covers: the next open pay, then the ones after.
+ * From the day after payday that pay is left as it is (already split). Once this payday’s payslip
+ * (or pay amount) is in, that pay is locked too — balancing only moves future pays.
+ */
 export function autoPays(b: Budget, today: ISODate = todayISO()): Period[] {
   const out: Period[] = [];
   let p = upcomingPayPeriod(b, today);
+  if (paySplitLocked(b, p, today)) p = shiftPeriod(p, 1, b.settings);
   for (let i = 0; i < AUTO_PAYS; i++) { out.push(p); p = shiftPeriod(p, 1, b.settings); }
   return out;
 }

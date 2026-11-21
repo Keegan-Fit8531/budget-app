@@ -8,7 +8,7 @@ import type { ISODate } from '../dates';
 // ---------------------------------------------------------------------------------------------
 
 /** `transactions` is a bank or card export (CSV), read on this device. */
-export type DocKind = 'payslip' | 'statement' | 'afterpay' | 'kiwisaver' | 'transactions' | 'unknown';
+export type DocKind = 'payslip' | 'statement' | 'afterpay' | 'kiwisaver' | 'transactions' | 'balances' | 'unknown';
 
 /** A figure as printed, e.g. { amount: "1240.50", label: "Closing balance" }. */
 export interface Fig { amount: string; label?: string }
@@ -36,15 +36,34 @@ export interface RawStatement {
   statementDate?: string;
   limit?: Fig;
   minimum?: Fig;
-  /** Plans shown on the statement (Gem's interest-free plans), matched to the debt's plans by id. */
-  plans?: { planId?: string | null; description?: string; remaining?: Fig; ends?: string }[];
-  /** Purchases listed on a card app screen. They're inside its balance, so they're never added again (a Gem one of $250 or more becomes a plan). */
-  purchases?: { date?: string; description?: string; amount?: Fig }[];
+  /** Plans shown on the statement or My plans screen (Gem interest-free / equal-payment plans), matched by id or expiry. */
+  plans?: {
+    planId?: string | null;
+    description?: string;
+    remaining?: Fig;
+    ends?: string;
+    /** Total plan length in months when shown (6, 12, 24, 36, 60). */
+    months?: number | null;
+    /** Months still left, as printed (e.g. "8 of 12 months remaining" → 8). */
+    monthsLeft?: number | null;
+    /** interest-free (any payments) or equal (fixed monthly instalments). */
+    type?: 'interest-free' | 'equal' | null;
+  }[];
+  /**
+   * Purchases listed on a card app screen, including pending ones. They're inside its balance, so
+   * they're never added to what's owed again; a Gem one of $250 or more becomes a 6-month plan.
+   */
+  purchases?: { date?: string; description?: string; amount?: Fig; pending?: boolean | null }[];
   /** Payments listed on the statement. They're counted automatically on their due dates, so they're ignored. */
   paymentsShown?: { date?: string; amount?: Fig }[];
 }
 
 export interface RawAfterpay {
+  /**
+   * True for Afterpay’s “Upcoming payments” screen (or any list of everything still due): orders not
+   * on it are treated as paid off. False for a single order or a partial list of orders.
+   */
+  listsAllDue?: boolean | null;
   orders?: {
     planId?: string | null;
     merchant?: string;
@@ -74,12 +93,21 @@ export interface RawKiwiSaver {
   funds?: { name?: string; amount?: Fig }[];
 }
 
+/** A bank's list of accounts, each with its balance (internet banking's "Current and savings", say). */
+export interface RawBalances {
+  bank?: string;
+  /** The day the balances are as at, if shown. */
+  asOf?: string;
+  accounts?: { name?: string; number?: string; balance?: Fig; available?: Fig }[];
+}
+
 export interface Extraction {
   kind: DocKind;
   payslip?: RawPayslip;
   statement?: RawStatement;
   afterpay?: RawAfterpay;
   kiwisaver?: RawKiwiSaver;
+  balances?: RawBalances;
   transactions?: CsvRead;
   notes?: string;
 }
@@ -95,6 +123,8 @@ export interface ReadContext {
     kind: string;
     rules?: string;
     neverAStatement?: true;
+    /** The student loan: IRD's loan balance is its statement. */
+    studentLoan?: true;
     /** Afterpay orders also carry their amounts and dates; card plans only their name (see buildContext). */
     plans: { id: string; name: string; type: string; remaining?: string; purchaseDate?: ISODate; total?: string; nextInstalment?: { date: ISODate; amount: string } }[];
   }[];
