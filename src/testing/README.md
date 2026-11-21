@@ -5,6 +5,7 @@ Shared test helpers, and the test that keeps the READMEs honest. A feature's own
 ## Files
 - `fixtures.ts`: test budgets and helpers used across test files: `budget()` (blank, paid on the 19th, balancing off), `debtBudget()` (with Gem Visa, Q Mastercard, Afterpay and a student loan), `seq` (predictable ids), document-reading helpers (`checkDoc`, `upload`, `gemStatement`), `debt`, and a made-up card export (`qExport`, `csvDoc`).
 - `readmes.test.ts`: fails if a folder in `src/` has no `README.md`, or a README doesn't mention a file or folder in it.
+- `structure.test.ts`: fails if a file is over 500 lines, if `core/`, `engine/` or a `logic/` folder imports React or a component, if `ui/` imports budget code (`app/`, `engine/`, `state/`, `features/`, `services/`, `shared/`), or if `core/` imports code (not just types) from elsewhere. Each failure says what to change.
 
 ## Watch out for
 - Tests never talk to real services: Gemini, GitHub and the bank are always faked, and all data is made up.

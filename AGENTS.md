@@ -65,7 +65,26 @@ before dev/build), `.github/workflows/pages.yml` (deploys `main` to GitHub Pages
 - **Dependencies point inward**: `core` ← `engine` ← `features`/`services` ← `app`. `ui/` knows nothing about budgets. (`engine` and `features/debts|savings/logic` call each other; don't add new cycles.)
 - **Design**: use the tokens and classes in `ui/styles/` and the pieces in `ui/components.tsx`, never new colours or sizes. Green/red only ever mean "fine"/"short". An account's colour is only a small mark beside its name.
 - **Privacy**: the Gemini key, GitHub token and bank passphrase stay in the browser's storage only, never in the budget, the repo or the code. `src/personal/` (git-ignored) holds the owner's own data and is never committed.
-- **Keep files small**: aim for under ~400 lines. When one grows past that, split it by its sections into files named for their job, and update the README.
+- **Keep files small**: aim for under ~400 lines. When one grows past that, split it by its sections into files named for their job, and update the README. Over 500 lines fails `npm test`.
+
+The folder rules above (file size, no React in `core/`/`engine/`/`logic/`, a generic `ui/`, `core/` only borrowing types) are checked by `src/testing/structure.test.ts`.
+
+## Where new code goes
+
+- A calculation on the budget: the page's `logic/` folder, or `engine/` if more than one page needs it. Never inside a component.
+- A new screen or pop-up: the page's folder in `features/`. If a second page needs it, move it to `shared/`.
+- A generic visual piece (no budget rules): `ui/`, styled with the tokens in `ui/styles/`.
+- A new outside connection: its own folder in `services/`, with its settings card.
+- A new kind of saved data: `core/types.ts` first (see the rule above).
+- A date, money or colour helper: check `core/` first; one probably exists. Don't write a second one.
+- Tests go next to the code (`name.test.ts`), using `src/testing/fixtures.ts` for test budgets. A test must not depend on the real date: pass a fixed `today`, or fix the clock with `vi.setSystemTime` (see `features/planner/logic/allocate.test.ts`).
+- Remove code you've replaced instead of leaving it beside the new code.
+
+## Before you finish a change
+
+1. `npm test`, `npx tsc -b` and `npm run lint` pass (lint warnings are OK, errors aren't).
+2. Every folder you touched has its README updated: new, renamed, moved or deleted files, and changed purposes.
+3. If you added a new kind of task or a new rule, update **Where to look** or **Rules the code relies on** here.
 
 ## Commands
 
