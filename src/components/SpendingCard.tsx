@@ -18,6 +18,8 @@ const RANGES = [{ days: 30, label: '30 days' }, { days: 91, label: '3 months' },
 export function SpendingCard() {
   const { budget, update } = useBudget();
   const mine = shopMap(budget);
+  /** Whether a shop's category is Gemini's guess, not your own choice. */
+  const isGuess = (shop: string) => { const k = shop.toLowerCase(); return !budget.shopCategories?.[k] && !!budget.shopGuesses?.[k] && budget.shopGuesses[k] !== 'other'; };
   /** Put a shop in another category from now on (kept in your budget, so it syncs). */
   const recategorize = (shop: string, category: SpendCategory) => update((b) => { b.shopCategories = { ...(b.shopCategories ?? {}), [shop.toLowerCase()]: category }; return b; });
   const sources = [
@@ -29,13 +31,19 @@ export function SpendingCard() {
   const [open, setOpen] = useState<string | null>(null);
   const [sorting, setSorting] = useState(false);
   const unsorted = otherShops(allTxns(budget), budget);
-  async function sortNow() {
+  const guessed = Object.keys(budget.shopGuesses ?? {}).filter((k) => !budget.shopCategories?.[k]).length;
+  /** Ask Gemini about the shops in Other; with `again`, also check every guess it made before (your own choices stay). */
+  async function sortNow(again = false) {
     setSorting(true);
     try {
-      const got = await sortShops(budget);
+      const got = await sortShops(budget, undefined, again);
+      const before = budget.shopGuesses ?? {};
+      const changed = Object.entries(got).filter(([k, c]) => before[k] !== c).length;
       const placed = Object.values(got).filter((c) => c !== 'other').length;
       update((b) => { b.shopGuesses = { ...(b.shopGuesses ?? {}), ...got }; return b; });
-      showToast(placed ? `Sorted ${placed} shop${placed === 1 ? '' : 's'} out of Other. Tap a category to change any.` : 'Gemini couldn’t place any more of them.');
+      showToast(again
+        ? (changed ? `Gemini looked them up again and moved ${changed} shop${changed === 1 ? '' : 's'}. Tap a category to change any.` : 'Gemini looked them up again: no changes.')
+        : placed ? `Sorted ${placed} shop${placed === 1 ? '' : 's'} out of Other. Tap a category to change any.` : 'Gemini couldn’t place any more of them.');
     } catch (e) {
       const m = e instanceof ReaderError ? errorMessage(e) : { title: 'Something went wrong.', body: 'Try again.' };
       showToast(`${m.title} ${m.body}`);
@@ -96,7 +104,7 @@ export function SpendingCard() {
                     <span className="xs muted">{c.count} purchase{c.count === 1 ? '' : 's'}, about {cash(c.total / weeks, { whole: true })} a week</span>
                     {c.shops.slice(0, 10).map((x) => (
                       <div key={x.shop} className="row nowrap gap-8 small">
-                        <span className="grow min0 clip">{x.shop}{x.count > 1 ? ` (${x.count})` : ''}</span>
+                        <span className="grow min0 clip">{x.shop}{x.count > 1 ? ` (${x.count})` : ''}{isGuess(x.shop) && <span className="xs muted"> · Gemini’s guess</span>}</span>
                         <span className="num">{cash(x.total)}</span>
                         <select aria-label={`Category for ${x.shop}`} className="select-sm" value={c.category} style={{ width: 132, flex: '0 0 auto' }}
                           onChange={(e) => recategorize(x.shop, e.target.value as SpendCategory)}>
@@ -104,16 +112,23 @@ export function SpendingCard() {
                         </select>
                       </div>
                     ))}
-                    <span className="xs muted">Change a shop’s category and it stays that way for its purchases.</span>
+                    <span className="xs muted">Change a shop’s category and it stays that way for its purchases. Gemini also follows your choices when it sorts.</span>
                   </div>
                 )}
               </div>
             ))}
           </div>
-          <span className="xs muted">Tap a category to see where it went.</span>
+          <div className="row between wrap gap-8">
+            <span className="xs muted">Tap a category to see where it went.</span>
+            {guessed > 0 && readReaderConfig() && (
+              <button className="btn small" disabled={sorting} onClick={() => void sortNow(true)} title="Gemini looks up every shop it sorted again. Shops you chose yourself stay as they are.">
+                <Icon name="wand" size={16} /> {sorting ? 'Checking…' : 'Check Gemini’s guesses again'}
+              </button>
+            )}
+          </div>
           {unsorted.length > 0 && (
             <div className="tip small between">
-              <span><b>{unsorted.length} shop{unsorted.length === 1 ? '' : 's'}</b> are in Other because the app doesn’t know them. Gemini can guess where they go (it only sees the shop names).</span>
+              <span><b>{unsorted.length} shop{unsorted.length === 1 ? '' : 's'}</b> are in Other because the app doesn’t know them. Gemini can look them up and sort them (it sees the shop names and purchase amounts, not dates or accounts).</span>
               <button className="btn small" disabled={sorting || !readReaderConfig()} onClick={() => void sortNow()}><Icon name="wand" size={16} /> {sorting ? 'Sorting…' : 'Sort them'}</button>
             </div>
           )}
