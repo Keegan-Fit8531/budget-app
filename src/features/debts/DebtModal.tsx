@@ -4,7 +4,7 @@ import { nextColor } from '../../core/colors';
 import { centsToInput, parseMoney } from '../../core/money';
 import { newId, useBudget } from '../../state/store';
 import type { Debt } from '../../core/types';
-import { KIND_LABEL } from './DebtsPage';
+import { KIND_LABEL } from './logic/labels';
 
 export function DebtModal({ debt, onClose, onDelete, embedded }: { debt?: Debt; onClose: () => void; onDelete: (d: Debt) => void; embedded?: boolean }) {
   const { budget, update } = useBudget();

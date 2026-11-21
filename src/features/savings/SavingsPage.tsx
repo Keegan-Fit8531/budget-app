@@ -6,7 +6,8 @@ import { AccIcon, Disclosure, Modal, MoveButtons, ReorderToggle, useFlip } from 
 import { moveAmong } from '../../core/order';
 import { bankSync } from '../../services/bank/bank';
 import { GoalCosts } from './GoalCosts';
-import { AddMoneyButton, GoalGifts, PeopleChips, savedSlices, tracksPeople } from './GoalGifts';
+import { AddMoneyButton, GoalGifts, PeopleChips } from './GoalGifts';
+import { savedSlices, tracksPeople } from './logic/gifts';
 import { summariseCosts } from './logic/goalcosts';
 import { paidDirect } from './logic/contributions';
 import { PaydayControl } from '../../shared/PaydayControl';

@@ -4,7 +4,8 @@ import { costCategories, spentOn } from './logic/goalcosts';
 import { cash, centsToInput, parseMoney } from '../../core/money';
 import { newId, useBudget } from '../../state/store';
 import type { GoalCost, SavingsGoal } from '../../core/types';
-import { NEW_PERSON, PersonPicker } from './GoalGifts';
+import { NEW_PERSON } from './logic/gifts';
+import { PersonPicker } from './GoalGifts';
 import { addPerson, paidShares, peopleOf } from './logic/contributions';
 import { Icon } from '../../ui/Icon';
 

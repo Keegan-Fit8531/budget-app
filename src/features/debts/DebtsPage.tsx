@@ -24,8 +24,7 @@ import { BalanceEditor, type DebtTab, DebtEditModal } from './DebtEditModal';
 import { PaymentModal } from './PaymentModal';
 import { PlanModal } from './PlanModal';
 import { DebtModal } from './DebtModal';
-
-export const KIND_LABEL: Record<Debt['kind'], string> = { card: 'Credit card', bnpl: 'Buy now, pay later', person: 'Person', loan: 'Loan' };
+import { KIND_LABEL } from './logic/labels';
 
 function monthYear(d: ISODate) { return `${monthName(d).slice(0, 3)} ${d.slice(0, 4)}`; }
 

@@ -6,7 +6,8 @@ import { cash, centsToInput, parseMoney } from '../../core/money';
 import { newId, useBudget } from '../../state/store';
 import type { GoalGift, SavingsGoal } from '../../core/types';
 import { Icon } from '../../ui/Icon';
-import { NEW, signed, saveGift, personLabel, tracksPeople, colorFor, PersonPicker } from './GoalGifts';
+import { NEW, signed, saveGift, personLabel, tracksPeople, colorFor } from './logic/gifts';
+import { PersonPicker } from './GoalGifts';
 
 export function GiftModal({ goal, gift, out = false, onClose }: { goal: SavingsGoal; gift?: GoalGift; out?: boolean; onClose: () => void }) {
   const { budget, update } = useBudget();
