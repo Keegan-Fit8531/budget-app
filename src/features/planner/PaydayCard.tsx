@@ -1,13 +1,13 @@
 import { fmtShort, monthName, ordinal, type ISODate } from '../../core/dates';
 import { cash } from '../../core/money';
-import type { Budget, Cents } from '../../core/types';
+import type { Budget, Cents, EnvelopeSpan } from '../../core/types';
 import { accountMode } from '../../engine/balances/outflows';
 import { nextBufferUse } from '../../engine/balances/projection';
 import { leftoverBeforeBudget, topsUp } from '../../engine/balances/topUps';
 import { envelopeHeld } from '../../engine/envelope';
 import { firstBudgetPay, shiftPeriod, type Period } from '../../engine/periods';
 import { isAuto, type AccountPlan } from '../../engine/plan';
-import { isHeldInAccount, isMonthEnvelope, isSetAside, monthBudget } from '../../engine/setAside';
+import { envelopeBudget, envelopeSpan, isEnvelope, isHeldInAccount, isSetAside } from '../../engine/setAside';
 import type { ViewMode } from '../../state/period';
 import { AccIcon } from '../../ui/components';
 import { Icon } from '../../ui/Icon';
@@ -129,13 +129,16 @@ export function PaydayCard({ budget, a, view, why, isOpen, onOpen, onClose, onEd
   const amountClass = funded < 0 && (known || !isPay) ? 'neg' : '';
   const icon = <AccIcon color={a.account.color} name={a.account.kind === 'external' ? 'send' : isPay ? 'wallet' : 'bank'} />;
   // Each cost this pay (e.g. food, car gas, scooter gas, or every bill in Misc bills).
-  const byName = new Map<string, { name: string; amount: Cents; dates: string[]; aside: boolean; envelope?: boolean; note?: string; maxSaved?: Cents; monthBudget?: Cents }>();
+  const byName = new Map<string, { name: string; amount: Cents; dates: string[]; aside: boolean; envelope?: boolean; note?: string; maxSaved?: Cents; envelopeBudget?: Cents; span?: EnvelopeSpan }>();
   if (!longRun) for (const d of a.dues) {
     const held = isHeldInAccount(d.item);
+    // An envelope's due is this pay's funding (`env-<id>`); its span budget comes from the cost itself.
+    const env = isEnvelope(d.item) ? budget.items.find((x) => `env-${x.id}` === d.item.id) ?? d.item : undefined;
     const r = byName.get(`${held}|${d.item.name}`) ?? {
-      name: d.item.name, amount: 0, dates: [], aside: isSetAside(d.item), envelope: isMonthEnvelope(d.item), note: d.item.note,
+      name: d.item.name, amount: 0, dates: [], aside: isSetAside(d.item), envelope: isEnvelope(d.item), note: d.item.note,
       maxSaved: d.item.maxSaved && d.item.maxSaved > 0 ? d.item.maxSaved : undefined,
-      monthBudget: isMonthEnvelope(d.item) ? monthBudget(d.item) : undefined,
+      envelopeBudget: env ? envelopeBudget(env) : undefined,
+      span: env ? envelopeSpan(env) : undefined,
     };
     r.amount += d.item.amount; r.dates.push(d.date);
     if (!r.note && d.item.note) r.note = d.item.note;
@@ -224,7 +227,7 @@ export function PaydayCard({ budget, a, view, why, isOpen, onOpen, onClose, onEd
                         <span className="cost-name">{r.name}</span>
                         <span className="cost-meta muted">
                           {r.envelope
-                            ? `Month envelope${r.monthBudget ? ` ${cash(r.monthBudget)}` : ''} · resets each month · leftover is yours`
+                            ? `${r.span === 'week' ? 'Week' : r.span === 'fortnight' ? 'Fortnight' : 'Month'} envelope${r.envelopeBudget ? ` ${cash(r.envelopeBudget)}` : ''} · resets each ${r.span ?? 'month'} · leftover is yours`
                             : r.aside
                             ? `Put aside on payday, stays in the account${r.maxSaved ? ` · max ${cash(r.maxSaved)}` : ''}`
                             : same ? `${r.dates.length} × ${cash(each, { whole: each % 100 === 0 })}` : r.dates.length === 1 ? fmtShort(r.dates[0]) : `${r.dates.length} payments`}

@@ -4,7 +4,7 @@ Components that know about the budget and are used by more than one page. (Gener
 logic go in `ui/` instead; a component only one page uses goes in that page's folder.)
 
 ## Files
-- `ItemModal.tsx`: add or edit a cost (`Item`): name, amount, how often, account, put aside or month envelope, skip near payday. Used by the Add button and Deposits.
+- `ItemModal.tsx`: add or edit a cost (`Item`): name, amount, how often, account, put aside or an envelope (with its timeframe: week, fortnight or month), skip near payday. Used by the Add button and Deposits.
 - `PaydayControl.tsx`: "Sent each payday": a fixed amount or worked out each pay (`PaydayControl`), and an account's rounding (`RoundSetting`). Used by Deposits, Debts and Savings.
 - `DayPicker.tsx`: pick a day to see a balance on (`useDayView`, `DayPicker`). Used by Accounts and Debts.
 - `Transactions.tsx`: a list of transactions, latest first, each with its spending category (`TransactionList`). Used by Accounts and Debts.

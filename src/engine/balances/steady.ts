@@ -1,5 +1,5 @@
 import { addDays, todayISO, type ISODate } from '../../core/dates';
-import { hasSetAsides, monthEnvelopeOn, setAsideOn } from '../setAside';
+import { hasSetAsides, envelopeOn, setAsideOn } from '../setAside';
 import { averageNeed } from '../plan';
 import { firstBudgetPay, periodContaining, shiftPeriod, type Period } from '../periods';
 import type { Budget, Cents } from '../../core/types';
@@ -13,7 +13,7 @@ import { balanceOn } from './estimate';
  * pay puts aside is simply put aside less, not money the account is owed, so later pays don't catch it up.
  */
 export const pausedAside = (b: Budget, accountId: string, date: ISODate, usual: Cents, sent: Cents): Cents =>
-  sent >= usual ? 0 : Math.min(setAsideOn(b, accountId, date) + monthEnvelopeOn(b, accountId, date), usual - sent);
+  sent >= usual ? 0 : Math.min(setAsideOn(b, accountId, date) + envelopeOn(b, accountId, date), usual - sent);
 
 const HORIZON = 24;
 const RUN_PAYS = 40;

@@ -1,7 +1,7 @@
 import { addDays, todayISO, type ISODate } from '../../core/dates';
 import { debtPay, projectedOwed } from '../../features/debts/logic/amounts';
 import { heldDebtPaymentsIn, isHoldDisplayAccount } from '../../features/debts/logic/funding';
-import { monthEnvelopeOn, setAsideOn } from '../setAside';
+import { envelopeOn, setAsideOn } from '../setAside';
 import { periodContaining, type Period } from '../periods';
 import type { Budget, Cents } from '../../core/types';
 import { paySplitLocked } from './freeze';
@@ -55,7 +55,7 @@ export function liveDepositFor(b: Budget, accountId: string, p: Period, today: I
     return Math.min(amount, Math.max(0, projectedOwed(debt, b.settings, addDays(p.start, -1), debtPay(b, debt)) + since));
   }
   // A cost put aside or held in a month envelope is always sent, even with a fixed amount below it.
-  return Math.max(amount, setAsideOn(b, accountId, p.start) + monthEnvelopeOn(b, accountId, p.start));
+  return Math.max(amount, setAsideOn(b, accountId, p.start) + envelopeOn(b, accountId, p.start));
 }
 
 /**
@@ -81,7 +81,7 @@ export function depositSansBalance(b: Budget, accountId: string, p: Period): Cen
   const mode = modeOf(line);
   if (mode === 'exact') return exactNeed(b, accountId, p);
   if (mode === 'smooth') return usualSteady(b, accountId);
-  return Math.max(line?.amount ?? 0, setAsideOn(b, accountId, p.start) + monthEnvelopeOn(b, accountId, p.start));
+  return Math.max(line?.amount ?? 0, setAsideOn(b, accountId, p.start) + envelopeOn(b, accountId, p.start));
 }
 
 /**
