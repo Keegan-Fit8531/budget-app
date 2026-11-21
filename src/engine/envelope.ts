@@ -1,42 +1,22 @@
-import { fmtShort, monthName, todayISO, type ISODate } from '../core/dates';
+import { addDays, diffDays, fmtShort, monthName, todayISO, type ISODate } from '../core/dates';
+import { periodContaining } from './periods';
 import { envelopeBudget, envelopeSpan, envelopeWindow, isEnvelope } from './setAside';
-import { categorizeTxn, shopMap } from '../features/insights/logic/spending';
+import { matchesEnvelope } from './envelopeMatch';
+export { guessTransfer, isTransferOut, matchesEnvelope, transferKey, transferTarget, type TransferGuess } from './envelopeMatch';
+import { shopMap } from '../features/insights/logic/spending';
+import { isTransferOut, transferEnvelope, txnsIn } from './envelopeMatch';
 import type { Budget, Cents, EnvelopeSpan, Item, Txn } from '../core/types';
 
 export {
   envelopeBudget, envelopeOn, envelopePerPay, envelopeSpan, envelopesOn, envelopeWindow, hasEnvelopes, paydaysInMonth,
 } from './setAside';
 
-/** Fuel shop / description patterns (same idea as Insights transport → Fuel). */
-const FUEL_RE = /z energy|\bmobil\b|\bbp\b|gull|caltex|waitomo|\bnpd\b|\bfuel\b|petrol|gas station/i;
-
-/** Whether a synced purchase counts against this envelope (e.g. Gas → fuel shops). */
-export function matchesEnvelope(item: Pick<Item, 'name'>, t: Pick<Txn, 'description' | 'merchant' | 'category' | 'amount'>, mine?: ReturnType<typeof shopMap>): boolean {
-  if (t.amount >= 0) return false;
-  const { category, shop } = categorizeTxn(t, mine);
-  if (category === 'transfers') return false;
-  const name = item.name.toLowerCase();
-  if (/gas|fuel|petrol/.test(name)) {
-    return shop === 'Fuel' || FUEL_RE.test(t.description) || FUEL_RE.test(t.merchant ?? '');
-  }
-  if (/food|grocer|supermarket/.test(name)) return category === 'groceries';
-  const hay = `${t.description} ${t.merchant ?? ''} ${shop}`.toLowerCase();
-  return hay.includes(name);
-}
-
-/** Purchases on the account in one span (from–to) that count against the envelope. */
+/** Purchases (and transfers you counted for it) on the account in one span that count against the envelope. */
 export function envelopeTxns(b: Budget, item: Item, { from, to }: { from: ISODate; to: ISODate }): Txn[] {
   const mine = shopMap(b);
-  const seen = new Set<string>();
-  const out: Txn[] = [];
-  for (const t of [...(b.accountTransactions?.[item.accountId] ?? []), ...(b.pendingTransactions?.[item.accountId] ?? [])]) {
-    if (t.date < from || t.date > to || !matchesEnvelope(item, t, mine)) continue;
-    const key = `${t.date}|${t.amount}|${t.description}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    out.push(t);
-  }
-  return out.sort((a, b) => b.date.localeCompare(a.date) || a.description.localeCompare(b.description));
+  return txnsIn(b, item.accountId, from, to).filter((t) => isTransferOut(t, mine)
+    ? transferEnvelope(b, item.accountId, t, mine) === item.id
+    : matchesEnvelope(item, t, mine));
 }
 
 export interface EnvelopeStatus {
@@ -53,6 +33,12 @@ export interface EnvelopeStatus {
   left: Cents;
   over: boolean;
   txns: Txn[];
+  /**
+   * Weeks or fortnights still to start before payday: this pay funded them too (Food $200/week on a
+   * 5-Thursday pay put $1,000 in), so that money is spoken for as well. 0 for a month envelope.
+   */
+  laterCount: number;
+  later: Cents;
 }
 
 /** Budget / spent / left for one envelope in the span (week, fortnight or month) holding `today`. */
@@ -63,6 +49,12 @@ export function envelopeStatus(b: Budget, item: Item, today: ISODate = todayISO(
   const txns = envelopeTxns(b, item, { from, to });
   const spent = txns.reduce((s, t) => s - t.amount, 0);
   const left = budget - spent;
+  let laterCount = 0;
+  if (span !== 'month') {
+    const end = periodContaining(today, b.settings).end;
+    const len = diffDays(from, to) + 1;
+    for (let d = addDays(to, 1); d <= end && (!item.end || d <= item.end); d = addDays(d, len)) laterCount++;
+  }
   return {
     item,
     from,
@@ -74,6 +66,8 @@ export function envelopeStatus(b: Budget, item: Item, today: ISODate = todayISO(
     left,
     over: left < 0,
     txns,
+    laterCount,
+    later: laterCount * budget,
   };
 }
 
@@ -85,7 +79,21 @@ export function accountEnvelopes(b: Budget, accountId: string, today: ISODate = 
     .sort((a, b) => a.item.name.localeCompare(b.item.name));
 }
 
-/** Remaining (unspent) envelope money on an account this span — spoken for until the span ends. */
+/**
+ * Transfers out of the account during its envelopes' current spans that you haven't sorted yet: each
+ * could be spending done on another card (food, gas) or just moving money, so the Accounts card asks.
+ */
+export function unsortedTransfers(b: Budget, accountId: string, today: ISODate = todayISO()): Txn[] {
+  const envelopes = accountEnvelopes(b, accountId, today);
+  if (!envelopes.length) return [];
+  // From the earliest current span (no earlier than the cost's first date).
+  const from = envelopes.reduce((d, e) => { const f = e.from < e.item.start ? e.item.start : e.from; return f < d ? f : d; }, today);
+  const mine = shopMap(b);
+  return txnsIn(b, accountId, from, today)
+    .filter((t) => isTransferOut(t, mine) && transferEnvelope(b, accountId, t, mine) === undefined);
+}
+
+/** Envelope money on an account that's spoken for: what's unspent this span, plus later weeks this pay funded. */
 export function envelopeHeld(b: Budget, accountId: string, today: ISODate = todayISO()): Cents {
-  return accountEnvelopes(b, accountId, today).reduce((t, e) => t + Math.max(0, e.left), 0);
+  return accountEnvelopes(b, accountId, today).reduce((t, e) => t + Math.max(0, e.left) + e.later, 0);
 }

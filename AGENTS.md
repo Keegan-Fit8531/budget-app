@@ -43,7 +43,7 @@ before dev/build), `.github/workflows/pages.yml` (deploys `main` to GitHub Pages
 | What's saved (a new field on accounts, debts, goals…) | `core/types.ts`, then `state/store.tsx` → `tidy()` for older saves, `core/valid.ts` |
 | Pay periods, paydays, weekend rules, a moved payday | `engine/periods.ts` |
 | When a cost falls (weekly, monthly, skip near payday) | `engine/occurrences.ts` |
-| Money put aside (WOF, tyres) or month envelopes (Gas) | `engine/setAside.ts`, `engine/envelope.ts` |
+| Money put aside (WOF, tyres) or envelopes (Gas a month, Food a week) | `engine/setAside.ts`, `engine/envelope.ts`; what counts against one (purchases, transfers that paid for one): `engine/envelopeMatch.ts`; Accounts card: `features/accounts/EnvelopeCards.tsx` |
 | What payday sends each account (fixed / exact / steady) | `engine/balances/` (README lists which file does what) |
 | A pay's plan: totals, leftover, what each account needs | `engine/plan.ts` → `planFor()` |
 | Automatic balancing, "Balance this pay" | `engine/rebalance.ts` |

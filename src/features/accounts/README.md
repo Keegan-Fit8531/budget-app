@@ -8,6 +8,7 @@ heading; and the Deposits pop-up (`#/accounts/deposits/<id>`) that sets what pay
 - `Deposits.tsx`: the Deposits pop-up: each account's payday amount (`shared/PaydayControl.tsx`) and its costs (`shared/ItemModal.tsx`), by group (`DepositsModal`, `AccountSection`); `AccountPayday` is one account's version, used as a tab in the account's pop-up.
 - `AccountEdit.tsx`: an account's pop-up with tabs (`AccountTab`: `balance`, `cost` (a one-off cost), `payday`): `AccountEditModal`. Also opened from the Planner's cards.
 - `AccountHistory.tsx`: one-off costs (`OneOffCostModal`, `OneOffCostForm`: money spent outside the plan, like a tyre puncture) and the account's history list.
+- `EnvelopeCards.tsx`: an account's envelopes on its card (budget, spent, left, later weeks kept), each transfer counted against one (with Change), and the question for a transfer out it couldn't place ("Was it for Food shop / Car gas … or just moving money?", saved in `budget.envelopeTransfers`). Used by `MonthTracker.tsx`.
 - `MonthTracker.tsx`: an account's live tracker for this pay (bills paid and to come, against what's in it, from `engine/balances/billTracker.ts`) and a future pay day by day (`PayProjectionView`).
 - `logic/`: account history and the payday-mode labels (its own README).
 

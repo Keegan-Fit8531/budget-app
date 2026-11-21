@@ -399,6 +399,12 @@ export interface Budget {
   shopGuesses?: Record<string, string>;
   /** Spending categories you've chosen for shops (by shop name in lower case), over the app's own guess. */
   shopCategories?: Record<string, string>;
+  /**
+   * Transfers out of an envelope's account that you said were spending (bought food on another card, then
+   * moved $50 over to cover it): `envelope.ts` → `transferKey` → the envelope cost's id, or '' for "not
+   * envelope spending". Counted against that envelope like a purchase.
+   */
+  envelopeTransfers?: Record<string, string>;
   /** This month's insights: one per pay cycle, by its payday (see review.ts), newest first. */
   reviews?: Record<ISODate, import('../features/insights/logic/review').MonthlyReview>;
   /** Account balances you've entered, by account id. */

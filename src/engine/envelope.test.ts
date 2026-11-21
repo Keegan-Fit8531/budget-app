@@ -4,7 +4,7 @@ import { depositFor } from './balances/deposits';
 import { outflows } from './balances/outflows';
 import { envelopeBudget, envelopeOn, envelopePerPay, envelopeWindow } from './setAside';
 import { periodContaining } from './periods';
-import { accountEnvelopes, envelopeHeld, envelopeStatus, matchesEnvelope } from './envelope';
+import { accountEnvelopes, envelopeHeld, envelopeStatus, guessTransfer, matchesEnvelope, transferKey, unsortedTransfers } from './envelope';
 import { budget } from '../testing/fixtures';
 
 describe('month envelope (Gas)', () => {
@@ -140,6 +140,62 @@ describe('week and fortnight envelopes (Food shop)', () => {
     expect(st.over).toBe(true);
     expect(st.left).toBe(-2000);
     expect(envelopeStatus(b, food, '2026-11-26').spent).toBe(0);
-    expect(envelopeHeld(b, 'food', '2026-11-26')).toBe(20000);
+    // This week's $200, plus the 3 later weeks (3, 10, 17 Dec) the 19 Nov pay funded.
+    expect(envelopeHeld(b, 'food', '2026-11-26')).toBe(4 * 20000);
+  });
+});
+
+describe('transfers that paid for an envelope', () => {
+  // Food and gas (…-55) moves $50 to Everyday (…-00) after a supermarket shop on the Everyday card.
+  function setup() {
+    const b = budget();
+    b.accounts.push(
+      { id: 'food', name: 'Food and gas', kind: 'bank', color: '#000', groupId: 'needs', number: '06-0115-0324910-55' },
+      { id: 'day', name: 'Everyday', kind: 'bank', color: '#000', groupId: 'needs', number: '06-0115-0324910-00' },
+    );
+    b.items.push(
+      { id: 'shop', name: 'Food shop', amount: 20000, frequency: 'weekly', start: '2026-11-05', accountId: 'food', envelope: 'week' },
+      { id: 'car', name: 'Car gas', amount: 25000, frequency: 'monthly', start: '2026-11-01', accountId: 'food', envelope: 'month' },
+    );
+    const move = { date: '2026-11-22', description: 'To: 06-0115-0324910-00 Debit Transfer 002552', amount: -5000 };
+    b.pendingTransactions = { food: [move], day: [{ date: '2026-11-21', description: 'Freshchoice', amount: -5394 }] };
+    return { b, move };
+  }
+
+  it('counts a transfer against the envelope whose purchase it paid for', () => {
+    const { b, move } = setup();
+    const g = guessTransfer(b, 'food', move)!;
+    expect(g).toMatchObject({ itemIds: ['shop'], sure: true });
+    expect(g.seen[0].txn.amount).toBe(-5394);
+    const st = envelopeStatus(b, b.items.find((i) => i.id === 'shop')!, '2026-11-22');
+    expect(st.spent).toBe(5000);
+    expect(st.left).toBe(15000);
+    expect(unsortedTransfers(b, 'food', '2026-11-22')).toEqual([]);
+  });
+
+  it('asks when nothing nearby explains it, or when two envelopes fit, and keeps your answer', () => {
+    const { b, move } = setup();
+    b.pendingTransactions!.day = [];
+    expect(guessTransfer(b, 'food', move)).toBeUndefined();
+    expect(unsortedTransfers(b, 'food', '2026-11-22')).toHaveLength(1);
+    // Car gas and Scooter gas both match a fuel stop: not sure.
+    b.items.push({ id: 'scoot', name: 'Scooter gas', amount: 5000, frequency: 'monthly', start: '2026-11-01', accountId: 'food', envelope: 'month' });
+    b.pendingTransactions!.day = [{ date: '2026-11-22', description: 'Z ENERGY KILBIRNIE', amount: -4800 }];
+    expect(guessTransfer(b, 'food', move)).toMatchObject({ sure: false });
+    expect(unsortedTransfers(b, 'food', '2026-11-22')).toHaveLength(1);
+    b.envelopeTransfers = { [transferKey('food', move)]: 'scoot' };
+    expect(unsortedTransfers(b, 'food', '2026-11-22')).toEqual([]);
+    expect(envelopeStatus(b, b.items.find((i) => i.id === 'scoot')!, '2026-11-22').spent).toBe(5000);
+    // "Just moving money" counts against nothing, even when a purchase matched.
+    b.envelopeTransfers = { [transferKey('food', move)]: '' };
+    expect(envelopeStatus(b, b.items.find((i) => i.id === 'car')!, '2026-11-22').spent).toBe(0);
+  });
+
+  it('keeps the later weeks this pay funded as well as what is left this week', () => {
+    const { b } = setup();
+    // Pay 19 Nov – 17 Dec: this week (19–25 Nov) has $150 left, 4 more weeks to come, Car gas $250.
+    const st = envelopeStatus(b, b.items.find((i) => i.id === 'shop')!, '2026-11-22');
+    expect(st.laterCount).toBe(4);
+    expect(envelopeHeld(b, 'food', '2026-11-22')).toBe(15000 + 4 * 20000 + 25000);
   });
 });
