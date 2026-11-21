@@ -11,10 +11,10 @@ import { itemDates } from './occurrences';
 export const isSetAside = (item: Pick<Item, 'setAside'>): boolean => item.setAside === true;
 
 /** Envelope (Gas $200/month, Food $200/week): funded on payday, spent from synced purchases, resets each span. */
-export const isEnvelope = (item: Pick<Item, 'monthEnvelope'>): boolean => item.monthEnvelope === true;
+export const isEnvelope = (item: Pick<Item, 'envelope'>): boolean => item.envelope !== undefined;
 
 /** Held in the account (put-aside or envelope): not paid out on a scheduled date. */
-export const isHeldInAccount = (item: Pick<Item, 'setAside' | 'monthEnvelope'>): boolean =>
+export const isHeldInAccount = (item: Pick<Item, 'setAside' | 'envelope'>): boolean =>
   isSetAside(item) || isEnvelope(item);
 
 /** What a set-aside puts aside each pay: its average per month (pay is monthly), or the whole amount once. */
@@ -113,13 +113,13 @@ export function asideMaxSaved(b: Pick<Budget, 'items'>, accountId: string): Cent
   return asides.reduce((t, i) => t + (i.maxSaved ?? 0), 0);
 }
 
-/** How long an envelope lasts before it starts fresh: a calendar month unless set to a week or fortnight. */
-export const envelopeSpan = (item: Pick<Item, 'envelopeSpan'>): EnvelopeSpan => item.envelopeSpan ?? 'month';
+/** How long an envelope lasts before it starts fresh (a calendar month, week or fortnight). */
+export const envelopeSpan = (item: Pick<Item, 'envelope'>): EnvelopeSpan => item.envelope ?? 'month';
 
 const SPAN_DAYS = { week: 7, fortnight: 14 } as const;
 
 /** An envelope's budget for one span (week, fortnight or month): its amount converted to that span. */
-export function envelopeBudget(item: Pick<Item, 'amount' | 'frequency' | 'envelopeSpan'>): Cents {
+export function envelopeBudget(item: Pick<Item, 'amount' | 'frequency' | 'envelope'>): Cents {
   return item.frequency === 'once' ? item.amount : convert(item.amount, item.frequency, envelopeSpan(item));
 }
 
@@ -133,7 +133,7 @@ function calendarMonthRange(ym: string): { from: ISODate; to: ISODate } {
  * The span of an envelope that holds `date`: its calendar month, or the week / fortnight counted from
  * the item's start (a weekly envelope starting on a Thursday runs Thursday to Wednesday).
  */
-export function envelopeWindow(item: Pick<Item, 'start' | 'envelopeSpan'>, date: ISODate): { from: ISODate; to: ISODate } {
+export function envelopeWindow(item: Pick<Item, 'start' | 'envelope'>, date: ISODate): { from: ISODate; to: ISODate } {
   const span = envelopeSpan(item);
   if (span === 'month') return calendarMonthRange(date.slice(0, 7));
   const len = SPAN_DAYS[span];

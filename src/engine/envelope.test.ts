@@ -13,7 +13,7 @@ describe('month envelope (Gas)', () => {
     b.accounts.push({ id: 'food', name: 'Food and gas', kind: 'bank', color: '#000', groupId: 'needs' });
     b.split.push({ accountId: 'food', amount: 0, mode: 'exact' });
     b.items.push(
-      { id: 'gas', name: 'Gas', amount: 20000, frequency: 'monthly', start: '2026-11-01', accountId: 'food', monthEnvelope: true },
+      { id: 'gas', name: 'Gas', amount: 20000, frequency: 'monthly', start: '2026-11-01', accountId: 'food', envelope: 'month' as const },
       { id: 'food', name: 'Food', amount: 15000, frequency: 'weekly', start: '2026-11-03', accountId: 'food' },
     );
     const p = periodContaining('2026-11-19', b.settings);
@@ -46,7 +46,7 @@ describe('month envelope (Gas)', () => {
     const b = budget();
     b.accounts.push({ id: 'food', name: 'Food and gas', kind: 'bank', color: '#000', groupId: 'needs' });
     b.items.push(
-      { id: 'gas', name: 'Gas', amount: 10000, frequency: 'monthly', start: '2026-11-01', accountId: 'food', monthEnvelope: true },
+      { id: 'gas', name: 'Gas', amount: 10000, frequency: 'monthly', start: '2026-11-01', accountId: 'food', envelope: 'month' as const },
     );
     b.accountTransactions = {
       food: [
@@ -68,7 +68,7 @@ describe('month envelope (Gas)', () => {
 
   it('splits the monthly budget across paydays in the month', () => {
     const b = budget();
-    const item = { id: 'gas', name: 'Gas', amount: 20000, frequency: 'monthly' as const, start: '2026-11-01', accountId: 'food', monthEnvelope: true };
+    const item = { id: 'gas', name: 'Gas', amount: 20000, frequency: 'monthly' as const, start: '2026-11-01', accountId: 'food', envelope: 'month' as const };
     const pays = ['2026-11-19']; // one payday in Nov for paydayDay 19
     // With one payday, the whole month budget goes on that pay.
     expect(envelopePerPay(item, '2026-11-19', b.settings)).toBe(20000);
@@ -82,8 +82,8 @@ describe('month envelope (Gas)', () => {
     // $200/week food × 5 = $1,000 this pay; gas month budgets $271.76 + $54.35 = $326.11.
     b.items.push(
       { id: 'food', name: 'Food', amount: 20000, frequency: 'weekly', start: '2026-11-19', accountId: 'food' },
-      { id: 'car', name: 'Car gas', amount: 27176, frequency: 'monthly', start: '2026-11-01', accountId: 'food', monthEnvelope: true },
-      { id: 'scooter', name: 'Scooter gas', amount: 5435, frequency: 'monthly', start: '2026-11-01', accountId: 'food', monthEnvelope: true },
+      { id: 'car', name: 'Car gas', amount: 27176, frequency: 'monthly', start: '2026-11-01', accountId: 'food', envelope: 'month' as const },
+      { id: 'scooter', name: 'Scooter gas', amount: 5435, frequency: 'monthly', start: '2026-11-01', accountId: 'food', envelope: 'month' as const },
     );
     b.balances = { food: { amount: 119575, asOf: '2026-11-19' } };
     const today = '2026-11-19';
@@ -98,24 +98,24 @@ describe('month envelope (Gas)', () => {
 });
 
 describe('week and fortnight envelopes (Food shop)', () => {
-  const food = { id: 'shop', name: 'Food shop', amount: 20000, frequency: 'weekly' as const, start: '2026-11-05', accountId: 'food', monthEnvelope: true, envelopeSpan: 'week' as const };
+  const food = { id: 'shop', name: 'Food shop', amount: 20000, frequency: 'weekly' as const, start: '2026-11-05', accountId: 'food', envelope: 'week' as const };
 
   it('counts each week from the first date', () => {
     expect(envelopeWindow(food, '2026-11-05')).toEqual({ from: '2026-11-05', to: '2026-11-11' });
     expect(envelopeWindow(food, '2026-11-21')).toEqual({ from: '2026-11-19', to: '2026-11-25' });
-    expect(envelopeWindow({ ...food, envelopeSpan: 'fortnight' }, '2026-11-21')).toEqual({ from: '2026-11-19', to: '2026-12-02' });
-    expect(envelopeWindow({ ...food, envelopeSpan: undefined }, '2026-11-21')).toEqual({ from: '2026-11-01', to: '2026-11-30' });
+    expect(envelopeWindow({ ...food, envelope: 'fortnight' }, '2026-11-21')).toEqual({ from: '2026-11-19', to: '2026-12-02' });
+    expect(envelopeWindow({ ...food, envelope: undefined }, '2026-11-21')).toEqual({ from: '2026-11-01', to: '2026-11-30' });
   });
 
   it('budgets per span and funds every week or fortnight that starts in the pay', () => {
     const b = budget();
     expect(envelopeBudget(food)).toBe(20000);
-    expect(envelopeBudget({ ...food, envelopeSpan: 'fortnight' })).toBe(40000);
+    expect(envelopeBudget({ ...food, envelope: 'fortnight' })).toBe(40000);
     // The 19 Nov pay runs to 17 Dec (19 Dec is a Saturday, so pay comes on the 18th): weeks start 19, 26 Nov, 3, 10, 17 Dec; fortnights 19 Nov, 3, 17 Dec.
     const p = periodContaining('2026-11-19', b.settings);
     expect(p.end).toBe('2026-12-17');
     expect(envelopePerPay(food, p.start, b.settings)).toBe(5 * 20000);
-    expect(envelopePerPay({ ...food, envelopeSpan: 'fortnight' }, p.start, b.settings)).toBe(3 * 40000);
+    expect(envelopePerPay({ ...food, envelope: 'fortnight' }, p.start, b.settings)).toBe(3 * 40000);
     // Stops after its end date, and starts no earlier than its first date.
     expect(envelopePerPay({ ...food, end: '2026-11-18' }, p.start, b.settings)).toBe(0);
     expect(envelopePerPay({ ...food, start: '2027-06-03' }, p.start, b.settings)).toBe(0);

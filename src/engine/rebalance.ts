@@ -7,7 +7,7 @@ import { debtAdvice } from '../features/debts/logic/advice';
 import { fundingAccountId } from '../features/debts/logic/funding';
 import { todayISO } from '../core/dates';
 import {
-  asideMaxSaved, asideSpareNow, hasEnvelopes, hasSetAsides, isHeldInAccount, isSetAside, envelopeOn, setAsideOn,
+  asideMaxSaved, asideSpareNow, envelopeOn, hasEnvelopes, hasSetAsides, isEnvelope, isHeldInAccount, isSetAside, setAsideOn,
 } from './setAside';
 import { periodContaining, shiftPeriod, upcomingPayPeriod, type Period } from './periods';
 import { planFor } from './plan';
@@ -205,7 +205,7 @@ export function balancePay(input: Budget, period: Period, today: ISODate = today
       if (a.account.id === b.settings.payAccountId) continue; // pay lands there: nothing is sent to it to trim
       const aside = Math.min(a.funded, setAsideOn(b, a.account.id, period.start) + envelopeOn(b, a.account.id, period.start));
       const label = hasSetAsides(b, a.account.id) ? asideNames(b, a.account.id)
-        : b.items.filter((i) => i.accountId === a.account.id && i.monthEnvelope).map((i) => i.name).join(' and ') || 'envelopes';
+        : b.items.filter((i) => i.accountId === a.account.id && isEnvelope(i)).map((i) => i.name).join(' and ') || 'envelopes';
       cut(a.account.id, a.account.name, aside, `Puts aside less for ${label} this pay only (there's no date to meet). Back to the usual amount next pay.`);
     }
   }
