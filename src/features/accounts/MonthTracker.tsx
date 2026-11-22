@@ -80,6 +80,18 @@ export function MonthTracker({ budget, account, today = todayISO(), open, toggle
     : gasHeld > 0 ? `after bills and ${envNames}`
     : steady ? 'this pay after bills'
     : 'this pay after bills';
+  // The figure tiles are narrow on a phone: a short note there, the full one behind Details.
+  const namesShort = names.length <= 18 ? names : 'later costs';
+  const tileNote = short ? (gasHeld > 0 ? 'after envelopes' : 'after bills')
+    : overAsideMax ? 'above the max'
+    : aside ? `for ${namesShort}`
+    : bufferShown !== undefined && bufferFor ? `for ${fmtShort(bufferFor.period.start)}`
+    : gasHeld > 0 ? 'after envelopes'
+    : 'after bills';
+  // What the put-aside money is for, in full, when the tile couldn't say it all.
+  const asideNote = aside && (namesShort !== names || maxAside !== undefined) && !overAsideMax
+    ? <p className="small muted">Put aside for {names}{maxAside !== undefined ? `, up to ${cash(maxAside)}` : ''}.</p>
+    : null;
   const color = tone(account.color);
   // Gem Visa held in this account until statement day — note the amount from Latitude's allocation.
   const gemHolds = (budget.debts ?? []).filter((d) => d.holdAccountId === account.id && d.rules === 'gem' && !d.payroll);
@@ -119,7 +131,7 @@ export function MonthTracker({ budget, account, today = todayISO(), open, toggle
               <b>{t.balanceSource === 'entered'
                 ? cash(maxAside !== undefined ? Math.min(Math.max(0, t.balance), maxAside) : Math.max(0, t.balance))
                 : '—'}</b>
-              <span className="xs muted">for {names}{maxAside !== undefined ? ` · max ${cash(maxAside)}` : ''}</span>
+              <span className="xs muted">{namesShort !== names && maxAside !== undefined ? `max ${cash(maxAside)}` : `for ${namesShort}`}</span>
             </div>
             <div className="stat">
               <span className="small muted">Next pay adds</span>
@@ -158,17 +170,17 @@ export function MonthTracker({ budget, account, today = todayISO(), open, toggle
             <div className="stat">
               <span className="small muted">Paid</span>
               <b>{cash(t.paid)}</b>
-              <span className="xs muted">{paid.length} bill{paid.length === 1 ? '' : 's'} this pay</span>
+              <span className="xs muted">{paid.length} bill{paid.length === 1 ? '' : 's'}</span>
             </div>
             <div className="stat">
               <span className="small muted">To come</span>
               <b>{cash(t.toCome)}</b>
-              <span className="xs muted">{toCome[0] ? `${toCome.length} · next ${fmtShort(toCome[0].date)}` : `before ${fmtShort(t.period.nextPayday)}`}</span>
+              <span className="xs muted">{toCome[0] ? `next ${fmtShort(toCome[0].date)}` : `before ${fmtShort(t.period.nextPayday)}`}</span>
             </div>
             <div className="stat">
               <span className="small muted">{leftLabel}</span>
               <b className={short ? 'neg' : ''}>{cash(leftAmount)}</b>
-              <span className="xs muted">{leftNote}</span>
+              <span className="xs muted">{tileNote}</span>
             </div>
           </div>
           {short && gasHeld > 0 && (
@@ -184,10 +196,12 @@ export function MonthTracker({ budget, account, today = todayISO(), open, toggle
       {toggle}
       <Collapse open={open} stacked><FlatDetails.Provider value>
         <div className="stack gap-12">
+          {t.balanceKnown && aside && !paysBills && asideNote}
           {t.balanceKnown && !(aside && !paysBills) && <>
             {!short && gasHeld > 0 && spareAmt > 0 && bufferShown === undefined && (
               <p className="small muted">{cash(gasHeld)} still budgeted for {envNames} (assumed spent). Anything left when each one resets is yours.</p>
             )}
+            {asideNote}
             {overAsideMax && <p className="small muted">Put aside {cash(asideHeld)} for {names} (max {cash(maxAside!)}); the rest after bills is spare.</p>}
             {!short && <MovesSummary t={t} />}
             {gemNotes.map((n) => <p className="small muted" key={n.id}>{n.text}</p>)}

@@ -154,9 +154,6 @@ function BalanceCard({ account: a, view, day, mover, onPick }: {
   // What payday sends here: next pay's, or the pay being looked at.
   const pay = view ?? shiftPeriod(periodContaining(today, budget.settings), 1, budget.settings);
   const sends = depositFor(budget, a.id, pay, today);
-  // Nominal payday day-of-month can move for the weekend (e.g. 20th on Sunday → Friday 18th).
-  const nominalDay = budget.settings.paydayDay;
-  const movedForWeekend = Number(pay.start.slice(8, 10)) !== nominalDay;
   // What payday put in this pay (or the pay being looked at), beside what's in it now.
   const thisPay = view ?? periodContaining(today, budget.settings);
   const allocated = depositFor(budget, a.id, thisPay, today);
@@ -169,7 +166,7 @@ function BalanceCard({ account: a, view, day, mover, onPick }: {
         <AccIcon color={a.color} name="bank" />
         <div className="grow min0">
           <h2 className="h2 clip">{a.name}</h2>
-          <p className="small muted clip">+{cash(sends)} on {fmtShort(pay.start)}{movedForWeekend ? ` (${nominalDay}th falls on a weekend)` : ''}</p>
+          <p className="small muted clip">+{cash(sends)} on {fmtShort(pay.start)}</p>
         </div>
         <div className="acct-side">
           {entry && <SyncPill source={sync.linked ? 'bank' : 'entered'} at={sync.at ?? entry.asOf} />}
@@ -281,7 +278,7 @@ function BankOnlyCard({ account: a, mover }: { account: Account; mover: React.Re
         <div className="trio">
           <div className="stat"><span className="small muted">Spent</span><b>{cash(spent, { whole: true })}</b><span className="xs muted">last 30 days</span></div>
           <div className="stat"><span className="small muted">In</span><b>{cash(inn, { whole: true })}</b><span className="xs muted">last 30 days</span></div>
-          <div className="stat"><span className="small muted">Latest</span><b>{fmtShort(latest.date)}</b><span className="xs muted">{txns.length} transactions</span></div>
+          <div className="stat"><span className="small muted">Latest</span><b>{fmtShort(latest.date)}</b><span className="xs muted">{txns.length} in all</span></div>
         </div>
       ) : <p className="small muted">Upload a statement or CSV export to see what goes in and out.</p>}
 

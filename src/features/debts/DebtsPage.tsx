@@ -158,10 +158,8 @@ export function DebtsPage() {
               <AccIcon color={acc?.color} name={d.kind === 'person' || d.payroll ? 'send' : 'card'} />
               <div className="grow min0">
                 <h2 className="h2 clip">{d.name}</h2>
-                <p className="small muted clip">
-                  {KIND_LABEL[d.kind]}{d.rate ? ` · ${d.rate}% p.a.` : ''}
-                  {d.holdAccountId ? ` · stored in ${budget.accounts.find((a) => a.id === d.holdAccountId)?.name ?? 'another account'} until the ${d.statementDay ? ordinal(d.statementDay) : 'statement'}` : ''}
-                </p>
+                {/* Where its money waits until statement day is said under Details. */}
+                <p className="small muted clip">{KIND_LABEL[d.kind]}{d.rate ? ` · ${d.rate}% p.a.` : ''}</p>
               </div>
               <div className="acct-side">
                 {sourcePill(d)}
@@ -182,14 +180,14 @@ export function DebtsPage() {
 
             <div className="trio">
               <div className="stat">
-                <span className="small muted">Next payment</span>
+                <span className="small muted">Next due</span>
                 <b>{upcoming[0] ? cash(nextAmt) : '—'}</b>
                 <span className="xs muted">{upcoming[0] ? fmtShort(upcoming[0].date) : 'none planned'}</span>
               </div>
               <div className="stat">
                 <span className="small muted">Each pay</span>
                 <b>{perPay !== undefined ? cash(perPay) : '—'}</b>
-                <span className={`xs ${diff < 0 && !adv?.extra ? 'neg' : 'muted'}`}>{d.payroll ? 'from your salary' : !adv ? '' : adv.extra ? `incl. ${cash(adv.extra)} extra this pay` : diff === 0 ? 'as recommended' : diff < 0 ? `${cash(-diff)} under` : `${cash(diff)} over`}</span>
+                <span className={`xs ${diff < 0 && !adv?.extra ? 'neg' : 'muted'}`}>{d.payroll ? 'from salary' : !adv ? '' : adv.extra ? `incl. ${cash(adv.extra)} extra` : diff === 0 ? 'suggested' : diff < 0 ? `${cash(-diff)} under` : `${cash(diff)} over`}</span>
               </div>
               {d.limit ? (
                 <div className="stat">
@@ -278,9 +276,9 @@ export function DebtsPage() {
             <TransactionList items={d.transactions ?? []} card />
 
             {!d.payroll && <div style={{ borderTop: '1px solid var(--line)', paddingTop: 12 }}>
-              {d.holdAccountId && d.statementDay && (
+              {d.holdAccountId && (
                 <p className="small muted" style={{ marginBottom: 8 }}>
-                  Payday shows {cash(funded?.funded ?? 0)} for {d.name}; it’s stored in <b>{budget.accounts.find((a) => a.id === d.holdAccountId)?.name ?? 'another account'}</b> until the {ordinal(d.statementDay)}. Change that under Edit → details.
+                  Payday shows {cash(funded?.funded ?? 0)} for {d.name}; it’s stored in <b>{budget.accounts.find((a) => a.id === d.holdAccountId)?.name ?? 'another account'}</b> until {d.statementDay ? `the ${ordinal(d.statementDay)}` : 'statement day'}. Change that under Edit → details.
                 </p>
               )}
               <PaydayControl accountId={d.accountId} sends={funded?.funded ?? 0} needs={funded?.need ?? 0}

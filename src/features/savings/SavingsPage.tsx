@@ -56,13 +56,12 @@ export function SavingsPage() {
 
   return (
     <>
-      <header className="page-head">
-        <PayNav title="Savings" />
+      <PayNav title="Savings">
         <div className="page-actions">
           {(goals.length > 1 || kiwis.length > 1) && <ReorderToggle on={reorder} onChange={setReorder} />}
           <button className="btn primary" onClick={() => setModal({})}><Icon name="plus" /> Add goal</button>
         </div>
-      </header>
+      </PayNav>
 
       <section className="stats">
         <div className="stat"><span className="small muted">Saved so far</span><b>{cash(saved)}</b></div>
@@ -81,7 +80,7 @@ export function SavingsPage() {
       {all.length === 0 && <p className="muted">Add a goal to start tracking your savings.</p>}
 
       <div ref={flip.ref} className={`stack gap-20${reorder ? ' reordering' : ''}`}>
-        {forecasts.map((f) => <GoalCard key={f.goal.id} f={f} plan={plan} period={period} extra={<>{pill(f.goal)}{mover(f.goal, goals)}</>} onEdit={() => setModal({ goal: f.goal })} />)}
+        {forecasts.map((f) => <GoalCard key={f.goal.id} f={f} plan={plan} extra={<>{pill(f.goal)}{mover(f.goal, goals)}</>} onEdit={() => setModal({ goal: f.goal })} />)}
         {kiwis.map((g) => <KiwiSaverCard key={g.id} goal={g} extra={<>{pill(g)}{mover(g, kiwis)}</>} onEdit={() => setModal({ goal: g })} />)}
       </div>
 
@@ -116,7 +115,7 @@ function BankMoves({ goal: g }: { goal: SavingsGoal }) {
   );
 }
 
-function GoalCard({ f, plan, period, onEdit, extra }: { f: ReturnType<typeof forecast>; plan: ReturnType<typeof planFor>; period: ReturnType<typeof useViewPeriod>['period']; onEdit: () => void; extra?: ReactNode }) {
+function GoalCard({ f, plan, onEdit, extra }: { f: ReturnType<typeof forecast>; plan: ReturnType<typeof planFor>; onEdit: () => void; extra?: ReactNode }) {
   const { budget } = useBudget();
   const today = todayISO();
   const g = f.goal;
@@ -177,21 +176,22 @@ function GoalCard({ f, plan, period, onEdit, extra }: { f: ReturnType<typeof for
         </Donut>
         <div className="grow min0 stack gap-4">
           <b className="fig" style={{ fontSize: 30 }}>{cash(g.balance, { whole: true })}</b>
-          <span className="small muted">{aim ? `of ${cash(aim, { whole: true })}${g.target ? ' target' : ' costs'}` : 'saved'}{direct ? ` · ${cash(direct, { whole: true })} paid already` : ''}</span>
+          <span className="small muted">{aim ? `of ${cash(aim, { whole: true })}${g.target ? ' target' : ' costs'}` : 'saved'}{direct && !c ? ` · ${cash(direct, { whole: true })} paid already` : ''}</span>
           <span className={`small strong ${status.tone}`}>{status.text}</span>
         </div>
       </div>
 
       <div className="trio">
         <div className="stat">
-          <span className="small muted">{monthName(period.start)} pay</span>
+          {/* The page header names the pay; "This pay" fits the tile on a phone. */}
+          <span className="small muted">This pay</span>
           <b>{cash(thisPay, { whole: true })}</b>
           <span className="xs muted">{thisPay !== usual ? `usually ${cash(usual, { whole: true })}` : 'as usual'}</span>
         </div>
         <div className="stat">
           <span className="small muted">Pays left</span>
           <b>{f.periodsLeft ?? '—'}</b>
-          <span className="xs muted">{when ? `to ${when}` : 'no date set'}</span>
+          <span className="xs muted">{g.targetDate ? `to ${fmtShort(g.targetDate)}` : 'no date set'}</span>
         </div>
         <div className="stat">
           <span className="small muted">{c ? 'Still to pay' : 'In 12 pays'}</span>
