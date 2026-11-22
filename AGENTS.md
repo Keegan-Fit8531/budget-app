@@ -55,7 +55,7 @@ before dev/build), `.github/workflows/pages.yml` (deploys `main` to GitHub Pages
 | Accounts page, Deposits pop-up, balances, account history | `features/accounts/` |
 | Debts: schedules, Gem Visa rules, payments, advice | `features/debts/logic/` (UI in `features/debts/`) |
 | A statement or typed balance vs the plans (plans too high, finished plans) | `features/debts/logic/payments.ts` → `fitPlansToBalance`, called from `services/reader/apply.ts` → `applyStatement` |
-| A debt's payment held in a bank account until statement day (Gem in Misc bills: `Debt.holdAccountId`) | `features/debts/logic/README.md` → **Held debts** (how the money flows, file by file) |
+| A debt's payment held in a bank account until statement day (Gem in Misc bills: `Debt.holdAccountId`); paid in part, "No more this month" | `features/debts/logic/README.md` → **Held debts** (how the money flows, file by file); the card's Payday section: `features/debts/DebtPayday.tsx` |
 | Savings goals, goal costs, gifts, KiwiSaver | `features/savings/` |
 | Insights, spending categories, monthly review | `features/insights/` |
 | Settings page, export to spreadsheet | `features/settings/` |
@@ -80,7 +80,9 @@ questions are answered there):
    usually older). Its README says how the owner's accounts are used (which one is the EFTPOS card, what each
    holds) and how to query `budget.json` without reading all of it. Every save is a commit, so to see what an
    upload or tap changed, compare saves: `git -C ../budget-data show <commit>:budget.json | jq '.debts[] | select(.id=="gem")'`.
-2. `npm run inspect` (every account) or `npm run inspect -- food --today 2026-11-22` (one account in detail):
+   To see what the owner tapped, one field across saves: `for c in $(git -C ../budget-data log --format=%h -20); do git -C ../budget-data show $c:budget.json | jq -c .billChecks; done`.
+2. `npm run inspect` (every account) or `npm run inspect -- food --today 2026-11-22` (one account in detail; give `--today`
+   as the NZ date: this container's clock is UTC, a day behind NZ until 1pm):
    the tracker (each bill paid or to come, and the bank transaction that paid it), what Bill check asks, envelopes and what counted against them (each transfer with the purchase it was matched to), transfers the card asks about, next pays and any
    Steady buffer, and the last 14 days of transactions with what each counted as. It loads the budget the
    way the app does (`state/upgrade.ts`). The first line says when that copy was saved: if it's older than
@@ -94,7 +96,7 @@ questions are answered there):
    The owner uses a phone in dark mode, so for a layout change look as they do: `--width 400 --dark`. On
    Accounts the Bill check pop-up opens by itself and covers the page: add `--click 'text=Later'` (it can open after
    a bank sync, later than the clicks: if it's still there, or "Nothing to click" is printed, run it again). Open a card
-   with `--click '.acct:has-text("Rent") >> text=Details'`, and picture just it with `--only '.acct:has-text("Rent")'`
+   with `--click '.acct:has-text("Rent") >> text=Details'`, and picture just it with `--only '.acct:has-text("Rent")'` (Debts cards are `.acct` too: `'#/debts'`, `.acct:has-text("Gem Visa")`)
    (see `scripts/README.md`). To see the Bill check pop-up itself, leave out the click and use `--only '.modal'`. Look before and after your change.
 4. To try what a change or an answer would do to the real budget without the app, see `scripts/README.md` →
    **Trying a change on the real budget**.
@@ -110,6 +112,8 @@ That output is private: never put it in commits, PRs, code, fixtures or notes, a
 - **Logic is pure and testable.** `engine/`, `core/` and every `logic/` folder take a `Budget` and return values. No React and no storage there. Pages (`*.tsx`) call them.
 - **Dependencies point inward**: `core` ← `engine` ← `features`/`services` ← `app`. `ui/` knows nothing about budgets. (`engine` and `features/debts|savings/logic` call each other; don't add new cycles.) `features/` and `services/` sit side by side: a page may use a service (Accounts uses `bankSync` and the bank's `SYNCED` event), and a service may use a page's `logic/`. `engine/` and `core/` never import a service's code (`core/types.ts` only borrows the `Payslip` type).
 - **One reader per bank format**: transfers between your own accounts are read by `engine/transfers.ts` → `ownTransfer` only; shop categories by `features/insights/logic/spending.ts` → `categorizeTxn`. Use them; don't parse descriptions again.
+- **A pay payday has already sent is locked** (`engine/balances/freeze.ts` → `paySplitLocked`): what it sent is frozen.
+  Pages say what it sent ("Payday sent $133 on 19 Nov") and never call it short; warnings are for pays still to come.
 - **Design**: use the tokens and classes in `ui/styles/` and the pieces in `ui/components.tsx`, never new colours or sizes. Green/red only ever mean "fine"/"short". An account's colour is only a small mark beside its name.
   A bar of amounts is `ui/PartsBar.tsx`, so each part can be tapped to see what it is.
   Cards are read on a phone: the summary is figures and one line per item, plus anything to act on; explanations go

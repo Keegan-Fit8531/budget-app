@@ -4,7 +4,7 @@ import type { Budget, Cents } from '../../core/types';
 import { type Outflow, outflows } from './outflows';
 import { depositFor, depositSansBalance, depositPending } from './deposits';
 import { estimateBalance, balanceToday } from './estimate';
-import { bankFed, checkKey, matchBills, otherMoves, outflowId, type BillMatch } from '../billMatch';
+import { bankFed, checkKey, matchBills, otherMoves, outflowId, sameAmount, type BillMatch } from '../billMatch';
 import type { Account, Txn } from '../../core/types';
 
 // ---------------------------------------------------------------------------------------------
@@ -21,6 +21,36 @@ export interface BillRow extends Outflow {
   match?: BillMatch;
   /** Its date has passed but the bank doesn't show it yet (so its money is still in the account). */
   late?: boolean;
+  /**
+   * A held debt (Gem) that this account paid only part of: this row is the rest, still to come.
+   * `of` is what was kept for it, `sent` what the bank shows paid from here (`txn`).
+   */
+  rest?: { of: Cents; sent: Cents; txn: Txn };
+}
+
+/**
+ * A held debt's payment (Gem, two plans) that this account paid less of than it kept: what the bank
+ * shows paid is paid, and the rest is a row still to come (`rest`), so $150 doesn't pay a $258 plan.
+ * Rows paid from another account are left as they are.
+ */
+function splitPartPaid(rows: BillRow[]): BillRow[] {
+  const out: BillRow[] = [];
+  const done = new Set<string>();
+  for (const r of rows) {
+    if (!r.debtId || r.match?.how === 'card') { out.push(r); continue; }
+    const key = `${r.debtId}|${r.date}`;
+    if (done.has(key)) continue;
+    const group = rows.filter((x) => x.debtId === r.debtId && x.date === r.date && x.match?.how !== 'card');
+    const txns = [...new Set(group.filter((x) => x.match?.how === 'direct' && x.match.txn).map((x) => x.match!.txn!))];
+    const sent = txns.reduce((t, x) => t - x.amount, 0);
+    const of = group.reduce((t, x) => t + x.amount, 0);
+    if (!txns.length || sent >= of || sameAmount(sent, of)) { out.push(r); continue; }
+    done.add(key);
+    const paid = group.find((x) => x.match?.how === 'direct')!;
+    out.push({ ...paid, amount: sent, name: r.name });
+    out.push({ ...r, amount: of - sent, match: undefined, status: r.days === 0 ? 'today' : 'due', late: r.days < 0, rest: { of, sent, txn: txns[txns.length - 1] } });
+  }
+  return out;
 }
 
 /** A bill paid on another account's card, with no transfer from this account to make up for it yet. */
@@ -88,7 +118,7 @@ function todaysBillsAlreadyOut(b: Budget, accountId: string, today: ISODate, tod
 export function billTracker(b: Budget, accountId: string, today: ISODate = todayISO()): BillTracker {
   const s = b.settings;
   const period = periodContaining(today, s);
-  const rows: BillRow[] = outflows(b, accountId, period.start, period.end).map((o) => {
+  let rows: BillRow[] = outflows(b, accountId, period.start, period.end).map((o) => {
     const days = Math.round((Date.parse(o.date) - Date.parse(today)) / 86400000);
     return { ...o, days, status: (days < 0 ? 'paid' : days === 0 ? 'today' : 'due') as BillRow['status'] };
   });
@@ -106,6 +136,7 @@ export function billTracker(b: Budget, accountId: string, today: ISODate = today
       r.status = r.days === 0 ? 'today' : 'due';
       r.late = r.days < 0;
     });
+    rows = splitPartPaid(rows);
   }
   // Bank already shows today's bill(s) out: treat them as paid so $800 after a $200 transfer isn't
   // "short $200" against five weeks still listed as to come. (With the bank connected, only for bills

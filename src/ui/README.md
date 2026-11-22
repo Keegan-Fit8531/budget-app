@@ -4,7 +4,7 @@ The design system: how the app looks, in one place, so every page stays consiste
 the budget's rules (it can use `core/` helpers for dates, money and colours).
 
 ## Files
-- `components.tsx`: the shared building blocks: `PageHead` (page header), things that open (`Disclosure`, `Section`, `Collapse`, `DetailsToggle`, `FlatDetails`), `Modal` (Escape closes the top one only), `Dot` and `AccIcon` (colour marks), `Chevron`, `ColorPicker`, Reorder (`ReorderToggle`, `MoveButtons`, `useFlip`), `CardColumns`, `ShortList`, and `ago` ("5 min ago").
+- `components.tsx`: the shared building blocks: `PageHead` (page header), things that open (`Disclosure`, `Section`, `Collapse`, `DetailsToggle`, `FlatDetails`), `Modal` (Escape closes the top one only; a tap closes it only if it starts on the backdrop, so selecting text and letting go outside doesn't), `Dot` and `AccIcon` (colour marks), `Chevron`, `ColorPicker`, Reorder (`ReorderToggle`, `MoveButtons`, `useFlip`), `CardColumns`, `ShortList`, and `ago` ("5 min ago").
 - `Icon.tsx`: `Icon`, the app's line icons by name.
 - `Donut.tsx`: charts: `Donut`, `Legend` (largest first), `BarList`.
 - `PartsBar.tsx`: `PartsBar`, one bar split into parts (paid, to come, put aside, spare; `thin` for envelopes). Point, tap or slide along it and a floating tip shows the part's name and amount; the part is picked from how far along the bar you are (12px above and below count too), so thin parts are easy to hit and nothing on the card moves. Use it for any bar of amounts. `keyed` adds one small line underneath: each kind of part (parts sharing a `key` name are added up) with its total, leaving out `noKey` parts a figure beside the bar already names; it shows only when it splits something (two or more entries).

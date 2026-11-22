@@ -7,9 +7,9 @@ import {
 } from '../../ui/components';
 import { moveAmong } from '../../core/order';
 import { bankSync } from '../../services/bank/bank';
-import { PaydayControl } from '../../shared/PaydayControl';
+import { DebtPayday } from './DebtPayday';
 import { TransactionList } from '../../shared/Transactions';
-import { fmtDay, fmtShort, monthName, ordinal, todayISO, type ISODate } from '../../core/dates';
+import { fmtDay, fmtShort, monthName, todayISO, type ISODate } from '../../core/dates';
 import { gemPlan } from './logic/gem';
 import { debtAdvice, offRecommended as isOffRecommended, type DebtAdvice } from './logic/advice';
 import { debtPay, historyOwed, owed, projectedOwed, unplanned } from './logic/amounts';
@@ -257,19 +257,7 @@ export function DebtsPage() {
             {(d.bankPayments?.length ?? 0) > 0 && <BankPayments debt={d} />}
             <TransactionList items={d.transactions ?? []} card />
 
-            {!d.payroll && <div style={{ borderTop: '1px solid var(--line)', paddingTop: 12 }}>
-              {d.holdAccountId && (
-                <p className="small muted" style={{ marginBottom: 8 }}>
-                  Payday shows {cash(funded?.funded ?? 0)} for {d.name}; it’s stored in <b>{budget.accounts.find((a) => a.id === d.holdAccountId)?.name ?? 'another account'}</b> until {d.statementDay ? `the ${ordinal(d.statementDay)}` : 'statement day'}. Change that under Edit → details.
-                </p>
-              )}
-              <PaydayControl accountId={d.accountId} sends={funded?.funded ?? 0} needs={funded?.need ?? 0}
-                autoLabel="Pay exactly what's due each payday"
-                autoHint="Adds up this pay's plan payments and Afterpay instalments." />
-              {funded && funded.diff !== null && funded.diff < 0 && (
-                <p className="small error" style={{ marginTop: 6 }}>This pay's plans need {cash(funded.need)}, so sending {cash(funded.funded)} is {cash(-funded.diff)} short.</p>
-              )}
-            </div>}
+            {!d.payroll && <DebtPayday debt={d} funded={funded} period={period} />}
             </div>
             </FlatDetails.Provider></Collapse>
           </section>
