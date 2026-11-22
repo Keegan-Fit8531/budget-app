@@ -28,7 +28,7 @@ export function Chevron({ size = 18 }: { size?: number }) {
 export function PageHead({ title, sub, children }: { title: ReactNode; sub?: ReactNode; children?: ReactNode }) {
   return (
     <header className="page-head">
-      <div className="grow">
+      <div className="page-title">
         <h1 className="h1">{title}</h1>
         {sub && <p className="page-sub">{sub}</p>}
       </div>

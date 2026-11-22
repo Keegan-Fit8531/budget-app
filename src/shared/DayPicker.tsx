@@ -54,7 +54,6 @@ export function useDayView(key: string, opts: { endOfPay?: boolean } = {}): DayV
 export function DayPicker({ dv, title, children }: { dv: DayView; title: string; children?: ReactNode }) {
   const { offset, view, day, today, dayIdx, picked, goPay, setDay } = dv;
   const setIdx = (i: number) => setDay(addDays(view.start, Math.max(0, Math.min(view.days - 1, i))));
-  const now = today >= view.start && today <= view.end;
   const moved = offset > 0 || day !== today;
   const [picking, setPicking] = useState(false);
   // The day slider opens only when asked for (or a day has been picked), not on every change of pay,
@@ -63,23 +62,22 @@ export function DayPicker({ dv, title, children }: { dv: DayView; title: string;
   return (
     <>
       <header className="page-head">
-        <div className="pay-nav grow">
-          <div className="grow">
-            <h1 className="h1">{title}</h1>
-            <p className="small muted clip">
-              {monthName(view.start)} pay{now ? '' : offset === 1 ? ' (next)' : ''} · {day === today ? `today, ${fmtShort(day)}` : `${fmtDay(day)}, ${day > today ? 'projected' : 'earlier'}`} · day {dayIdx + 1} of {view.days}
-            </p>
-          </div>
-          <div className="pay-nav-steps">
-            <button className="icon-btn plain" aria-label="Previous pay" disabled={offset === 0} onClick={() => goPay(offset - 1)}><Icon name="left" /></button>
-            <button className="icon-btn plain" aria-label="Next pay" onClick={() => goPay(offset + 1)}><Icon name="right" /></button>
-            <button className={`icon-btn plain has-tip tip-left${open ? ' on' : ''}`} data-tip="Look at another day" aria-label="Look at another day" aria-expanded={open}
-              onClick={() => { if (open && picked) setDay(''); setPicking(!open); }}><Icon name="calendar" /></button>
-            <button className="btn small ghost" style={moved ? undefined : { visibility: 'hidden' }} aria-hidden={!moved} tabIndex={moved ? 0 : -1}
-              onClick={() => { goPay(0); setPicking(false); }}>Today</button>
-          </div>
+        <div className="page-title">
+          <h1 className="h1 clip">{title}</h1>
+          {/* One short line: the pay, and the day looked at (or how far into the pay today is). Cards say "Projected" or "Estimated" themselves. */}
+          <p className="small muted clip">
+            {monthName(view.start)} pay · {day === today ? `day ${dayIdx + 1} of ${view.days}` : fmtShort(day)}
+          </p>
         </div>
         {children}
+        {/* Same place and order as PayNav's: Today (dimmed while on today), then the calendar, then ‹ ›. */}
+        <div className="pay-nav-steps">
+          <button className="btn small ghost" disabled={!moved} onClick={() => { goPay(0); setPicking(false); }}>Today</button>
+          <button className={`icon-btn plain has-tip${open ? ' on' : ''}`} data-tip="Look at another day" aria-label="Look at another day" aria-expanded={open}
+            onClick={() => { if (open && picked) setDay(''); setPicking(!open); }}><Icon name="calendar" /></button>
+          <button className="icon-btn plain" aria-label="Previous pay" disabled={offset === 0} onClick={() => goPay(offset - 1)}><Icon name="left" /></button>
+          <button className="icon-btn plain" aria-label="Next pay" onClick={() => goPay(offset + 1)}><Icon name="right" /></button>
+        </div>
       </header>
       <Collapse open={open}>
         <div className="card stack gap-4" style={{ padding: 'var(--s-3) var(--s-4)' }}>

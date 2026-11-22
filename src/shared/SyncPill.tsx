@@ -28,7 +28,8 @@ export function SyncPill({ source, at }: { source: 'bank' | 'entered' | 'none'; 
       title={`From your bank${full ? `, ${full}` : ''}. Tap to check again now.`} aria-label={syncing ? 'Syncing with your bank' : `From your bank ${at ? ago(at) : ''}. Sync again now`}
       onClick={(e) => { e.stopPropagation(); void syncBank(update, true); }}>
       <span className="sync-icon" aria-hidden="true"><Icon name="sync" size={13} stroke={2.2} /></span>
-      <span>{syncing ? 'Syncing' : at ? ago(at) : 'Sync'}</span>
+      {/* On a phone a current pill is just its icon: the card's name gets the room. */}
+      <span className="sync-when">{syncing ? 'Syncing' : at ? ago(at) : 'Sync'}</span>
     </button>
   );
 }

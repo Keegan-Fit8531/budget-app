@@ -91,7 +91,7 @@ export function SettingsPage() {
       {/* Pay and the rule are what the budget runs on, so they're open. The rest opens when you need it. */}
       <section className="card stack gap-16">
         <h2 className="h2">Pay</h2>
-        <div className="form-grid">
+        <div className="form-grid roomy">
           <label className="field">Payday (day of month)
             <input inputMode="numeric" value={dayText} aria-invalid={dayBad || undefined}
               onChange={(e) => setDayDraft(e.target.value)}
@@ -113,14 +113,14 @@ export function SettingsPage() {
           )}
           <label className="field">If it falls on a Saturday
             <select value={s.saturday} onChange={(e) => setS('saturday', e.target.value as 'friday' | 'monday')}>
-              <option value="friday">Paid Friday before</option>
-              <option value="monday">Paid Monday after</option>
+              <option value="friday">Friday before</option>
+              <option value="monday">Monday after</option>
             </select>
           </label>
           <label className="field">If it falls on a Sunday
             <select value={s.sunday} onChange={(e) => setS('sunday', e.target.value as 'friday' | 'monday')}>
-              <option value="friday">Paid Friday before</option>
-              <option value="monday">Paid Monday after</option>
+              <option value="friday">Friday before</option>
+              <option value="monday">Monday after</option>
             </select>
           </label>
           <label className="field">Expected pay (NZD)
