@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { billChecks } from './billCheck';
+import { answeredChecks, billChecks } from './billCheck';
 import { billTracker } from '../../../engine/balances/billTracker';
 import { billTxns, billsBudget as bills } from '../../../testing/fixtures';
 import type { Budget } from '../../../core/types';
@@ -74,11 +74,31 @@ describe('bill check', () => {
 
     // "Still to send from Misc bills": it's to come again, and isn't asked again.
     const still = structuredClone(b);
-    held.apply!.run(still);
+    held.ask!.run(still, held.ask!.initial);
     still.billChecks![held.key] = '2026-11-22';
     const rows = billTracker(still, 'bills', '2026-11-22').rows.filter((r) => r.debtId === 'gem');
     expect(rows.every((r) => r.status === 'due' && r.late)).toBe(true);
     expect(billChecks(still, '2026-11-22')).toEqual([]);
+  });
+
+  it('still to send, for a different amount, and undone', () => {
+    const b = gemHeld();
+    const held = billChecks(b, '2026-11-22').find((c) => c.kind === 'held')!;
+    let d = structuredClone(b);
+    held.ask!.run(d, 15000);
+    d.billChecks![held.key] = '2026-11-22';
+    d = structuredClone(d);
+    const rows = billTracker(d, 'bills', '2026-11-22').rows.filter((r) => r.debtId === 'gem');
+    expect(rows.map((r) => [r.amount, r.status])).toEqual([[15000, 'due']]);
+    const answers = answeredChecks(d, '2026-11-22');
+    expect(answers.map((a) => a.title)).toEqual(['Gem Visa 21 Nov: still to send from Misc bills ($150)']);
+
+    // Undo: back as it was, and the question is asked again.
+    answers[0].undo(d);
+    d = structuredClone(d);
+    expect(d.debts![0].heldPay).toBeUndefined();
+    expect(billChecks(d, '2026-11-22').map((c) => c.kind)).toEqual(['held']);
+    expect(answeredChecks(d, '2026-11-22')).toEqual([]);
   });
 
   it('no suggestions for accounts the bank connection does not fill', () => {

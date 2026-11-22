@@ -28,6 +28,8 @@ export interface BillCheck {
   apply?: { label: string; run: (b: Budget) => void };
   /** What "no" says. Answering keeps `key` in `budget.billChecks`. */
   skip: string;
+  /** Instead of `apply`: a change that needs an amount (what you'll send), with its starting figure. */
+  ask?: { label: string; prompt: string; initial: Cents; run: (b: Budget, amount: Cents) => void };
 }
 
 /** How far back to look for a bill's usual day and amount. */
@@ -133,7 +135,14 @@ export function billChecks(b: Budget, today: ISODate = todayISO()): BillCheck[] 
         seen: [{ date: txn!.date, amount: -txn!.amount, where: there }],
         title: `Did ${there} pay ${debt}'s ${cash(total)}?`,
         detail: `${debt}'s ${cash(total)} for ${fmtShort(date)} is kept in ${acc.name}. The bank showed ${cash(-txn!.amount)} paid to ${debt} from ${there} on ${fmtShort(txn!.date)}, so it's counted as paid. If that was extra and you'll still send it from ${acc.name}, say so.`,
-        apply: { label: `Still to send from ${acc.name}`, run: (d) => { d.billChecks = { ...(d.billChecks ?? {}), [checkKey('unpaid', debtId, date)]: today }; } },
+        ask: {
+          label: `Still to send from ${acc.name}`, prompt: `How much will you send ${debt} from ${acc.name}?`, initial: total,
+          run: (d, amount) => {
+            d.billChecks = { ...(d.billChecks ?? {}), [checkKey('unpaid', debtId, date)]: today };
+            const x = d.debts?.find((y) => y.id === debtId);
+            if (x && amount !== total) x.heldPay = { ...(x.heldPay ?? {}), [date]: amount };
+          },
+        },
         skip: 'Yes, that paid it',
       });
     }
@@ -162,4 +171,55 @@ export function billChecks(b: Budget, today: ISODate = todayISO()): BillCheck[] 
     }
   }
   return out;
+}
+
+/** A bill check you've answered, and how to take the answer back (so the question can be asked again). */
+export interface Answered { key: string; accountId?: string; title: string; undo: (b: Budget) => void }
+
+/** How far back answers are listed for Undo (a little over one pay). */
+const UNDO_DAYS = 40;
+
+/** Your bill check answers from the last few weeks, newest first, each with its Undo. */
+export function answeredChecks(b: Budget, today: ISODate = todayISO()): Answered[] {
+  const since = addDays(today, -UNDO_DAYS);
+  const acc = (id?: string) => b.accounts.find((a) => a.id === id);
+  const named = (id: string) => b.items.find((i) => i.id === id)?.name ?? b.debts?.find((d) => d.id === id)?.name ?? id;
+  const out: (Answered & { on: ISODate })[] = [];
+  for (const [key, on] of Object.entries(b.billChecks ?? {})) {
+    if (on < since) continue;
+    const [kind, id, v] = key.split('|');
+    const drop = (keys: string[]) => (d: Budget) => {
+      d.billChecks = Object.fromEntries(Object.entries(d.billChecks ?? {}).filter(([k]) => !keys.includes(k)));
+    };
+    const item = b.items.find((i) => i.id === id);
+    if (kind === 'held') {
+      const debt = b.debts?.find((d) => d.id === id);
+      const unpaid = checkKey('unpaid', id, v);
+      const set = debt?.heldPay?.[v];
+      const hold = acc(debt?.holdAccountId)?.name ?? 'its account';
+      out.push({
+        key, on, accountId: debt?.holdAccountId,
+        title: b.billChecks?.[unpaid]
+          ? `${named(id)} ${fmtShort(v)}: still to send from ${hold}${set !== undefined ? ` (${cash(set)})` : ''}`
+          : `${named(id)} ${fmtShort(v)}: paid from another account`,
+        undo: (d) => {
+          drop([key, unpaid])(d);
+          const x = d.debts?.find((y) => y.id === id);
+          if (x?.heldPay) { delete x.heldPay[v]; if (!Object.keys(x.heldPay).length) delete x.heldPay; }
+        },
+      });
+    } else if (kind === 'paid' || kind === 'move') {
+      const where = acc(item?.accountId ?? b.debts?.find((d) => d.id === id)?.holdAccountId);
+      out.push({
+        key, on, accountId: where?.id,
+        title: kind === 'paid' ? `${named(id)} ${fmtShort(v)}: you said it's been paid` : `${named(id)} ${fmtShort(v)}: kept in ${where?.name ?? 'its account'}`,
+        undo: drop([key]),
+      });
+    } else if (kind === 'day' || kind === 'amount') {
+      out.push({ key, on, accountId: item?.accountId, title: `${named(id)}: ${kind === 'day' ? 'which day it comes out' : 'its amount'}`, undo: drop([key]) });
+    }
+  }
+  // Newest first; this pay's money (held, paid, moved) before a bill's day or amount.
+  const late = (k: string) => (/^(day|amount)\|/.test(k) ? 1 : 0);
+  return out.sort((x, y) => y.on.localeCompare(x.on) || late(x.key) - late(y.key)).map((a) => ({ key: a.key, accountId: a.accountId, title: a.title, undo: a.undo }));
 }
