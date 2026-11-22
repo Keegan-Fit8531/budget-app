@@ -16,6 +16,29 @@ export function budget(): Budget {
   return b;
 }
 
+/**
+ * A budget shaped like the real Food and gas account: pay lands in Everyday (…-00, the EFTPOS card), and
+ * Food and gas (…-55, Steady) holds three envelopes: Food shop $200 a week (Thursdays), Car gas $250 a
+ * month, and Scooter gas $50 a month that only takes fills under $50. $1,250 in it on 22 Nov. Shopping is
+ * often done on the Everyday card, then money moved over from Food and gas to cover it.
+ */
+export function foodGasBudget(): Budget {
+  const b = budget();
+  b.accounts.push(
+    { id: 'day', name: 'Everyday', kind: 'bank', color: '#000', groupId: 'lifestyle', number: '06-0115-0324910-00' },
+    { id: 'food', name: 'Food and gas', kind: 'bank', color: '#000', groupId: 'needs', number: '06-0115-0324910-55' },
+  );
+  b.settings.payAccountId = 'day';
+  b.split.push({ accountId: 'food', amount: 0, mode: 'smooth' });
+  b.items.push(
+    { id: 'shop', name: 'Food shop', amount: 20000, frequency: 'weekly', start: '2026-01-08', accountId: 'food', envelope: 'week' },
+    { id: 'car', name: 'Car gas', amount: 25000, frequency: 'monthly', start: '2026-11-01', accountId: 'food', envelope: 'month' },
+    { id: 'scoot', name: 'Scooter gas', amount: 5000, frequency: 'monthly', start: '2026-11-01', accountId: 'food', envelope: 'month', envelopeUnder: 5000 },
+  );
+  b.balances = { food: { amount: 125000, asOf: '2026-11-22' } };
+  return b;
+}
+
 /** A budget with debts like the real one: a student loan from salary, Gem, a Q card and Afterpay. */
 export function debtBudget(): Budget {
   const b = budget();

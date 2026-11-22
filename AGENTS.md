@@ -40,7 +40,7 @@ before dev/build), `.github/workflows/pages.yml` (deploys `main` to GitHub Pages
 
 | To change… | Start in |
 |---|---|
-| What's saved (a new field on accounts, debts, goals…) | `core/types.ts`, then `state/store.tsx` → `tidy()` for older saves, `core/valid.ts` |
+| What's saved (a new field on accounts, debts, goals…) | `core/types.ts`, then `state/upgrade.ts` → `tidy()` for older saves, `core/valid.ts` |
 | Pay periods, paydays, weekend rules, a moved payday | `engine/periods.ts` |
 | When a cost falls (weekly, monthly, skip near payday) | `engine/occurrences.ts` |
 | Money put aside (WOF, tyres) or envelopes (Gas a month, Food a week) | `engine/setAside.ts`, `engine/envelope.ts`; what counts against one (purchases, transfers that paid for one): `engine/envelopeMatch.ts`; Accounts card: `features/accounts/EnvelopeCards.tsx` |
@@ -60,7 +60,29 @@ before dev/build), `.github/workflows/pages.yml` (deploys `main` to GitHub Pages
 | Page routing, nav, the Add button | `app/` |
 | Saved daily copies, Undo by restoring | `state/versions.ts` |
 | Every page that uses a function, type or file | `npm run uses -- <name or src-relative file>` |
-| Renaming a saved field | `core/types.ts` (keep the old one, marked "Older saves"), `state/store.tsx` → `tidy()` converts it |
+| What the owner's real budget shows, and why | `npm run inspect` / `npm run screenshot` (see **Checking a change against the real budget**) |
+| How a loaded budget is upgraded (older saves, one-off fixes) | `state/upgrade.ts` → `tidy()`, `bringUpToDate()` |
+| Renaming a saved field | `core/types.ts` (keep the old one, marked "Older saves"), `state/upgrade.ts` → `tidy()` converts it |
+
+## Checking a change against the real budget
+
+Tests use made-up budgets. To see what a change does to the owner's real one (most "why does it show X?"
+questions are answered there):
+
+1. Get the latest copy. The app saves to **`main`** of `budget-data`, so if that repo is checked out next to
+   this one, run `git -C ../budget-data checkout main && git -C ../budget-data pull` (a session branch there is
+   usually older). Its README says how the owner's accounts are used (which one is the EFTPOS card, what each
+   holds) and how to query `budget.json` without reading all of it.
+2. `npm run inspect` (every account) or `npm run inspect -- food --today 2026-11-22` (one account in detail):
+   the tracker, envelopes and what counted against them, transfers the card asks about, next pays and any
+   Steady buffer, and the last 14 days of transactions with what each counted as. It loads the budget the
+   way the app does (`state/upgrade.ts`). The first line says when that copy was saved: if it's older than
+   the owner's screenshot, the browser has changes the repo hasn't got yet.
+3. `npm run dev`, then `npm run screenshot -- '#/accounts' --today 2026-11-22` to see the page itself, in New
+   Zealand time. (A browser left on UTC is on yesterday's date until 1pm in NZ, which changes what's shown.)
+
+That output is private: never put it in commits, PRs, code or fixtures. `testing/fixtures.ts` →
+`foodGasBudget()` is a made-up budget shaped like the real Food and gas account, for tests.
 
 ## Rules the code relies on
 
@@ -102,6 +124,8 @@ npx tsc -b         # type-check
 npm run lint
 npm run build      # production build in dist/ (pushing to main deploys it)
 npm run uses -- envelopeHeld   # every file and line that uses a name (or a file's exports)
+npm run inspect -- food        # the real budget (../budget-data) as the app sees it, one account
+npm run screenshot -- '#/accounts' --today 2026-11-22   # a page with the real budget (needs npm run dev)
 ```
 
 Run one test file with `npx vitest run src/engine/periods.test.ts`. Test budgets and helpers are in `src/testing/fixtures.ts`.
