@@ -3,13 +3,15 @@ import { tone } from '../core/colors';
 import { cash } from '../core/money';
 import { Dot } from './components';
 
-export interface Part { label: string; value: number; color: string; note?: string }
+/** `key`: a shorter name for the key under a `keyed` bar ("Bills" for "Other bills to come"). */
+export interface Part { label: string; value: number; color: string; note?: string; key?: string }
 
 /**
  * One bar split into parts (paid, still to come, put aside, spare). Hover or tap a part to see what it is and
  * its amount underneath; the others fade. Tap it again (or elsewhere on the bar) to hide it.
+ * `keyed`: when nothing is tapped, a key underneath names every part with its amount (short labels).
  */
-export function PartsBar({ parts, label }: { parts: Part[]; label: string }) {
+export function PartsBar({ parts, label, keyed }: { parts: Part[]; label: string; keyed?: boolean }) {
   const [on, setOn] = useState<number>();
   const shown = parts.filter((p) => p.value > 0);
   const active = on !== undefined ? shown[on] : undefined;
@@ -25,6 +27,11 @@ export function PartsBar({ parts, label }: { parts: Part[]; label: string }) {
           </button>
         ))}
       </div>
+      {keyed && !active && shown.length > 1 && (
+        <div className="key">
+          {shown.map((p, i) => <span key={`${p.label}-${i}`}><Dot color={p.color} small />{p.key ?? p.label} <b className="num">{cash(p.value)}</b></span>)}
+        </div>
+      )}
       {active && (
         <div className="parts-caption small" aria-live="polite">
           <Dot color={active.color} small />

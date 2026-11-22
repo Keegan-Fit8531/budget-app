@@ -11,7 +11,7 @@ import { MovesSummary, OtherMoves, ToMoveNotes, paidHow } from './BankSeen';
 import { asideMaxSaved, asideSplit, hasSetAsides, isHeldInAccount, setAsidePerPay } from '../../engine/setAside';
 import { type Period } from '../../engine/periods';
 import { asideNames } from '../../engine/rebalance';
-import { tone } from '../../core/colors';
+import { sameColor, tone } from '../../core/colors';
 import { cash } from '../../core/money';
 import type { Account, Budget } from '../../core/types';
 import { Icon } from '../../ui/Icon';
@@ -21,6 +21,15 @@ import { Collapse, Disclosure, FlatDetails, ShortList } from '../../ui/component
 /** A colour per put-aside cost on the bar (Haircut, WOF, maintenance), so neighbours differ. */
 const ASIDE_COLORS = ['var(--pal-orchid)', 'var(--pal-plum)', 'var(--pal-indigo)', 'var(--pal-rose)'];
 const asideColor = (i: number) => ASIDE_COLORS[i % ASIDE_COLORS.length];
+
+/** Takes `amount` off the last parts (what's not covered when the account is short), so the bar ends at the balance. */
+function trimEnd(parts: Part[], amount: number) {
+  for (let i = parts.length - 1; i >= 0 && amount > 0; i--) {
+    const cut = Math.min(parts[i].value, amount);
+    parts[i] = { ...parts[i], value: parts[i].value - cut };
+    amount -= cut;
+  }
+}
 
 const when = (days: number) => (days === 0 ? 'today' : days === 1 ? 'tomorrow' : days > 0 ? `in ${days} days` : days === -1 ? 'yesterday' : `${-days} days ago`);
 
@@ -97,21 +106,32 @@ export function MonthTracker({ budget, account, today = todayISO(), open, toggle
     ? <p className="small muted">Put aside for {names}{maxAside !== undefined ? `, up to ${cash(maxAside)}` : ''}.</p>
     : null;
   const color = tone(account.color);
-  // The bar: every dollar in the account this pay, each part tappable (paid, to come, put aside per cost, spare).
+  // The bar: Paid (already out), then what's in the account now (the big balance) split by what it's for, each
+  // part tappable, with a key underneath. A debt payment held here (Gem Visa) is its own part, so it reads as part
+  // of the balance, not on top of it. When short, the needs run past the balance and the red part is what's missing.
   const asideParts = aside && !short ? asideSplit(budget, account.id, asideHeld) : [];
   const greenAmt = short ? 0 : aside ? (overAsideMax ? spareAmt - maxAside! : 0) : leftAmount;
+  const heldDebts = [...new Set(toCome.filter((r) => r.debtId).map((r) => r.name))].map((name) => {
+    const rows = toCome.filter((r) => r.debtId && r.name === name);
+    return { name, amount: rows.reduce((s, r) => s + r.amount, 0), late: rows.some((r) => r.late), date: rows[0].date };
+  });
+  const heldTotal = heldDebts.reduce((s, d) => s + d.amount, 0);
+  const otherToCome = toCome.filter((r) => !r.debtId);
+  const debtColor = sameColor(account.color, '#1AA89B') ? 'var(--pal-sky)' : 'var(--pal-teal)';
   const bar: Part[] = [
-    { label: 'Paid', value: t.paid, color: 'var(--line)', note: `${paid.length} bill${paid.length === 1 ? '' : 's'}` },
-    { label: 'Still to come', value: t.toCome, color, note: toCome[0] ? `next ${fmtShort(toCome[0].date)}` : undefined },
-    { label: 'To move across', value: moveOut, color: 'var(--pal-stone)' },
-    { label: `Reserved for ${envNames}`, value: short ? 0 : gasHeld, color: 'var(--pal-ochre)' },
+    ...heldDebts.map((d) => ({ label: d.name, value: d.amount, color: debtColor, key: d.name.split(' ')[0], note: d.late ? 'not sent yet' : `on ${fmtShort(d.date)}` })),
+    { label: heldTotal ? 'Other bills to come' : 'Still to come', value: t.toCome - heldTotal, color, key: 'Bills', note: otherToCome[0] ? `next ${fmtShort(otherToCome[0].date)}` : undefined },
+    { label: 'To move across', value: moveOut, color: 'var(--pal-stone)', key: 'To move' },
+    { label: `Reserved for ${envNames}`, value: gasHeld, color: 'var(--pal-ochre)', key: 'Envelopes' },
     ...asideParts.map((x, i) => ({
-      label: `${x.item.name} put aside`, value: x.amount, color: asideColor(i),
+      label: `${x.item.name} put aside`, value: x.amount, color: asideColor(i), key: x.item.name,
       note: x.item.maxSaved ? (x.amount >= x.item.maxSaved ? 'full' : `max ${cash(x.item.maxSaved)}`) : undefined,
     })),
-    { label: overAsideMax ? 'Spare above the max' : leftLabel, value: greenAmt, color: 'var(--good)' },
-    { label: 'Short', value: short ? leftAmount : 0, color: 'var(--bad)' },
+    { label: overAsideMax ? 'Spare above the max' : leftLabel, value: greenAmt, color: 'var(--good)', key: leftLabel },
   ];
+  if (short) trimEnd(bar, leftAmount);
+  bar.unshift({ label: 'Paid', value: t.paid, color: 'var(--line)', key: 'Paid', note: `${paid.length} bill${paid.length === 1 ? '' : 's'}, already out` });
+  bar.push({ label: 'Short', value: short ? leftAmount : 0, color: 'var(--bad)', note: `${cash(Math.max(0, t.balance))} in the account` });
   // Gem Visa held in this account until statement day — note the amount from Latitude's allocation.
   const gemHolds = (budget.debts ?? []).filter((d) => d.holdAccountId === account.id && d.rules === 'gem' && !d.payroll);
   const gemNotes = gemHolds.map((d) => {
@@ -185,7 +205,7 @@ export function MonthTracker({ budget, account, today = todayISO(), open, toggle
       {t.balanceKnown && !(aside && !paysBills) && !envOnly && (
         <div className="stack gap-8">
           {(total > 0 || gasHeld > 0 || moveOut > 0) && (
-            <PartsBar parts={bar} label={`${account.name} this pay: tap a part to see it`} />
+            <PartsBar parts={bar} keyed label={`${account.name} this pay: tap a part to see it`} />
           )}
           <div className="trio">
             <div className="stat">
@@ -196,7 +216,8 @@ export function MonthTracker({ budget, account, today = todayISO(), open, toggle
             <div className="stat">
               <span className="small muted">To come</span>
               <b>{cash(t.toCome)}</b>
-              <span className="xs muted">{toCome[0] ? `next ${fmtShort(toCome[0].date)}` : `before ${fmtShort(t.period.nextPayday)}`}</span>
+              <span className="xs muted">{heldDebts.length === 1 ? `incl. ${heldDebts[0].name.split(' ')[0]}`
+                : toCome[0] ? `next ${fmtShort(toCome[0].date)}` : `before ${fmtShort(t.period.nextPayday)}`}</span>
             </div>
             <div className="stat">
               <span className="small muted">{leftLabel}</span>
