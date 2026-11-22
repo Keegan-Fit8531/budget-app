@@ -176,6 +176,11 @@ export interface Debt {
    * statement day. When unset, money is planned against `accountId` as usual.
    */
   holdAccountId?: string;
+  /**
+   * What you'll send from the hold account for a statement (statement date → amount), set in the Accounts bill
+   * check. Replaces the planned and recommended amount for that statement only.
+   */
+  heldPay?: Record<ISODate, Cents>;
   limit?: Cents;
   /** Standard interest rate, % per year. */
   rate?: number;

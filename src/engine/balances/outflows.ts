@@ -50,13 +50,22 @@ export function outflows(b: Budget, accountId: string, from: ISODate, to: ISODat
 }
 
 /**
+ * A held debt's statement amount you set yourself (`heldPay`) replaces its payments that day.
  * Misc bills must keep enough for Gem's statement-day send: Gem's own recommended allocation, or
  * what this pay already froze for Gem — whichever is higher — so leftover isn't shown as spare.
  */
 function topUpGemHoldOutflows(b: Budget, accountId: string, from: ISODate, to: ISODate, out: Outflow[]): void {
   const today = todayISO();
   for (const debt of b.debts ?? []) {
-    if (debt.holdAccountId !== accountId || debt.rules !== 'gem' || !debt.statementDay) continue;
+    if (debt.holdAccountId !== accountId || !debt.statementDay) continue;
+    // The amount you said you'll send for this statement: it, and nothing else, for that day.
+    const set = gemStatementInRange(debt, from, to);
+    if (set && debt.heldPay?.[set] !== undefined) {
+      for (let i = out.length - 1; i >= 0; i--) if (out[i].debtId === debt.id && out[i].date === set) out.splice(i, 1);
+      if (debt.heldPay[set] > 0) out.push({ date: set, amount: debt.heldPay[set], name: debt.name, debtId: debt.id });
+      continue;
+    }
+    if (debt.rules !== 'gem') continue;
     const period = periodContaining(from, b.settings);
     if (period.start > to || period.end < from) continue;
     const adv = debtAdvice(b, debt, period);

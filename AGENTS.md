@@ -53,7 +53,7 @@ before dev/build), `.github/workflows/pages.yml` (deploys `main` to GitHub Pages
 | Planner page, Optimise the leftover | `features/planner/` |
 | Accounts page, Deposits pop-up, balances, account history | `features/accounts/` |
 | Debts: schedules, Gem Visa rules, payments, advice | `features/debts/logic/` (UI in `features/debts/`) |
-| A debt's payment held in a bank account until statement day (Gem in Misc bills: `Debt.holdAccountId`) | `features/debts/logic/funding.ts` (`debtPaymentsIn`: its payments, paid ones included, leave the hold account), `engine/balances/outflows.ts` (Gem's hold top-up); a payment seen in the bank: `services/bank/cardPayments.ts` → `gem.ts` `gemApply`. An early or extra payment that clears this pay's statement payment logs it in `debt.paid`, so the hold account shows it paid (Bill check then asks) |
+| A debt's payment held in a bank account until statement day (Gem in Misc bills: `Debt.holdAccountId`) | `features/debts/logic/funding.ts` (`debtPaymentsIn`: its payments, paid ones included, leave the hold account), `engine/balances/outflows.ts` (Gem's hold top-up, or `Debt.heldPay` when you set the amount); a payment seen in the bank: `services/bank/cardPayments.ts` → `gem.ts` `gemApply`. An early or extra payment that clears this pay's statement payment logs it in `debt.paid`, so the hold account shows it paid (Bill check then asks; answers can be undone there) |
 | Savings goals, goal costs, gifts, KiwiSaver | `features/savings/` |
 | Insights, spending categories, monthly review | `features/insights/` |
 | Settings page, export to spreadsheet | `features/settings/` |
