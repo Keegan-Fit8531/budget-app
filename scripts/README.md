@@ -14,7 +14,7 @@ code or test fixtures (make up the numbers there, as `src/testing/fixtures.ts` d
 
 ## Trying a change on the real budget
 To see what an answer or a change would do ("what if Bill check is answered Still to send?"), write a throwaway
-`scripts/_try.ts`, run it with `npx vite-node scripts/_try.ts`, then delete it (it prints the owner's money; `.gitignore` keeps it out of commits):
+`scripts/_try.ts`, run it with `npx vite-node scripts/_try.ts`, then delete it (it prints the owner's money; `.gitignore` keeps it out of commits, but `npm run lint` still checks it and fails on an `any`):
 ```ts
 import { readFileSync } from 'node:fs';
 import { bringUpToDate } from '../src/state/upgrade';
