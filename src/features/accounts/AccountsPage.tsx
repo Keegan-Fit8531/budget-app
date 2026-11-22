@@ -62,6 +62,8 @@ export function AccountsPage({ deposits }: { deposits?: string }) {
   const onDay = accounts.map((a) => ({ a, v: live ? balanceToday(budget, a.id, today) : balanceOn(budget, a.id, day, today) })).filter((x) => x.v !== undefined);
   const known = onDay.map((x) => x.a);
   const total = onDay.reduce((t, x) => t + (x.v ?? 0), 0);
+  // What payday put into (or sends) those same accounts in the pay being looked at, to set beside it.
+  const allocated = known.reduce((t, a) => t + depositFor(budget, a.id, view, today), 0);
 
   return (
     <>
@@ -78,6 +80,7 @@ export function AccountsPage({ deposits }: { deposits?: string }) {
           <div className="stat">
             <span className="small muted">{live ? `Across ${known.length} account${known.length === 1 ? '' : 's'}` : `Estimated on ${fmtDay(day)}`}</span>
             <b>{cash(total)}</b>
+            {live && <span className="small muted">vs {cash(allocated)} allocated</span>}
             {!live && <span className="small muted">across {known.length} account{known.length === 1 ? '' : 's'}{known.length < accounts.length ? ` (${accounts.length - known.length} without a balance)` : ''}</span>}
           </div>
           {live
@@ -154,6 +157,10 @@ function BalanceCard({ account: a, view, day, mover, onPick }: {
   // Nominal payday day-of-month can move for the weekend (e.g. 20th on Sunday → Friday 18th).
   const nominalDay = budget.settings.paydayDay;
   const movedForWeekend = Number(pay.start.slice(8, 10)) !== nominalDay;
+  // What payday put in this pay (or the pay being looked at), beside what's in it now.
+  const thisPay = view ?? periodContaining(today, budget.settings);
+  const allocated = depositFor(budget, a.id, thisPay, today);
+  const isThisPay = thisPay.start === periodContaining(today, budget.settings).start;
   const toggle = entry && hasDetails ? <DetailsToggle open={open} onChange={setOpen} /> : null;
 
   return (
@@ -175,6 +182,12 @@ function BalanceCard({ account: a, view, day, mover, onPick }: {
       ) : (
         <div className="acct-fig">
           <b className={`fig ${shown !== undefined && shown < 0 ? 'neg' : ''}`}>{shown !== undefined ? cash(shown) : '—'}</b>
+          {allocated > 0 && (
+            <span className="acct-alloc">
+              <span className="xs muted">Allocated {isThisPay ? 'this pay' : `${monthName(thisPay.start)} pay`}</span>
+              <b className="num">{cash(allocated)}</b>
+            </span>
+          )}
           {(view || estimated) && (
             <span className="xs muted note-line">
               {view ? `${day > today ? 'Estimated' : 'On'} ${fmtShort(day)}` : `Estimated from ${fmtShort(entry.asOf)}${dueToday ? ", before today's bills" : ''}`}

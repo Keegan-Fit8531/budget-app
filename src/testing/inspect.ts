@@ -17,14 +17,14 @@ import { categorizeTxn, shopMap } from '../features/insights/logic/spending';
 
 const span = (from: ISODate, to: ISODate) => `${fmtShort(from)} – ${fmtShort(to)}`;
 
-/** One line per bank account: payday mode, balance, spare after bills and envelopes. */
+/** One line per bank account: payday mode, what this pay allocated it, balance, spare after bills and envelopes. */
 export function inspectAll(b: Budget, today: ISODate = todayISO()): string[] {
   const p = periodContaining(today, b.settings);
   const out = [`Today ${today} · pay ${span(p.start, p.end)} (next payday ${fmtShort(p.nextPayday)}) · this copy saved ${b.updatedAt ?? 'at an unknown time'}`, ''];
   for (const a of b.accounts.filter((x) => x.kind === 'bank' && !x.archived)) {
     const t = billTracker(b, a.id, today);
     const held = envelopeHeld(b, a.id, today);
-    out.push(`${a.name} (${a.id}) · ${accountMode(b, a.id)} · ${t.balanceKnown ? `${cash(t.balance)} ${t.balanceSource}` : 'balance unknown'}`
+    out.push(`${a.name} (${a.id}) · ${accountMode(b, a.id)} · allocated ${cash(t.deposit)} · ${t.balanceKnown ? `${cash(t.balance)} ${t.balanceSource}` : 'balance unknown'}`
       + ` · to come ${cash(t.toCome)} · spare ${cash(t.spare - held)}${held ? ` (after ${cash(held)} in envelopes)` : ''}`);
   }
   return out;
