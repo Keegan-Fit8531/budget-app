@@ -136,7 +136,7 @@ export function MonthTracker({ budget, account, today = todayISO(), open }: { bu
               {t.paid > 0 && <div title={`Paid ${cash(t.paid)}`} style={{ flex: t.paid, background: 'var(--line)' }} />}
               {t.toCome > 0 && <div title={`Still to come ${cash(t.toCome)}`} style={{ flex: t.toCome, background: color }} />}
               {moveOut > 0 && <div title={`To move across ${cash(moveOut)}`} style={{ flex: moveOut, background: 'var(--pal-stone)' }} />}
-              {gasHeld > 0 && !short && <div title={`Reserved for ${envNames} ${cash(gasHeld)}`} style={{ flex: gasHeld, background: 'var(--warn, #C4A35A)' }} />}
+              {gasHeld > 0 && !short && <div title={`Reserved for ${envNames} ${cash(gasHeld)}`} style={{ flex: gasHeld, background: 'var(--pal-ochre)' }} />}
               {leftAmount > 0 && !short && <div title={`${leftLabel} ${cash(leftAmount)}`} style={{ flex: leftAmount, background: 'var(--good)' }} />}
               {short && <div title={`Short ${cash(leftAmount)}`} style={{ flex: leftAmount, background: 'var(--bad)' }} />}
             </div>

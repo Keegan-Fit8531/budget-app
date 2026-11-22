@@ -69,7 +69,8 @@ before dev/build), `.github/workflows/pages.yml` (deploys `main` to GitHub Pages
 - **Dates are `YYYY-MM-DD` strings** (`ISODate`), worked out in UTC by `core/dates.ts`. Do date maths with its helpers (`todayISO()`, `addDays()`, `diffDays()` …), not with `Date` directly, and pass `today` through so tests can fix the date.
 - **Every change goes through `useBudget().update(fn)`** (`state/store.tsx`): it clones the budget, runs your `fn`, re-balances upcoming pays (`autoBalance`), keeps the day's saved copy and syncs. Don't mutate the budget anywhere else.
 - **Logic is pure and testable.** `engine/`, `core/` and every `logic/` folder take a `Budget` and return values. No React and no storage there. Pages (`*.tsx`) call them.
-- **Dependencies point inward**: `core` ← `engine` ← `features`/`services` ← `app`. `ui/` knows nothing about budgets. (`engine` and `features/debts|savings/logic` call each other; don't add new cycles.)
+- **Dependencies point inward**: `core` ← `engine` ← `features`/`services` ← `app`. `ui/` knows nothing about budgets. (`engine` and `features/debts|savings/logic` call each other; don't add new cycles.) `features/` and `services/` sit side by side: a page may use a service (Accounts uses `bankSync` and the bank's `SYNCED` event), and a service may use a page's `logic/`. `engine/` and `core/` never import a service's code (`core/types.ts` only borrows the `Payslip` type).
+- **One reader per bank format**: transfers between your own accounts are read by `engine/transfers.ts` → `ownTransfer` only; shop categories by `features/insights/logic/spending.ts` → `categorizeTxn`. Use them; don't parse descriptions again.
 - **Design**: use the tokens and classes in `ui/styles/` and the pieces in `ui/components.tsx`, never new colours or sizes. Green/red only ever mean "fine"/"short". An account's colour is only a small mark beside its name.
 - **Privacy**: the Gemini key, GitHub token and bank passphrase stay in the browser's storage only, never in the budget, the repo or the code. `src/personal/` (git-ignored) holds the owner's own data and is never committed.
 - **Keep files small**: aim for under ~400 lines. When one grows past that, split it by its sections into files named for their job, and update the README. Over 500 lines fails `npm test`.
@@ -92,6 +93,19 @@ The folder rules above (file size, no React in `core/`/`engine/`/`logic/`, a gen
 1. `npm test`, `npx tsc -b` and `npm run lint` pass (lint warnings are OK, errors aren't).
 2. Every folder you touched has its README updated: new, renamed, moved or deleted files, and changed purposes.
 3. If you added a new kind of task or a new rule, update **Where to look** or **Rules the code relies on** here.
+
+## Checking against the owner's real budget
+
+When the question is "why does my account show X?", check the real numbers before changing code. Keep the real data out of
+commits, tests, PR text and anything sent to an outside service.
+
+- **The data:** the `budget-data` repo is usually cloned next to this one. Its latest save is on `origin/main`, and a local
+  checkout can be behind, so run `git -C ../budget-data fetch origin main` and read `git show origin/main:budget.json`
+  (about 1 MB: pull out what you need with a script rather than reading it whole).
+- **Run the engine on it:** put a scratch test in `src/personal/` (git-ignored) that reads that file and calls the function,
+  e.g. `billTracker(b, 'bills', '2026-11-22')`; run it with `npx vitest run src/personal/`. Delete it when you're done.
+- **See it in the app:** start `npm run dev`, then put the file's JSON in `localStorage` under `paydays.budget.v1` before the
+  page loads (Playwright: `page.addInitScript`). There's no bank or GitHub setup in that browser, so nothing syncs.
 
 ## Commands
 

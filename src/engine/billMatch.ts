@@ -1,6 +1,7 @@
 import { addDays, diffDays, todayISO, weekday, type ISODate } from '../core/dates';
 import { outflows, type Outflow } from './balances/outflows';
 import { txnsIn } from './envelopeMatch';
+import { ownTransfer } from './transfers';
 import type { Account, Budget, Cents, Txn } from '../core/types';
 
 // Which bank transaction paid each bill. A bill can come straight out of its own account ('direct'), be
@@ -39,18 +40,6 @@ export function bankFed(b: Budget, accountId: string): boolean {
 const BEFORE = 4, AFTER = 10;
 /** How far either side of a card payment the transfer that made up for it can be. */
 const COVER_DAYS = 7;
-
-const NUM_RE = /\b(\d{2})-(\d{4})-(\d{7})-(\d{2,3})\b/;
-const numKey = (n: string) => { const m = n.match(NUM_RE); return m ? m.slice(1).map(Number).join('-') : ''; };
-
-/**
- * A transfer between your own accounts: the other account, from the account number in the description
- * ("To: 06-0115-0324910-00 …", "From: …"). Undefined for anything else (a purchase, a bill, pay).
- */
-export function ownTransfer(b: Budget, t: Pick<Txn, 'description'>): Account | undefined {
-  const key = numKey(t.description);
-  return key ? b.accounts.find((a) => a.number && numKey(a.number) === key) : undefined;
-}
 
 /** Same amount, near enough (a cent or two of rounding, or 1% on a big one). */
 export const sameAmount = (a: Cents, b: Cents): boolean => Math.abs(a - b) <= Math.max(50, Math.round(Math.max(a, b) / 100));
@@ -131,7 +120,7 @@ export function matchBills(b: Budget, accountId: string, from: ISODate, to: ISOD
   }
   const used = new Set<number>();
   const res: BillMatch[] = bills.map((outflow) => ({ outflow }));
-  const own = new Map(seen.map((s) => [s.id, ownTransfer(b, s.txn)]));
+  const own = new Map(seen.map((s) => [s.id, ownTransfer(b, s.txn)?.account]));
 
   // 1. Single payments, best fit first: the name, then the amount, then the date, then its own account.
   const pairs: { i: number; s: Seen; score: number }[] = [];
@@ -240,6 +229,6 @@ export function otherMoves(b: Budget, accountId: string, from: ISODate, to: ISOD
       if (!payday1 && t.amount > 0 && sameAmount(t.amount, deposit) && diffDays(payday, t.date) >= -1 && diffDays(payday, t.date) <= 3) { payday1 = true; return false; }
       return true;
     })
-    .map((txn) => ({ txn, other: ownTransfer(b, txn) }))
+    .map((txn) => ({ txn, other: ownTransfer(b, txn)?.account }))
     .reverse();
 }
