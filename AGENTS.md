@@ -81,7 +81,10 @@ questions are answered there):
    the tracker (each bill paid or to come, and the bank transaction that paid it), what Bill check asks, envelopes and what counted against them (each transfer with the purchase it was matched to), transfers the card asks about, next pays and any
    Steady buffer, and the last 14 days of transactions with what each counted as. It loads the budget the
    way the app does (`state/upgrade.ts`). The first line says when that copy was saved: if it's older than
-   the owner's screenshot, the browser has changes the repo hasn't got yet.
+   the owner's screenshot, the browser has changes the repo hasn't got yet. A bank-synced balance already has
+   pending transactions taken out (they're marked `[pending]`), so don't take them off again. For "is X counted?"
+   questions, add up the tracker rows yourself: "To come" includes a held debt's payment (Gem) until the bank
+   shows it gone.
 3. `npm run dev`, then `npm run screenshot -- '#/accounts' --today 2026-11-22` to see the page itself, in New
    Zealand time. (A browser left on UTC is on yesterday's date until 1pm in NZ, which changes what's shown.)
    The owner uses a phone in dark mode, so for a layout change look as they do: `--width 400 --dark`. On
@@ -154,6 +157,12 @@ npm run live -- parts-tip --wait   # after merging: waits until the published ap
 ```
 
 Run one test file with `npx vitest run src/engine/periods.test.ts`. Test budgets and helpers are in `src/testing/fixtures.ts`.
+
+## Other sessions change `main` too
+
+Several chats work on this repo at once and merge often. Before you edit a shared file (`ui/`, `engine/`), and
+again before you push, run `git fetch origin main && git log --oneline HEAD..origin/main --stat`. If main has
+moved, merge it in (`git merge origin/main`) and look at the files you both touched, rather than overwriting them.
 
 ## Making a change live
 
