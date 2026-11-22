@@ -25,8 +25,8 @@ export interface Account {
   note?: string;
   archived?: boolean;
   /**
-   * When balancing changes what payday sends here, round it to a multiple of this (e.g. 5000 = $50):
-   * trims round down, top-ups round up. 0 or unset = off.
+   * Round what payday sends here to a multiple of this (100 = whole dollars, 5000 = $50) when balancing
+   * changes it (trims round down, top-ups round up) and for a Steady amount (rounds up). 0 or unset = off.
    */
   round?: Cents;
   /** The end of its account number, as in its CSV exports, so an export is matched to it. */
