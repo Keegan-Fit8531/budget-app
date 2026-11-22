@@ -167,19 +167,16 @@ button.list-row:hover, a.list-row:hover { background: color-mix(in srgb, var(--s
 .bar.moving > div { transition: width 0.25s linear; }
 .bar .target { position: absolute; top: -4px; width: 2px; height: 16px; background: var(--ink); border-radius: 1px; }
 /* A bar made of labelled parts (paid / still to come / spare), with a 2px gap between them */
-.parts { display: flex; height: 8px; border-radius: var(--r-pill); overflow: hidden; background: var(--soft); gap: 2px; }
-.parts > div { min-width: 2px; }
-/* PartsBar: the same 8px bar, but each part is a button with a taller tap area (the padding). */
-.parts-bar { display: flex; gap: 2px; margin-block: -8px; }
-.parts-bar > button { flex-basis: 0; min-width: 4px; padding: 8px 0; border: 0; background: none; cursor: pointer; }
+/* PartsBar: the same 8px bar (6px thin); the padding is the area you point or tap in (the part is picked by how far along). */
+.parts-bar { position: relative; z-index: 1; display: flex; gap: 2px; padding-block: 12px; margin-block: -12px; touch-action: pan-y; cursor: pointer; }
+.parts-bar > button { flex-basis: 0; min-width: 4px; padding: 0; border: 0; background: none; cursor: inherit; }
 .parts-bar > button > span { display: block; height: 8px; transition: opacity .15s; }
-.parts-bar > button:first-child > span { border-radius: var(--r-pill) 0 0 var(--r-pill); }
-.parts-bar > button:last-child > span { border-radius: 0 var(--r-pill) var(--r-pill) 0; }
-.parts-bar > button:only-child > span { border-radius: var(--r-pill); }
+.parts-bar.thin > button > span { height: 6px; }
+.parts-bar > button:first-of-type > span { border-top-left-radius: var(--r-pill); border-bottom-left-radius: var(--r-pill); }
+.parts-bar > button:last-of-type > span { border-top-right-radius: var(--r-pill); border-bottom-right-radius: var(--r-pill); }
 .parts-bar.dim > button:not(.on) > span { opacity: .35; }
 .parts-bar > button:focus-visible { outline: 2px solid var(--brand-2); outline-offset: 2px; border-radius: var(--r-pill); }
-.parts-caption { display: flex; align-items: center; gap: var(--s-2); }
-.parts-caption b { margin-left: auto; }
+.parts-tip { position: absolute; bottom: calc(100% - 6px); white-space: nowrap; z-index: 5; display: inline-flex; align-items: center; gap: 6px; }
 .key { display: flex; flex-wrap: wrap; gap: var(--s-1) var(--s-4); font-size: var(--fs-sm); color: var(--muted); }
 .key > span { display: inline-flex; align-items: center; gap: 6px; }
 .key .dot { width: 8px; height: 8px; border-radius: 2px; }

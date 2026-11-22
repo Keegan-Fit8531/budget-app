@@ -7,7 +7,7 @@ the budget's rules (it can use `core/` helpers for dates, money and colours).
 - `components.tsx`: the shared building blocks: `PageHead` (page header), things that open (`Disclosure`, `Section`, `Collapse`, `DetailsToggle`, `FlatDetails`), `Modal` (Escape closes the top one only), `Dot` and `AccIcon` (colour marks), `Chevron`, `ColorPicker`, Reorder (`ReorderToggle`, `MoveButtons`, `useFlip`), `CardColumns`, `ShortList`, and `ago` ("5 min ago").
 - `Icon.tsx`: `Icon`, the app's line icons by name.
 - `Donut.tsx`: charts: `Donut`, `Legend` (largest first), `BarList`.
-- `PartsBar.tsx`: `PartsBar`, one bar split into parts (paid, to come, put aside, spare); hover or tap a part to see its name and amount underneath. Use it for any bar of amounts, so every part can be looked at.
+- `PartsBar.tsx`: `PartsBar`, one bar split into parts (paid, to come, put aside, spare; `thin` for envelopes). Point, tap or slide along it and a floating tip shows the part's name and amount; the part is picked from how far along the bar you are (12px above and below count too), so thin parts are easy to hit and nothing on the card moves. Use it for any bar of amounts.
 - `LogoMark.tsx`: the Paydays logo.
 - `ErrorBoundary.tsx`: shows a message instead of a blank screen when a page fails (`isStaleBuild` spots an old cached build and offers a reload).
 - `toast.ts`: `showToast`, a short note at the bottom of the screen that goes by itself.
@@ -15,6 +15,7 @@ the budget's rules (it can use `core/` helpers for dates, money and colours).
 - `styles/`: the stylesheet: tokens, base, shared component classes and page classes (its own README).
 
 ## Watch out for
+- `PartsBar`: a tap also focuses the part's button, so only keyboard focus (`:focus-visible`) may set or clear the tip, or a tap next to it hides it again. Test touch in Playwright with `newContext({ hasTouch: true, isMobile: true })` and `page.touchscreen.tap(x, y)`; `page.mouse.move` for hover.
 - Use the classes and tokens in `styles/` and the pieces here; don't add one-off colours, sizes or spacing in a page.
 - Brand colour is for the sidebar, primary buttons and payday only. Green and red only ever mean "fine" and "short". An account's colour is only a small mark beside its name, never a whole card.
 - Each screen shows the figures you came for, with the working one click away (a `Disclosure` or a pop-up).
