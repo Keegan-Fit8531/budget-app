@@ -50,6 +50,7 @@ before dev/build), `.github/workflows/pages.yml` (deploys `main` to GitHub Pages
 | What payday sends each account (fixed / exact / steady); "allocated this pay" (what it sent this pay: `depositFor`) | `engine/balances/` (README lists which file does what) |
 | A pay's plan: totals, leftover, what each account needs | `engine/plan.ts` → `planFor()` |
 | Automatic balancing, "Balance this pay"; an odd one-pay amount (a Steady account sending more than usual for one pay: `budget.autoBalanced[pay]` says what set it and why) | `engine/rebalance.ts` |
+| Rounding what payday sends (whole dollars, $50): `Account.round`, set in Deposits | balancing: `engine/rebalance.ts` → `step`; Steady: `engine/balances/steady.ts` → `steadyStep` |
 | Planner page, Optimise the leftover | `features/planner/` |
 | Accounts page, Deposits pop-up, balances, account history | `features/accounts/` |
 | Debts: schedules, Gem Visa rules, payments, advice | `features/debts/logic/` (UI in `features/debts/`) |
@@ -98,7 +99,7 @@ questions are answered there):
 4. To try what a change or an answer would do to the real budget without the app, see `scripts/README.md` →
    **Trying a change on the real budget**.
 
-That output is private: never put it in commits, PRs, code or fixtures. `testing/fixtures.ts` →
+That output is private: never put it in commits, PRs, code, fixtures or notes, and a test that copies a real case uses made-up amounts (a $400 rent, not the real one). `testing/fixtures.ts` →
 `foodGasBudget()` is a made-up budget shaped like the real Food and gas account, for tests.
 
 ## Rules the code relies on
@@ -159,7 +160,7 @@ npm run screenshot -- '#/accounts' --today 2026-11-22   # a page with the real b
 npm run live -- parts-tip --wait   # after merging: waits until the published app has that text
 ```
 
-Run one test file with `npx vitest run src/engine/periods.test.ts`. Test budgets and helpers are in `src/testing/fixtures.ts`.
+Run one test file with `npx vitest run src/engine/periods.test.ts`. To check a new test catches the bug, run it with the fix set aside: `git stash push <file>`, run, `git stash pop`. Test budgets and helpers are in `src/testing/fixtures.ts`.
 
 ## Other sessions change `main` too
 

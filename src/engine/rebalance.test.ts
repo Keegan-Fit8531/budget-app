@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { periodContaining } from './periods';
+import { periodContaining, shiftPeriod } from './periods';
 import { autoBalance, balancedMode, balancePay } from './rebalance';
+import { depositFor } from './balances/deposits';
+import { estimateBalance } from './balances/estimate';
 import { budget } from '../testing/fixtures';
 
 describe('automatic balancing', () => {
@@ -90,10 +92,10 @@ describe('automatic balancing', () => {
 
 describe('putting leftover aside in a Steady account', () => {
   // Rent $400 every Friday, Steady, after the 20 Nov rent: the 18 Dec pay has 5 rents.
-  const rentBudget = (balance: number) => {
+  const rentBudget = (balance: number, round = 0) => {
     const b = budget();
     b.settings.autoBalance = true;
-    b.accounts.push({ id: 'rent', name: 'Rent', kind: 'bank', color: '#000', groupId: 'needs' });
+    b.accounts.push({ id: 'rent', name: 'Rent', kind: 'bank', color: '#000', groupId: 'needs', round });
     b.split.push({ accountId: 'rent', amount: 170000, mode: 'smooth' });
     b.items.push({ id: 'r', name: 'Rent', amount: 40000, frequency: 'weekly', start: '2026-01-09', accountId: 'rent' });
     b.balances = { rent: { amount: balance, asOf: '2026-11-20' } };
@@ -106,5 +108,17 @@ describe('putting leftover aside in a Steady account', () => {
 
   it('adds just what the buffer is short within the next year', () => {
     expect(rentBudget(152500).autoBalanced?.['2026-12-18']?.rent?.reason).toMatch(/aside for the next 5-week pay/);
+  });
+
+  it('an account set to whole dollars sends whole dollars every pay, and never goes below $0', () => {
+    for (const balance of [152500, 157500, 160000]) {
+      const b = rentBudget(balance, 100);
+      let p = periodContaining('2026-12-18', b.settings);
+      for (let i = 0; i < 24; i++) {
+        expect(depositFor(b, 'rent', p, '2026-11-22') % 100).toBe(0);
+        expect(estimateBalance(b, 'rent', p.end, '2026-11-22')).toBeGreaterThanOrEqual(0);
+        p = shiftPeriod(p, 1, b.settings);
+      }
+    }
   });
 });

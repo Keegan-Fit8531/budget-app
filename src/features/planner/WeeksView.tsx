@@ -5,7 +5,7 @@ import type { Period } from '../../engine/periods';
 import type { PeriodPlan } from '../../engine/plan';
 import { accountMode } from '../../engine/balances/outflows';
 import { balanceOn } from '../../engine/balances/estimate';
-import { averageNeed } from '../../engine/plan';
+import { usualSteady } from '../../engine/balances/steady';
 import { isSetAside } from '../../engine/setAside';
 import { itemDates } from '../../engine/occurrences';
 import { shiftPeriod } from '../../engine/periods';
@@ -102,7 +102,7 @@ export function WeeksView({ budget, period, plan }: { budget: Budget; period: Pe
         : diff >= 0
           ? { text: `${cash(diff)} spare`, tone: 'pos' }
           : { text: `${cash(-diff)} short`, tone: 'neg' };
-    const usual = averageNeed(budget, acc.id);
+    const usual = usualSteady(budget, acc.id);
     const how = `${count} ${day}s × (${what}) = ${cash(ap.need)} this pay. ${mode === 'smooth'
       ? ap.funded === usual ? `Level amount ${cash(ap.funded)} each pay.` : `Sends ${cash(ap.funded)} this pay (usually ${cash(usual)})${shortBefore ? `, including ${cash(shortBefore)} ${prevPay} left short` : ap.funded > usual ? ', leaving enough for the next 5-week pay' : ''}.`
       : mode === 'fixed' ? `Sending ${cash(ap.funded)}.` : ''}`;

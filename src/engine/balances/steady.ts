@@ -34,8 +34,14 @@ export function window(b: Budget, accountId: string, pay: Period, count: number)
   return { slots, out: fundedOut(b, accountId, pay.start, addDays(slots[count].date, -1)) };
 }
 
-/** The usual steady amount: the long-run average, to the cent (no dollar rounding). */
-export const usualSteady = (b: Budget, accountId: string) => averageNeed(b, accountId);
+/** The account's rounding (`Account.round`, e.g. 100 = whole dollars), or 0 for exact cents. */
+export const steadyStep = (b: Budget, accountId: string): Cents => b.accounts.find((a) => a.id === accountId)?.round || 0;
+
+/** Rounds a steady amount: up to the account's rounding when it has one (so the buffer never comes up short), else to the cent. */
+const roundSteady = (c: Cents, step: Cents): Cents => (step ? Math.ceil(Math.round(c) / step) * step : Math.round(c));
+
+/** The usual steady amount: the long-run average, to the cent, or rounded up to the account's rounding. */
+export const usualSteady = (b: Budget, accountId: string) => roundSteady(averageNeed(b, accountId), steadyStep(b, accountId));
 
 /**
  * Core of the steady amount, worked out at one payday (slots[0]) from `balance` the day before:
@@ -47,7 +53,7 @@ export const usualSteady = (b: Budget, accountId: string) => averageNeed(b, acco
  * `slots` are this pay and the next 24 (later one-pay adjustments count for their pay); `out` is
  * every payment from this payday up to the 25th.
  */
-function steadyAt(slots: PaySlot[], out: Outflow[], usual: Cents, balance: Cents, level = false): Cents {
+function steadyAt(slots: PaySlot[], out: Outflow[], usual: Cents, balance: Cents, step: Cents, level = false): Cents {
   const pays = slots.slice(0, HORIZON).map((x, i) => (i === 0 ? { date: x.date } : x));
   let need = 0, cum = 0, n = 0, fixedSum = 0, free = 0;
   for (const o of out) {
@@ -65,8 +71,9 @@ function steadyAt(slots: PaySlot[], out: Outflow[], usual: Cents, balance: Cents
   }
   const extra = low === Infinity ? 0 : Math.max(0, low - cushion);
   const steady = Math.max(need, usual - extra / Math.max(1, pays.filter((x) => x.fixed === undefined).length));
-  // Nearest cent: dollar rounding left a few cents of drift in the buffer each pay.
-  return Math.round(steady);
+  // Nearest cent unless the account rounds (Rent to whole dollars): then up, and the few cents over
+  // each pay build up as extra, which later pays give back.
+  return roundSteady(steady, step);
 }
 
 /** Payments in `out` from `from` up to (not including) `to`, using a moving index into the sorted list. */
@@ -140,7 +147,7 @@ function steadyRun(b: Budget, accountId: string, today: ISODate, useBalance = tr
     for (let i = 0; i < count; i++) {
       const date = slots[i].date;
       const ahead = between(out, date, slots[i + HORIZON].date, idx); // this pay and the next 23
-      const amt = steadyAt(slots.slice(i, i + HORIZON + 1), ahead, usual, bal);
+      const amt = steadyAt(slots.slice(i, i + HORIZON + 1), ahead, usual, bal, steadyStep(b, accountId));
       amounts.set(date, amt);
       const sent = slots[i].fixed ?? amt;
       bal += sent + pausedAside(b, accountId, date, amt, sent);
@@ -162,7 +169,7 @@ export function levelAmount(b: Budget, accountId: string, p: Period, today: ISOD
   const bal = balanceOn(b, accountId, addDays(p.start, -1), today);
   if (bal === undefined) return undefined;
   const { slots, out } = window(b, accountId, p, LEVEL_PAYS);
-  return steadyAt(slots, out, usualSteady(b, accountId), bal, true);
+  return steadyAt(slots, out, usualSteady(b, accountId), bal, steadyStep(b, accountId), true);
 }
 
 /** The steady amount a pay sends (before any one-pay adjustment), worked out from what's left by then. */

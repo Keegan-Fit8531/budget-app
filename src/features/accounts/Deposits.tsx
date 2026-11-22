@@ -6,7 +6,7 @@ import { ItemModal } from '../../shared/ItemModal';
 import { fmtShort, ordinal, todayISO } from '../../core/dates';
 import { depositFor } from '../../engine/balances/deposits';
 import { exactNeed, modeOf } from '../../engine/balances/outflows';
-import { smoothAmount } from '../../engine/balances/steady';
+import { smoothAmount, usualSteady } from '../../engine/balances/steady';
 import { topsUp } from '../../engine/balances/topUps';
 import { debtPerPay } from '../debts/logic/amounts';
 import { averageNeed, planFor } from '../../engine/plan';
@@ -128,6 +128,7 @@ function AccountSection({ account: a, open, bare, onToggle, periodNeed, periodSe
   useEffect(() => setSplitText(centsToInput(split)), [split]);
   const items = budget.items.filter((i) => i.accountId === a.id).sort((x, y) => x.name.localeCompare(y.name));
   const avgNeed = averageNeed(budget, a.id);
+  const usual = usualSteady(budget, a.id); // Steady's usual amount (rounded up if the account rounds)
   const today = todayISO();
   // Money put aside here (a WOF, tyres) stays in the account; the bills are what really comes out.
   const bills = items.filter((i) => !isSetAside(i) && !isEnvelope(i));
@@ -270,9 +271,9 @@ function AccountSection({ account: a, open, bare, onToggle, periodNeed, periodSe
                 <div className="tip">
                   <Icon name="bulb" />
                   <span>
-                    {steady === avgNeed
+                    {steady === usual
                       ? <>Sends <b>{cash(steady)}</b> every payday.</>
-                      : <>Sends <b>{cash(steady)}</b> next payday, then usually <b>{cash(avgNeed)}</b>. {steady > avgNeed ? 'The extra covers earlier transfers and leaves enough for the next 5-week pay, so later pays stay level.' : 'A little less while there\u2019s extra in the account.'}</>}
+                      : <>Sends <b>{cash(steady)}</b> next payday, then usually <b>{cash(usual)}</b>. {steady > usual ? 'The extra covers earlier transfers and leaves enough for the next 5-week pay, so later pays stay level.' : 'A little less while there\u2019s extra in the account.'}</>}
                     {' '}4-week periods leave a little over that covers the 5th week, so the account never goes below $0.
                     {hasBalance
                       ? ' Worked out from the balance in Accounts, and it updates when you change it.'
