@@ -21,7 +21,7 @@ rundown and pressed Confirm.
 - `types.ts`: the reader's form: `Extraction` and its parts (`RawPayslip`, `RawStatement`, `RawAfterpay`, `RawKiwiSaver`, `RawBalances`), `DocKind`, `Provider`, `ReadContext`.
 - `errors.ts`: every way a read can fail, each with its own message (`ReaderError`, `ReaderErrorKind`, `classifyHttpError`, `blockedError`, `errorMessage`); `DEVICE_FALLBACK` lists the ones where reading on the device is offered.
 - `local.ts`: the on-device reader (`readOnDevice`, `toExtraction`): fills in the same form, so it goes through the same checks.
-- `documents.ts`: on-device reading itself: PDF text or text recognised in a photo (Tesseract OCR, copied to `public/ocr/` by `scripts/copy-ocr.mjs`), `classifyText`, `parseStatementText`, `parseDate`, `matchDebt`, and recording a payslip or statement (`recordPayslip`, `recordStatement`).
+- `documents.ts`: on-device reading itself: PDF text or text recognised in a photo (Tesseract OCR, copied to `public/ocr/` by `scripts/copy-ocr.mjs`), `classifyText`, `parseStatementText`, `parseDate`, `matchDebt`, and recording a payslip or statement (`recordPayslip`; `recordStatement` is only used by tests: statements go through `apply.ts` → `applyStatement`).
 - `payslip.ts`: the `Payslip` type and reading the one known payslip layout (`parsePayslipText`, `readPdfText`, `readPayslipPdf`).
 - `sortShops.ts`: asking Gemini to place shops the rules left in Other (only shop names and one example each are sent): `sortShops`, `sortInput`, `parseSorted`, `allTxns`.
 - `apply.ts`: making the changes: `applyProposal`, `applyStatement`, `applyKiwiSaver`, `windBack` (a debt as it was on a date), `preview` and `fingerprint` (to tell whether the preview changed before Confirm).

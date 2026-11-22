@@ -77,7 +77,8 @@ questions are answered there):
 1. Get the latest copy. The app saves to **`main`** of `budget-data`, so if that repo is checked out next to
    this one, run `git -C ../budget-data checkout main && git -C ../budget-data pull` (a session branch there is
    usually older). Its README says how the owner's accounts are used (which one is the EFTPOS card, what each
-   holds) and how to query `budget.json` without reading all of it.
+   holds) and how to query `budget.json` without reading all of it. Every save is a commit, so to see what an
+   upload or tap changed, compare saves: `git -C ../budget-data show <commit>:budget.json | jq '.debts[] | select(.id=="gem")'`.
 2. `npm run inspect` (every account) or `npm run inspect -- food --today 2026-11-22` (one account in detail):
    the tracker (each bill paid or to come, and the bank transaction that paid it), what Bill check asks, envelopes and what counted against them (each transfer with the purchase it was matched to), transfers the card asks about, next pays and any
    Steady buffer, and the last 14 days of transactions with what each counted as. It loads the budget the
@@ -146,7 +147,7 @@ The folder rules above (file size, no React in `core/`/`engine/`/`logic/`, a gen
 ## Commands
 
 ```bash
-npm install
+npm install        # a fresh session has no node_modules: tsc then fails with "Cannot find module 'react'"
 npm run dev        # http://localhost:5173
 npm test           # all tests (vitest); tests sit next to the code as *.test.ts
 npx tsc -b         # type-check
@@ -169,6 +170,7 @@ moved, merge it in (`git merge origin/main`) and look at the files you both touc
 ## Making a change live
 
 The owner asks for changes "live" (or "push live"): push the session branch, open a PR into `main` and merge it.
+PRs have no CI (the workflow only runs on `main`), so run the checks in **Before you finish a change** yourself first.
 Merging to `main` runs `.github/workflows/pages.yml`, which publishes to GitHub Pages in about 1–2 minutes. Two
 merges close together cancel the first run, which is fine: the second builds everything. To check it's live,
 run `npm run live -- <a CSS class you added, or a string from a .ts file> --wait` (in the background: it takes 1–2
