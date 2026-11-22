@@ -4,7 +4,7 @@ Accounts (`#/accounts`): what's in each bank account, what it's for before next 
 heading; and the Deposits pop-up (`#/accounts/deposits/<id>`) that sets what payday sends each account.
 
 ## Files
-- `AccountsPage.tsx`: the page: an account card per account (icon, name, payday amount, where the balance came from via `shared/SyncPill.tsx`, the month tracker), typing in a balance, Reorder, and the + for a one-off cost.
+- `AccountsPage.tsx`: the page: the total across accounts vs what this pay allocated them, and an account card per account (icon, name, next payday's amount, where the balance came from via `shared/SyncPill.tsx`, the balance beside what this pay allocated it (`depositFor`), the month tracker), typing in a balance, Reorder, and the + for a one-off cost.
 - `Deposits.tsx`: the Deposits pop-up: each account's payday amount (`shared/PaydayControl.tsx`) and its costs (`shared/ItemModal.tsx`), by group (`DepositsModal`, `AccountSection`); `AccountPayday` is one account's version, used as a tab in the account's pop-up.
 - `AccountEdit.tsx`: an account's pop-up with tabs (`AccountTab`: `balance`, `cost` (a one-off cost), `payday`): `AccountEditModal`. Also opened from the Planner's cards.
 - `AccountHistory.tsx`: one-off costs (`OneOffCostModal`, `OneOffCostForm`: money spent outside the plan, like a tyre puncture) and the account's history list.
