@@ -15,7 +15,7 @@ the budget's rules (it can use `core/` helpers for dates, money and colours).
 - `styles/`: the stylesheet: tokens, base, shared component classes and page classes (its own README).
 
 ## Watch out for
-- `PartsBar`: a tap also focuses the part's button, so only keyboard focus (`:focus-visible`) may set or clear the tip, or a tap next to it hides it again. Test touch in Playwright with `newContext({ hasTouch: true, isMobile: true })` and `page.touchscreen.tap(x, y)`; `page.mouse.move` for hover.
+- `PartsBar`: a tap also focuses the part's button, so only keyboard focus (`:focus-visible`) may set or clear the tip, or a tap next to it hides it again. Picture a tip with `npm run screenshot -- … --tap '<part selector>'` (or `--hover`); for a hand-written Playwright check, touch needs `newContext({ hasTouch: true })` and `page.touchscreen.tap(x, y)`.
 - Use the classes and tokens in `styles/` and the pieces here; don't add one-off colours, sizes or spacing in a page.
 - Brand colour is for the sidebar, primary buttons and payday only. Green and red only ever mean "fine" and "short". An account's colour is only a small mark beside its name, never a whole card.
 - Each screen shows the figures you came for, with the working one click away (a `Disclosure` or a pop-up).

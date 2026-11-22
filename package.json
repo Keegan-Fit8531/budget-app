@@ -14,7 +14,8 @@
     "test": "vitest run",
     "uses": "node scripts/uses.mjs",
     "inspect": "vite-node scripts/inspect.ts --",
-    "screenshot": "node scripts/screenshot.mjs"
+    "screenshot": "node scripts/screenshot.mjs",
+    "live": "node scripts/live.mjs"
   },
   "dependencies": {
     "@tesseract.js-data/eng": "^1.0.0",
