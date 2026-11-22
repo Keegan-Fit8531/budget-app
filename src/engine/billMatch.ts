@@ -25,8 +25,11 @@ export interface BillMatch {
   shared?: boolean;
 }
 
-/** How a bill-check answer is kept in `budget.billChecks`. */
-export const checkKey = (kind: 'move' | 'paid' | 'day' | 'amount', id: string, v: string | number): string => `${kind}|${id}|${v}`;
+/**
+ * How a bill-check answer is kept in `budget.billChecks`. 'held': you've answered whether a debt payment
+ * seen from another account paid the one held here; 'unpaid': it didn't, so it's still to send from here.
+ */
+export const checkKey = (kind: 'move' | 'paid' | 'day' | 'amount' | 'held' | 'unpaid', id: string, v: string | number): string => `${kind}|${id}|${v}`;
 
 /** The cost or debt an outflow is for. */
 export const outflowId = (o: Outflow): string => o.itemId ?? o.debtId ?? o.name;
@@ -129,6 +132,8 @@ export function matchBills(b: Budget, accountId: string, from: ISODate, to: ISOD
     for (const s of seen) {
       const t = s.txn;
       if (t.amount >= 0 || own.get(s.id)) continue;
+      // You said a payment from another account wasn't this one (Gem paid extra from Weekly allowance).
+      if (s.accountId !== accountId && o.debtId && b.billChecks?.[checkKey('unpaid', o.debtId, o.date)]) continue;
       const gap = diffDays(o.date, t.date);
       if (gap < -BEFORE || gap > AFTER) continue;
       const nm = nameMatch(o.name, t);

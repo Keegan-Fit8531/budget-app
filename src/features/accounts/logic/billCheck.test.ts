@@ -2,8 +2,22 @@ import { describe, expect, it } from 'vitest';
 import { billChecks } from './billCheck';
 import { billTracker } from '../../../engine/balances/billTracker';
 import { billTxns, billsBudget as bills } from '../../../testing/fixtures';
+import type { Budget } from '../../../core/types';
 
 const { out, toWeekly } = billTxns;
+
+/** Misc bills holding Gem Visa's statement-day payment, with $200 paid to Gem from Weekly allowance the day before. */
+function gemHeld(): Budget {
+  const b = bills([], { weekly: [out('2026-11-20', 20000, 'Gem Visa Fitzgerald K 000000601073')] });
+  b.accounts.push({ id: 'gem', name: 'Gem Visa', kind: 'external', color: '#000', groupId: 'debt' });
+  b.split.push({ accountId: 'gem', amount: 0, mode: 'exact' });
+  b.debts = [{
+    id: 'gem', name: 'Gem Visa', kind: 'card', rules: 'gem', accountId: 'gem', holdAccountId: 'bills', statementDay: 21,
+    plans: [{ id: 'p1', name: 'TV', type: 'interest-free', original: 100000, remaining: 50400, asOf: '2026-10-01', purchaseDate: '2026-10-01', months: 6 }],
+    balance: { amount: 50400, asOf: '2026-11-18' },
+  }];
+  return b;
+}
 
 describe('bill check', () => {
   const skinny = (d: string) => out(d, 8300, 'Skinny Fixed Card number: 4835');
@@ -41,6 +55,30 @@ describe('bill check', () => {
   it('a bill on another card not made up yet: ask to move the money', () => {
     const b = bills([{ name: 'Netflix', amount: 1800, start: '2026-01-20' }], { weekly: [out('2026-11-21', 5397, 'Netflix New Card number: 4835')] });
     expect(billChecks(b, '2026-11-22').map((c) => c.title)).toEqual(['Move $18 to Weekly allowance']);
+  });
+
+  it('a held debt payment the bank shows paid from another account: ask if that was it', () => {
+    const b = gemHeld();
+    const gem = () => billTracker(b, 'bills', '2026-11-22').rows.filter((r) => r.debtId === 'gem');
+    expect(gem().length).toBeGreaterThan(0);
+    expect(gem().every((r) => r.status === 'paid')).toBe(true);
+    const held = billChecks(b, '2026-11-22').find((c) => c.kind === 'held')!;
+    expect(held.title).toMatch(/^Did Weekly allowance pay Gem Visa's \$/);
+    expect(held.key).toBe('held|gem|2026-11-21');
+
+    // "Yes, that paid it": its money is still in Misc bills, so suggest moving it back.
+    const yes = structuredClone(b);
+    yes.billChecks = { [held.key]: '2026-11-22' };
+    expect(billChecks(yes, '2026-11-22').map((c) => c.kind)).toEqual(['move']);
+    expect(billTracker(yes, 'bills', '2026-11-22').toMove.length).toBe(gem().length);
+
+    // "Still to send from Misc bills": it's to come again, and isn't asked again.
+    const still = structuredClone(b);
+    held.apply!.run(still);
+    still.billChecks![held.key] = '2026-11-22';
+    const rows = billTracker(still, 'bills', '2026-11-22').rows.filter((r) => r.debtId === 'gem');
+    expect(rows.every((r) => r.status === 'due' && r.late)).toBe(true);
+    expect(billChecks(still, '2026-11-22')).toEqual([]);
   });
 
   it('no suggestions for accounts the bank connection does not fill', () => {

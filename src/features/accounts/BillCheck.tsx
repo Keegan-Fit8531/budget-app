@@ -11,7 +11,7 @@ import { billChecks, type BillCheck, type CheckKind } from './logic/billCheck';
 // amount, a bill paid on another card to make up for, one not seen at all), each with a change to make
 // or a "no". Opens by itself when a sync turns up something you haven't been shown.
 
-const ICON: Record<CheckKind, string> = { day: 'calendar', amount: 'receipt', move: 'transfer', late: 'alert' };
+const ICON: Record<CheckKind, string> = { day: 'calendar', amount: 'receipt', move: 'transfer', late: 'alert', held: 'card' };
 
 /** Check keys already shown in a pop-up on this device, so it only opens by itself for new ones. */
 const SEEN_KEY = 'paydays.billcheck.seen';

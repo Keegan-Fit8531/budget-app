@@ -126,9 +126,11 @@ export function billTracker(b: Budget, accountId: string, today: ISODate = today
   // Without an entered balance: assume this pay's deposit minus what's been paid so far.
   const balance = entered ?? deposit - paid;
   // Paid on another account's card (Netflix on the Weekly allowance card): its money is still here until you move it.
+  // A debt payment only once you've said that payment from another account was it (the bill check's 'held').
   const toMove: ToMove[] = rows
-    .filter((r) => r.match?.how === 'card' && !r.match.cover && r.match.outflow.itemId && r.match.from
-      && !b.billChecks?.[checkKey('move', r.match.outflow.itemId, r.date)])
+    .filter((r) => r.match?.how === 'card' && !r.match.cover && r.match.from
+      && (r.match.outflow.itemId || (r.debtId && b.billChecks?.[checkKey('held', r.debtId, r.date)]))
+      && !b.billChecks?.[checkKey('move', outflowId(r), r.date)])
     .map((r) => ({ row: r, to: r.match!.from!, amount: Math.min(r.amount, -r.match!.txn!.amount) }));
   const owed = toMove.reduce((t, m) => t + m.amount, 0);
   let left = balance - owed;
