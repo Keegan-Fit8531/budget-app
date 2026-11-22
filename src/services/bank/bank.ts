@@ -4,11 +4,12 @@ import { periodContaining } from '../../engine/periods';
 import { recordGoalMoves, setGoalBankBalance, settleGoalMoves, type SeenMove } from './goalMoves';
 import { setBalance } from '../../features/accounts/logic/history';
 import { isKiwiSaver, recordReading } from '../../features/savings/logic/kiwisaver';
-import { applyProposal } from '../reader/apply';
+import { applyProposal, applyStatement } from '../reader/apply';
 import { newTransactions } from '../reader/check/transactions';
 import type { BankConfig } from './bankConfig';
 import { nextColor } from '../../core/colors';
 import { debtLinked, debtNamed, recordCardPayments, type SeenPayment } from './cardPayments';
+import { syncCardPlans } from '../../features/debts/logic/cardPlans';
 import type { Budget, Txn } from '../../core/types';
 
 // ---------------------------------------------------------------------------------------------
@@ -170,10 +171,27 @@ export function applyBank(b: Budget, data: BankData, links: Record<string, strin
     // banking app shows it); a card's is what's owed.
     const shown = type === 'account' && typeof acc.available === 'number' ? acc.available : acc.balance;
     const cents = live ? Math.round(shown! * 100) : 0;
-    // Banks show what's owed on a card as a negative balance.
-    const balance = live && type === 'debt' ? { amount: Math.abs(cents), asOf: today } : undefined;
-    if (add.length || (ending && !target.ending) || balance) {
-      applyProposal(b, { kind: 'transactions', target: { type, id }, ...(ending ? { ending } : {}), add, ...(balance ? { balance } : {}), history: [], eventId: `bank-${acc.id}-${today}` }, today);
+    // What hasn't settled yet replaces what was pending last time (once settled, it's in the transactions).
+    const pend: Txn[] | undefined = data.pending?.filter((t) => t.account === acc.id && t.amount)
+      .map((t) => ({ date: t.date, description: (t.description ?? '').replace(/\s{2,}/g, ' ').trim() || 'Pending', amount: Math.round(t.amount * 100), ...(t.merchant ? { merchant: t.merchant } : {}) }));
+    if (type === 'debt') {
+      const debt = target as NonNullable<Budget['debts']>[number];
+      if (pend) { if (pend.length) debt.pending = pend; else delete debt.pending; }
+      const event = `bank-${acc.id}-${today}`;
+      if (add.length || (ending && !debt.ending)) applyProposal(b, { kind: 'transactions', target: { type, id }, ...(ending ? { ending } : {}), add, history: [], eventId: event }, today);
+      if (live) {
+        // Banks show what's owed on a card as a negative balance, leaving out purchases still pending
+        // (Gem: a big purchase can stay pending for days). Those are owed too.
+        const owedNow = Math.max(0, Math.abs(cents) - (debt.pending ?? []).reduce((t, x) => t + x.amount, 0));
+        // Plans the card shows (purchases moved onto one, a big purchase still pending) that aren't plans here yet.
+        // Their full amounts are a guess, so what they add up to over the balance comes off them first.
+        const added = new Set(syncCardPlans(debt, today).map((p) => p.id));
+        const kept = debt.plans.filter((p) => !added.has(p.id)).map((p) => ({ planId: p.id, remaining: p.remaining }));
+        applyStatement(b, id, { balance: owedNow, date: today, plans: kept, newPlans: [] }, today);
+        debt.checkedOn = today;
+      }
+    } else if (add.length || (ending && !target.ending)) {
+      applyProposal(b, { kind: 'transactions', target: { type, id }, ...(ending ? { ending } : {}), add, history: [], eventId: `bank-${acc.id}-${today}` }, today);
     }
     const changed = live && type === 'account' && b.balances?.[id]?.amount !== cents;
     if (changed) setBalance(b, id, cents, today, `bank-${acc.id}-${today}`);
@@ -184,18 +202,10 @@ export function applyBank(b: Budget, data: BankData, links: Record<string, strin
       && today !== periodContaining(today, b.settings).start) {
       b.balances[id] = { ...b.balances[id], asOf: today };
     }
-    // What hasn't settled yet replaces what was pending last time (once settled, it's in the transactions).
-    if (data.pending) {
-      const pend: Txn[] = data.pending.filter((t) => t.account === acc.id && t.amount)
-        .map((t) => ({ date: t.date, description: (t.description ?? '').replace(/\s{2,}/g, ' ').trim() || 'Pending', amount: Math.round(t.amount * 100), ...(t.merchant ? { merchant: t.merchant } : {}) }));
-      if (type === 'debt') {
-        const debt = target as NonNullable<Budget['debts']>[number];
-        if (pend.length) debt.pending = pend; else delete debt.pending;
-      } else {
-        const all = { ...(b.pendingTransactions ?? {}) };
-        if (pend.length) all[id] = pend; else delete all[id];
-        b.pendingTransactions = all;
-      }
+    if (type === 'account' && pend) {
+      const all = { ...(b.pendingTransactions ?? {}) };
+      if (pend.length) all[id] = pend; else delete all[id];
+      b.pendingTransactions = all;
     }
     // Payments from this account to cards that can't be linked themselves (Gem Visa, Q Mastercard).
     // Settled and pending: a $50 Q Mastercard debit still counts once when ANZ shows it as pending.

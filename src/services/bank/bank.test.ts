@@ -82,7 +82,8 @@ describe('bank connection: balances and categories', () => {
     b.bankLinks = { c9: 'debt:gem' };
     expect(newCardLinks(b, [gem])).toEqual({});
     applyBank(b, { accounts: [gem], transactions: [], pending: [{ account: 'c9', date: '2026-11-16', description: 'NOEL LEEMING', amount: -99, merchant: null }] }, b.bankLinks, '2026-11-16');
-    expect(owed(debt(b, 'gem'))).toBe(290000);
+    // The pending purchase is owed too: the bank's balance leaves it out.
+    expect(owed(debt(b, 'gem'))).toBe(299900);
     expect(debt(b, 'gem').pending).toEqual([{ date: '2026-11-16', description: 'NOEL LEEMING', amount: -9900 }]);
     applyBank(b, { accounts: [gem], transactions: [], pending: [] }, b.bankLinks, '2026-11-17');
     expect(debt(b, 'gem').pending).toBeUndefined();

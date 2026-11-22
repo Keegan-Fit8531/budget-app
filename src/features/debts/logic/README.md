@@ -12,6 +12,8 @@ Plain functions for debts (no React). The engine uses these too: debt payments a
 - `advice.ts`: the recommended payment per debt for a pay, each by the lowest that keeps every plan on track (`debtAdvice`, `DebtAdvice`, `offRecommended`).
 - `held.ts`: a held debt's payment this pay (`heldNow`: paid and still to send from the hold account's tracker), `endHeld` ("No more this month": `heldPay` is what was paid, plus a `rest` key so the bill check stops asking) and `resumeHeld` (Undo); `setHeld` (set or take off one statement's `heldPay`, also used by the bill check).
 - `activity.ts`: what a card shows of its activity: `planProgress` (paid of total, months left), `monthsUntil`, `paymentRows` (each payment Pending or Received, matched to the card's own credit of the same amount within a week), `paydayHistory` (what payday sent it, pays already sent).
+- `cardPlans.ts`: Gem plans from the card's own transactions (bank connection): a purchase moved onto a plan ("PLAN TRANSFER OUT/IN" pair), or one of $250+ still pending, becomes a 6-month interest-free plan once (`syncCardPlans`, remembered in `Debt.cardPlans`; `cardPlanPurchases`). A pending purchase's plan is put back to its full amount.
+- `cardPlans.test.ts`: plans from transfers and pending purchases, added once.
 - `activity.test.ts`: plan progress, pending and received payments, a statement's amount to avoid interest.
 - `held.test.ts`: "No more this month" and its Undo.
 - `debts.test.ts`: schedules, payments gone out, recording a payment, Gem held until statement day, extra paid for one pay.

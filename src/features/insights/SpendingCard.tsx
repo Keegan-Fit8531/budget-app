@@ -35,7 +35,7 @@ export function SpendingCard() {
       const got = await sortShops(budget);
       const placed = Object.values(got).filter((c) => c !== 'other').length;
       update((b) => { b.shopGuesses = { ...(b.shopGuesses ?? {}), ...got }; return b; });
-      showToast(placed ? `Sorted ${placed} shop${placed === 1 ? '' : 's'} out of Other. Tap a category to change any.` : 'Gemini couldn’t place any more of them.');
+      showToast(placed ? `${placed} shop${placed === 1 ? '' : 's'} moved out of Other into ${placed === 1 ? 'a spending category' : 'spending categories'}. Tap a category to change any.` : 'Gemini couldn’t place any more of them.');
     } catch (e) {
       const m = e instanceof ReaderError ? errorMessage(e) : { title: 'Something went wrong.', body: 'Try again.' };
       showToast(`${m.title} ${m.body}`);

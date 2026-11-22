@@ -209,6 +209,8 @@ export interface Debt {
   transactions?: Txn[];
   /** Not settled yet on the card (bank connection only); replaced on every sync. */
   pending?: Txn[];
+  /** Plans already taken from the card's own transactions (purchase date|amount), so one paid off isn't added again. */
+  cardPlans?: string[];
   /**
    * Planned payments already counted as paid (they're automatic), oldest first. Kept so the pay a payment
    * came out of still shows it once it has gone: without this a pay's total would shrink, and its leftover

@@ -20,8 +20,10 @@ the device and never sent anywhere.
 - Pending rows (`budget.pendingTransactions`) can post days later under a different date; the synced balance already includes them.
 
 ## Watch out for
+- A new kind of account (a card just linked): look at what it really sent in `../budget-data` (its transactions and `pending`) before building on it. Gem's surprised: plan transfers, and a balance without pending purchases.
 - The server function (`akahu-sync` in the owner's Supabase project) isn't in this repo: read it with the Supabase tools (`get_edge_function`). It sends each account's `balance.current`/`available`, settled transactions and pending ones, nothing else. Akahu has no field for a card's minimum or amount to avoid interest (those come from statements).
 - After an app update, the hourly sync still waits an hour from the last one (`AUTO_EVERY_MS`, `lastSync` in this browser): something new in a sync only shows on the next one, or on tapping a sync pill.
+- A card's `balance.current` leaves out purchases still pending (Gem: a big one can stay pending for days), so a linked card's owed is that plus `Debt.pending`. After that, `features/debts/logic/cardPlans.ts` adds plans the card's transactions show, and the balance is applied as a statement with the plans already here trusted (what's over comes off the new ones first).
 - Akahu supports Gem Visa (Latitude) but not Q Mastercard (humm), so Q's balance still comes from statements and payments seen in ANZ.
 - Where a bank account's transactions go is `budget.bankLinks` (`'account:<id>'`, `'debt:<id>'`, `'saving:<id>'` or `'ignore'`). When each last came through is `budget.bankSeen`.
 - Pending (unsettled) transactions are replaced on every sync and never kept (`budget.pendingTransactions`).
