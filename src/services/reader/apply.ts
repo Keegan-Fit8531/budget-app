@@ -38,7 +38,9 @@ function applyProposalInner(b: Budget, p: Proposal, today: ISODate): Budget {
   if (p.kind === 'balances') { applyBalances(b, p); return b; }
   if (p.kind === 'statement') {
     if (p.newDebt) addDebt(b, p.debtId, p.newDebt.name);
-    applyStatement(b, p.debtId, p, today);
+    const debt = applyStatement(b, p.debtId, p, today);
+    // Kept from the newest statement only.
+    if (debt && p.due && p.due.date >= (debt.statementDue?.date ?? '')) debt.statementDue = { ...p.due };
     return b;
   }
   const debt = (b.debts ?? []).find((d) => d.id === p.debtId);

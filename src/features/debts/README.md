@@ -4,7 +4,9 @@ Debts (`#/debts`): cards (Gem Visa, Q Mastercard), buy-now-pay-later (Afterpay),
 repaid from salary) and people you owe. Each debt has payment plans; payday sends each debt an amount.
 
 ## Files
-- `DebtsPage.tsx`: the page: the total owed and the chart, then each debt's card (what's owed, what this pay sends against what's recommended, its plans, bank payments seen, transactions). `AllocationRow` shows one debt's recommended payment; `BankPayments` lists payments to the card seen in your bank.
+- `DebtsPage.tsx`: the page: the total owed and the chart, then each debt's card (what's owed, what this pay sends against what's recommended, its plans, payments, transactions, payday history). `AllocationRow` shows one debt's recommended payment.
+- `DebtPlans.tsx`: a card's Payment plans: all of them paid of their total, then each plan's paid of total, months left of its length, and next payment (`logic/activity.ts` → `planProgress`).
+- `DebtActivity.tsx`: `DebtPayments` (payments to the card: from which account, Pending until the card shows it, then Received), `DebtPaydayHistory` (what payday sent for it each pay), `StatementDueLine` (the latest statement's amount to avoid interest and minimum, beside the recommendation).
 - `DebtChart.tsx`: what's owed over the coming pays, by debt.
 - `DebtModal.tsx`: add or edit a debt (name, kind, card rules, payday account, hold account, statement day, limit, rate). Also opened from the Add button.
 - `DebtEditModal.tsx`: an existing debt's pop-up with tabs (`DebtTab`: balance, purchase, payment, details); `BalanceEditor` sets what's owed (plans adding up to more come down to it: `fitPlansToBalance`).
@@ -18,6 +20,7 @@ repaid from salary) and people you owe. Each debt has payment plans; payday send
 - Plan types (`PlanType` in `core/types.ts`): `interest-free` (clear by a deadline), `equal` (equal monthly payments), `afterpay` (fixed instalments), `balance` (a set amount each pay).
 - Some debts keep their payday money in another account until statement day (`Debt.holdAccountId`, e.g. Gem in Misc bills): sending it early would count as an extra payment. The Planner shows them under Debt.
 - A payroll debt (`Debt.payroll`, the student loan) isn't part of the payday split; payslips bring its balance down.
-- Payments to cards that can't be linked to the bank are picked up from your bank accounts (`services/bank/cardPayments.ts`).
+- Payments to cards are picked up from your bank accounts (`services/bank/cardPayments.ts`). A card linked to the bank itself (Gem Visa through Akahu) keeps the card's own balance: payments are only noted, and show Pending until the card has them. Its pending purchases are `Debt.pending`.
+- Akahu doesn't send a card's minimum or the amount to avoid interest: those come from an uploaded statement (`Debt.statementDue`).
 
 Keep this README current: update it in the same change when you add, remove, rename or repurpose a file here (see AGENTS.md).

@@ -1,6 +1,6 @@
 import { useEffect, useState, useSyncExternalStore } from 'react';
 import type { Budget } from '../../core/types';
-import { addGoalFor, applyBank, AUTO_EVERY_MS, BANK_URL, bankMessage, fetchBank, readBankConfig, sinceFor, suggestLink, writeBankConfig, type BankData, type BankResult } from './bank';
+import { addGoalFor, applyBank, AUTO_EVERY_MS, BANK_URL, bankMessage, fetchBank, newCardLinks, readBankConfig, sinceFor, suggestLink, writeBankConfig, type BankConfig, type BankData, type BankResult } from './bank';
 import { cash } from '../../core/money';
 import { csvTargets } from '../reader/check/transactions';
 import { newId, useBudget } from '../../state/store';
@@ -65,6 +65,9 @@ export function BankCard() {
     const next = { ...(readBankConfig() ?? conf), lastSync: new Date().toISOString() };
     writeBankConfig(next); setConf(next);
     setMsg({ ok: true, text: said(result) });
+    // A newly linked card or account: its older history too (the sync above only went back a week).
+    const fresh = Object.entries(links).some(([id, l]) => l.includes(':') && budget.bankLinks?.[id] !== l);
+    if (fresh) void backfill(update, conf);
     setData(null);
   }
 
@@ -138,10 +141,23 @@ export async function syncBank(update: (f: (b: Budget) => Budget) => void, force
   try {
     const d = await fetchBank(conf, sinceFor(conf), undefined, true);
     let result: BankResult[] = [];
-    update((b) => { result = applyBank(b, d, b.bankLinks ?? {}); return b; });
+    let linked: string[] = [];
+    update((b) => {
+      // A card just added in Akahu that's clearly one of your debts (Gem Visa) is linked by itself.
+      const add = newCardLinks(b, d.accounts);
+      linked = Object.values(add).map((l) => (b.debts ?? []).find((x) => `debt:${x.id}` === l)?.name ?? l);
+      if (linked.length) b.bankLinks = { ...(b.bankLinks ?? {}), ...add };
+      result = applyBank(b, d, b.bankLinks ?? {});
+      return b;
+    });
     const now = new Date().toISOString();
     writeBankConfig({ ...conf, lastSync: now, lastRefresh: now });
     synced();
+    if (linked.length) {
+      showToast(`${linked.join(' and ')} now sync${linked.length === 1 ? 's' : ''} from the bank.`);
+      await backfill(update, conf);
+      return;
+    }
     if (force && d.refreshed === false) {
       // Asked the bank, but it hadn't answered by the time we had to reply: look again in a minute.
       showToast(`Asked ANZ for the latest. It hasn't come through yet, so this checks again in a minute. ${said(result)}`);
@@ -150,6 +166,15 @@ export async function syncBank(update: (f: (b: Budget) => Budget) => void, force
   } catch (e) {
     if (force) showToast(`Bank sync didn’t work: ${bankMessage(e)}`);
   } finally { setRunning(false); }
+}
+
+/** Everything the bank has (up to 2 years), for a card or account just linked: added once, like any sync. */
+async function backfill(update: (f: (b: Budget) => Budget) => void, conf: BankConfig): Promise<void> {
+  try {
+    const d = await fetchBank(conf);
+    update((b) => { applyBank(b, d, b.bankLinks ?? {}); return b; });
+    synced();
+  } catch { /* the next sync carries on from here */ }
 }
 
 /** Read what the bank has now, without asking it to refresh again (it was just asked). */

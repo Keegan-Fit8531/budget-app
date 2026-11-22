@@ -94,6 +94,7 @@ export function Rundown({ draft, sourceLabel, onEdit, onCancel, cancelLabel, onC
             {!debt?.payroll && <Money label="Credit limit (optional)" fig={s.limit} onChange={(v) => edit((d) => { d.statement.limit.value = v; })} />}
           </div>
           {toCents(s.minimum.value)?.cents !== undefined && <p className="small muted">The {s.appScreen ? 'last statement’s' : 'statement’s'} minimum payment is {cash(toCents(s.minimum.value)!.cents)}.</p>}
+          {!s.appScreen && <Money label="To avoid interest (optional)" fig={s.avoidInterest} onChange={(v) => edit((d) => { d.statement.avoidInterest.value = v; })} />}
           {buys.length > 0 && (
             <div className="stack gap-8">
               <b className="small">New interest-free purchases</b>

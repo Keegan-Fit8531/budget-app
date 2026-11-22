@@ -8,7 +8,7 @@ import { applyProposal } from '../reader/apply';
 import { newTransactions } from '../reader/check/transactions';
 import type { BankConfig } from './bankConfig';
 import { nextColor } from '../../core/colors';
-import { recordCardPayments, type SeenPayment } from './cardPayments';
+import { debtLinked, debtNamed, recordCardPayments, type SeenPayment } from './cardPayments';
 import type { Budget, Txn } from '../../core/types';
 
 // ---------------------------------------------------------------------------------------------
@@ -62,15 +62,36 @@ export async function fetchBank(conf: BankConfig, since?: ISODate, fetchImpl: ty
   return { accounts: body.accounts, transactions: body.transactions, ...(Array.isArray((body as { pending?: unknown }).pending) ? { pending: (body as { pending: BankPending[] }).pending } : {}), ...(typeof (body as { refreshed?: unknown }).refreshed === 'boolean' ? { refreshed: (body as { refreshed: boolean }).refreshed } : {}) };
 }
 
-/** Where a bank account's transactions go: the account or card with its number's ending saved (from an earlier upload), if one has. */
+/** A card or loan at the bank (Akahu's types), not an everyday or savings account. */
+const isCard = (acc: BankAccount) => /CREDIT|LOAN/i.test(acc.type);
+
+/**
+ * Where a bank account's transactions go: the account or card with its number's ending saved (from an
+ * earlier upload), else for a card the one debt its name or bank names ("Gem Visa" at Latitude).
+ */
 export function suggestLink(b: Budget, acc: BankAccount): string {
   const ending = acc.number ? endingOf(acc.number) : undefined;
-  if (!ending) return '';
-  const hits = [
+  const hits = ending ? [
     ...b.accounts.filter((a) => a.ending === ending && !a.archived).map((a) => `account:${a.id}`),
     ...(b.debts ?? []).filter((d) => d.ending === ending && !d.payroll).map((d) => `debt:${d.id}`),
-  ];
-  return hits.length === 1 ? hits[0] : '';
+  ] : [];
+  if (hits.length === 1) return hits[0];
+  const named = isCard(acc) ? debtNamed(b, `${acc.name} ${acc.institution ?? ''}`) : undefined;
+  return named ? `debt:${named.id}` : '';
+}
+
+/**
+ * Cards new to the bank connection that clearly belong to one debt not linked yet (Gem Visa added in
+ * Akahu): linked by themselves on the next sync, so you don't have to open Settings. Account id → link.
+ */
+export function newCardLinks(b: Budget, accounts: BankAccount[]): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const acc of accounts) {
+    if (b.bankLinks?.[acc.id] || !isCard(acc) || !acc.transactions) continue;
+    const link = suggestLink(b, acc);
+    if (link.startsWith('debt:') && !debtLinked(b, link.slice(5)) && !Object.values(out).includes(link)) out[acc.id] = link;
+  }
+  return out;
 }
 
 export interface BankResult { name: string; added: number; balance?: number; cardPayments?: SeenPayment[]; goalMoves?: SeenMove[] }
@@ -164,12 +185,17 @@ export function applyBank(b: Budget, data: BankData, links: Record<string, strin
       b.balances[id] = { ...b.balances[id], asOf: today };
     }
     // What hasn't settled yet replaces what was pending last time (once settled, it's in the transactions).
-    if (type === 'account' && data.pending) {
+    if (data.pending) {
       const pend: Txn[] = data.pending.filter((t) => t.account === acc.id && t.amount)
         .map((t) => ({ date: t.date, description: (t.description ?? '').replace(/\s{2,}/g, ' ').trim() || 'Pending', amount: Math.round(t.amount * 100), ...(t.merchant ? { merchant: t.merchant } : {}) }));
-      const all = { ...(b.pendingTransactions ?? {}) };
-      if (pend.length) all[id] = pend; else delete all[id];
-      b.pendingTransactions = all;
+      if (type === 'debt') {
+        const debt = target as NonNullable<Budget['debts']>[number];
+        if (pend.length) debt.pending = pend; else delete debt.pending;
+      } else {
+        const all = { ...(b.pendingTransactions ?? {}) };
+        if (pend.length) all[id] = pend; else delete all[id];
+        b.pendingTransactions = all;
+      }
     }
     // Payments from this account to cards that can't be linked themselves (Gem Visa, Q Mastercard).
     // Settled and pending: a $50 Q Mastercard debit still counts once when ANZ shows it as pending.

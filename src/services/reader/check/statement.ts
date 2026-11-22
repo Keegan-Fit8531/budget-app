@@ -2,7 +2,7 @@ import { addDays, addMonths, fmtShort, type ISODate } from '../../../core/dates'
 import { gemPlanEnds, gemPlanType, planEnds } from '../../../features/debts/logic/gem';
 import { owed } from '../../../features/debts/logic/amounts';
 import { cash } from '../../../core/money';
-import type { Budget, Cents, DebtPlan } from '../../../core/types';
+import type { Budget, Cents, DebtPlan, StatementDue } from '../../../core/types';
 import { NEW_DEBT, type Draft, type PlanUpdate, type OrderUpdate, type Issue, type Review } from './draft';
 import { toCents, validDate, isStudentLoan, afterpayDebt, ordersOnly, keepsPlans } from './figures';
 import { resolvePlanRow, resolveOrder, purchaseRows } from './review';
@@ -129,10 +129,12 @@ export function reviewStatement(d: Draft, b: Budget, today: ISODate): Review {
   if (d.source === 'device' && debt) note(`Read on this device, which guesses the debt from words in the statement: check it’s ${debt.name}.`);
 
   if (issues.some((i) => i.level === 'block') || balance === undefined || !date) return { proposal: null, issues, ignored };
+  const due = statementDue(s, date);
   return {
     proposal: {
       kind: 'statement', debtId: isNew ? s.newDebtId : s.debtId, ...(isNew ? { newDebt: { name: s.newName.trim() } } : {}),
       balance, inCredit: credit, date, ...(limit ? { limit } : {}), plans, newPlans,
+      ...(due ? { due } : {}),
     },
     issues, ignored,
   };
@@ -208,4 +210,13 @@ export function reviewAfterpay(d: Draft, b: Budget, today: ISODate): Review {
     return { proposal: null, ignored, issues: [...issues, { level: 'block', text: d.afterpay.listsAllDue && !debt.plans.length ? 'Nothing to change: Afterpay is already clear.' : 'Nothing to change: every order on the screenshot is already paid.' }] };
   }
   return { proposal: { kind: 'afterpay', debtId: debt.id, updates, paidOff, newPlans }, issues, ignored };
+}
+
+/** What a statement (not an app screen) asks for: its minimum, what avoids interest and the due date, when printed. */
+function statementDue(s: Draft['statement'], date: ISODate): StatementDue | undefined {
+  if (s.appScreen) return undefined;
+  const cents = (f: { value: string }) => { const c = toCents(f.value)?.cents; return c !== undefined && c >= 0 ? c : undefined; };
+  const minimum = cents(s.minimum), avoidInterest = cents(s.avoidInterest);
+  if (minimum === undefined && avoidInterest === undefined) return undefined;
+  return { date, ...(minimum !== undefined ? { minimum } : {}), ...(avoidInterest !== undefined ? { avoidInterest } : {}), ...(validDate(s.dueDate) && s.dueDate >= date ? { by: s.dueDate } : {}) };
 }

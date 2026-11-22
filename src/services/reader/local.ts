@@ -26,7 +26,7 @@ export function toExtraction(d: ReadDocument, debts: Debt[]): Extraction {
   const match = matchDebt(debts, d.text);
   return {
     kind: 'statement',
-    statement: { debtId: match?.id ?? null, balance: fig(s.balance, 'Balance'), statementDate: s.date, limit: fig(s.limit, 'Credit limit'), minimum: fig(s.minimum, 'Minimum payment') },
+    statement: { debtId: match?.id ?? null, balance: fig(s.balance, 'Balance'), statementDate: s.date, limit: fig(s.limit, 'Credit limit'), minimum: fig(s.minimum, 'Minimum payment'), avoidInterest: fig(s.avoidInterest, 'To avoid interest') },
   };
 }
 

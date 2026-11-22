@@ -36,6 +36,10 @@ export interface RawStatement {
   statementDate?: string;
   limit?: Fig;
   minimum?: Fig;
+  /** What to pay to avoid interest, as printed. */
+  avoidInterest?: Fig;
+  /** The payment due date, as printed. */
+  dueDate?: string;
   /** Plans shown on the statement or My plans screen (Gem interest-free / equal-payment plans), matched by id or expiry. */
   plans?: {
     planId?: string | null;
