@@ -108,13 +108,25 @@ export function applyAllocation(b: Budget, period: Period, allocs: { targetId: s
   return undo;
 }
 
-/** Put back what an allocation changed. */
+/**
+ * Put back what an allocation changed.
+ * Once a pay has been split (payday passed or payslip in), its frozen split (`splitSent`) took in any
+ * one-pay amount there at the time, so taking the override away alone would leave that amount still being
+ * sent. When the frozen figure is the amount being undone, it's put back there too, the same way the
+ * Planner keeps the frozen split in step with a hand edit.
+ */
 export function undoAllocation(b: Budget, u: AllocationUndo): void {
   for (const [id, prev] of Object.entries(u.overrides)) {
     const o = { ...(b.overrides?.[u.periodStart] ?? {}) };
+    const undone = o[id];
     if (prev === null) delete o[id]; else o[id] = prev;
     b.overrides = b.overrides ?? {};
     if (Object.keys(o).length) b.overrides[u.periodStart] = o; else delete b.overrides[u.periodStart];
+    // Left in place even when empty, so the pay isn't frozen again with today's figures.
+    const sent = b.splitSent?.[u.periodStart];
+    if (sent && undone !== undefined && sent[id] === undone) {
+      if (prev === null) delete sent[id]; else sent[id] = prev;
+    }
   }
   for (const [id, prev] of Object.entries(u.split)) {
     const i = b.split.findIndex((l) => l.accountId === id);
