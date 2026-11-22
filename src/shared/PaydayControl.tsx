@@ -1,14 +1,17 @@
 import { useEffect, useState } from 'react';
 import { modeOf } from '../engine/balances/outflows';
 import { cash, centsToInput, parseMoney } from '../core/money';
+import { fmtShort } from '../core/dates';
 import type { PaydayMode } from '../core/types';
 import { useBudget } from '../state/store';
 
 /** "Sent each payday": a fixed amount, or worked out from plans/goals each pay. */
-export function PaydayControl({ accountId, autoLabel, autoHint, sends, needs }: {
+export function PaydayControl({ accountId, autoLabel, autoHint, sends, needs, sentOn }: {
   accountId: string; autoLabel: string; autoHint: string;
   /** What this pay sends (the Planner's figure) and what its costs come to. */
   sends: number; needs: number;
+  /** The payday that already sent this pay (it's locked): said as sent, and a change applies from the next pay. */
+  sentOn?: string;
 }) {
   const { budget, update } = useBudget();
   const line = budget.split.find((l) => l.accountId === accountId);
@@ -40,7 +43,9 @@ export function PaydayControl({ accountId, autoLabel, autoHint, sends, needs }: 
         </span>
       </label>
       {auto ? (
-        <p className="small">This pay sends <b>{cash(sends)}</b>.{sends !== needs && <span className="muted"> Its costs come to {cash(needs)}; the amount was adjusted for this pay.</span>}</p>
+        sentOn
+          ? <p className="small">Payday sent <b>{cash(sends)}</b> on {fmtShort(sentOn)}.<span className="muted"> A change here applies from the next pay.</span></p>
+          : <p className="small">This pay sends <b>{cash(sends)}</b>.{sends !== needs && <span className="muted"> Its costs come to {cash(needs)}; the amount was adjusted for this pay.</span>}</p>
       ) : (
         <label className="field" style={{ maxWidth: 260 }}>Sent each payday (NZD)
           <input inputMode="decimal" value={text} onChange={(e) => setText(e.target.value)}

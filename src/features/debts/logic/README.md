@@ -10,6 +10,8 @@ Plain functions for debts (no React). The engine uses these too: debt payments a
 - `gem.ts`: Gem Visa (Latitude NZ) rules from its Conditions of Use, clause 14: how a payment is split (instalments due, then expiring interest-free purchases by expiry date…), the minimum payment, plan lengths (`GEM_PLAN_MONTHS`, `gemPlanType`, `gemPlanEnds`), `gemPlan` (the recommended payment that clears each plan before it ends), `gemApply` (a payment before the statement that clears this pay's statement payment logs it in `debt.paid`, so the hold account counts it paid), `gemTakeOff` (Gem's order, with no payment recorded), `beforeStatement`.
 - `labels.ts`: `KIND_LABEL`, the name shown for each kind of debt (card, buy now pay later, person, loan).
 - `advice.ts`: the recommended payment per debt for a pay, each by the lowest that keeps every plan on track (`debtAdvice`, `DebtAdvice`, `offRecommended`).
+- `held.ts`: a held debt's payment this pay (`heldNow`: paid and still to send from the hold account's tracker), `endHeld` ("No more this month": `heldPay` is what was paid, plus a `rest` key so the bill check stops asking) and `resumeHeld` (Undo); `setHeld` (set or take off one statement's `heldPay`, also used by the bill check).
+- `held.test.ts`: "No more this month" and its Undo.
 - `debts.test.ts`: schedules, payments gone out, recording a payment, Gem held until statement day, extra paid for one pay.
 
 ## Held debts (Gem in Misc bills)
@@ -18,6 +20,7 @@ A debt with `holdAccountId` keeps its payday money in a bank account until state
 - `engine/balances/outflows.ts` → the hold top-up: at least Gem's recommended amount, or `Debt.heldPay` (an amount you set for one statement in the bill check) instead.
 - A payment seen in the bank: `services/bank/cardPayments.ts` → `gem.ts` `gemApply`. An early or extra payment that clears this pay's statement payment logs it in `debt.paid`, so the hold account shows it paid.
 - When that payment came from another account, the Accounts bill check asks if it was the one (`features/accounts/logic/billCheck.ts`, kind `held`); answers can be undone there.
+- Paid only in part from the hold account: the tracker counts what was paid and the rest as to come (`billTracker.ts` → `splitPartPaid`). The bill check asks about the rest, and the Debts card has "No more this month" (`held.ts`); both save `heldPay` plus a `rest` key.
 
 ## Watch out for
 - These files import each other (schedule ↔ gem ↔ amounts). Add a function to the file whose job it matches.

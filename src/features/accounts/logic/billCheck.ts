@@ -6,6 +6,7 @@ import { billTracker } from '../../../engine/balances/billTracker';
 import { bankFed, businessDay, checkKey, matchBills, outflowId, sameAmount, type BillMatch } from '../../../engine/billMatch';
 import type { BillRow } from '../../../engine/balances/billTracker';
 import type { Budget, Cents, Item } from '../../../core/types';
+import { setHeld } from '../../debts/logic/held';
 
 // The bill check: after a bank sync, what the bank shows about your bills that the plan should know.
 // Bills that come out on a different day (Skinny on the 19th, not the 17th) or for a different amount,
@@ -34,13 +35,6 @@ export interface BillCheck {
 
 export interface Ask { label: string; prompt: string; initial: Cents; run: (b: Budget, amount: Cents) => void }
 
-/** A held debt's amount for one statement (`Debt.heldPay`), set or (amount undefined) taken off. */
-const setHeld = (d: Budget, debtId: string, date: ISODate, amount?: Cents) => {
-  const x = d.debts?.find((y) => y.id === debtId);
-  if (!x) return;
-  if (amount !== undefined) { x.heldPay = { ...(x.heldPay ?? {}), [date]: amount }; return; }
-  if (x.heldPay) { delete x.heldPay[date]; if (!Object.keys(x.heldPay).length) delete x.heldPay; }
-};
 
 /** How far back to look for a bill's usual day and amount. */
 const LOOK_BACK = 130;

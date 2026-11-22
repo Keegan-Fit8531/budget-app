@@ -9,6 +9,7 @@ repaid from salary) and people you owe. Each debt has payment plans; payday send
 - `DebtModal.tsx`: add or edit a debt (name, kind, card rules, payday account, hold account, statement day, limit, rate). Also opened from the Add button.
 - `DebtEditModal.tsx`: an existing debt's pop-up with tabs (`DebtTab`: balance, purchase, payment, details); `BalanceEditor` sets what's owed (plans adding up to more come down to it: `fitPlansToBalance`).
 - `PlanModal.tsx`: add or edit a payment plan (interest-free, equal payments, Afterpay instalments, or a balance paid down each pay).
+- `DebtPayday.tsx`: a debt card's Payday section: what payday sends it (`PaydayControl`), and for a held debt (Gem in Misc bills) what's been paid from there this month, with "No more this month" (`logic/held.ts`). A pay payday has already sent says "Payday sent $X" and is never called short.
 - `PaymentModal.tsx`: record a payment you've made (split across plans the way the card does it). Also opened from the Add button.
 - `logic/`: schedules, amounts owed, which account pays, recording payments, Gem Visa's rules and payment advice (its own README).
 
