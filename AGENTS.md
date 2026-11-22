@@ -14,6 +14,8 @@ GitHub repo (`budget-data`). `CLAUDE.md` points here.
    and line that uses it, so you reach every page that shows it. The READMEs say what a file does, not
    who uses it: the script answers that from the code, so it's never out of date.
 5. Don't read `package-lock.json`, `dist/`, `public/ocr/`, or the whole of `core/types.ts` (search it for the type you need).
+6. **Every change also improves these notes** (this file and the READMEs). As you work, keep track of what
+   was wrong, missing or cost you time. Fix it before you finish (see **Before you finish a change**, step 4).
 
 ## Folder map
 
@@ -121,6 +123,15 @@ The folder rules above (file size, no React in `core/`/`engine/`/`logic/`, a gen
 1. `npm test`, `npx tsc -b` and `npm run lint` pass (lint warnings are OK, errors aren't).
 2. Every folder you touched has its README updated: new, renamed, moved or deleted files, and changed purposes.
 3. If you added a new kind of task or a new rule, update **Where to look** or **Rules the code relies on** here.
+4. **Leave the notes more accurate than you found them, every time.** Look back on the task: what went well
+   and what didn't. Then fix the notes for the next agent, in the same change:
+   - Anything in this file or a README that was wrong or out of date: correct it.
+   - Anything you had to search for, guess, or learn the hard way (a gotcha, a missing tool, a step that
+     wasn't written down): add it where the next agent will look first (the folder's README, or **Where to
+     look** / **Rules** / **Commands** here).
+   - Anything that misled you or wasn't needed: shorten it or remove it. Keep notes short. One sentence
+     beats a paragraph.
+   - When you finish, tell the owner in one or two lines what you changed in the notes and why.
 
 ## Commands
 
