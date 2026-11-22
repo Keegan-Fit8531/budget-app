@@ -1,6 +1,6 @@
 import { createContext, useContext, useMemo, useState, type ReactNode } from 'react';
 import { Icon } from '../ui/Icon';
-import { fmtDay, fmtShort, monthName, todayISO } from '../core/dates';
+import { fmtShort, monthName, todayISO } from '../core/dates';
 import { budgetPeriod, shiftPeriod, upcomingPayPeriod, type Period } from '../engine/periods';
 import { type View } from '../engine/frequency';
 import { useBudget } from './store';
@@ -75,20 +75,20 @@ export function ViewModes() {
 
 /**
  * ‹ November pay › — moves every page that follows the selected pay.
- * On the Planner and Insights it's the page title; elsewhere (`compact`) it's a small control in the header.
+ * Not `compact`: the page's whole header (title, then `children` such as the page's buttons or view
+ * switch, then the arrows). The arrows are always last, at the header's right edge, on every page that
+ * has them (DayPicker draws the same header), so they never move between pages or as you step pays.
+ * `compact`: a small control inside a pop-up (Deposits).
  */
-export function PayNav({ title, compact }: { title?: string; compact?: boolean }) {
+export function PayNav({ title, compact, children }: { title?: string; compact?: boolean; children?: ReactNode }) {
   const { offset, setOffset, period, earliest } = useViewPeriod();
-  // "Next pay" keeps its place even when hidden, so the arrows don't move as you step through pays.
-  const back = (
-    <button className="btn small ghost" style={offset !== 0 ? undefined : { visibility: 'hidden' }} aria-hidden={offset === 0} tabIndex={offset !== 0 ? 0 : -1}
-      onClick={() => setOffset(0)}>Next pay</button>
-  );
-  const steps = (
-    <div className="pay-nav-steps">
+  // "Next pay" is always there (dimmed while you're on it), like a calendar's Today, so nothing moves.
+  const back = <button className="btn small ghost" disabled={offset === 0} onClick={() => setOffset(0)}>Next pay</button>;
+  const arrows = (
+    <>
       <button className="icon-btn plain" aria-label="Previous pay period" disabled={period.start <= earliest.start} onClick={() => setOffset(offset - 1)}><Icon name="left" /></button>
       <button className="icon-btn plain" aria-label="Next pay period" onClick={() => setOffset(offset + 1)}><Icon name="right" /></button>
-    </div>
+    </>
   );
   if (compact) {
     return (
@@ -97,23 +97,20 @@ export function PayNav({ title, compact }: { title?: string; compact?: boolean }
           <b className="block">{monthName(period.start)} pay</b>
           <span className="xs muted block">{fmtShort(period.start)} – {fmtShort(period.end)} · {period.days} days</span>
         </div>
-        <div className="row nowrap gap-4">
-          {back}
-          {steps}
-        </div>
+        <div className="pay-nav-steps">{back}{arrows}</div>
       </div>
     );
   }
   return (
-    <div className="pay-nav grow">
-      <div className="grow">
+    <header className="page-head">
+      <div className="page-title">
         <h1 className="h1 clip">{title ?? `${monthName(period.start)} pay`}</h1>
         <p className="small muted clip">
-          {title ? `${monthName(period.start)} pay · ${fmtShort(period.start)} – ${fmtShort(period.end)}` : `${fmtDay(period.start)} – ${fmtDay(period.end)}`} · {period.days} days
+          {title ? `${monthName(period.start)} pay · ` : ''}{fmtShort(period.start)} – {fmtShort(period.end)}{title ? '' : ` · ${period.days} days`}
         </p>
       </div>
-      {steps}
-      {back}
-    </div>
+      {children}
+      <div className="pay-nav-steps">{back}{arrows}</div>
+    </header>
   );
 }

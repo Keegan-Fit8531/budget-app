@@ -14,7 +14,7 @@ import { allTxns, sortShops } from '../../services/reader/sortShops';
 import { SYNCED } from '../../services/bank/BankCard';
 import type { Budget } from '../../core/types';
 import { Icon } from '../../ui/Icon';
-import { Chevron, Collapse } from '../../ui/components';
+import { Chevron, Collapse, DetailsToggle } from '../../ui/components';
 import { showToast } from '../../ui/toast';
 
 /** Send a cycle to Gemini and make its review (throws a ReaderError when it can't). */
@@ -125,6 +125,8 @@ export function MonthlyInsights() {
   const [pick, setPick] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  // The write-up and category totals behind Details.
+  const [more, setMore] = useState(false);
   // Once there's one to read it opens and closes from its heading, and stays as you left it.
   const [open, setOpenState] = useState(() => { try { return localStorage.getItem('paydays.insights.open') !== 'closed'; } catch { return true; } });
   const setOpen = (v: boolean) => { setOpenState(v); try { localStorage.setItem('paydays.insights.open', v ? 'open' : 'closed'); } catch { /* ignore */ } };
@@ -196,9 +198,18 @@ export function MonthlyInsights() {
 
           <div className="rv-lead">
             <p className="rv-headline">{r.headline}</p>
-            {r.summary && <p className="small muted">{r.summary}</p>}
           </div>
 
+          <div className="rv-grid">
+            <Points title="What went well" items={r.good} icon="check" tone="good" />
+            <Points title="What to watch" items={r.bad} icon="alert" tone="bad" />
+            <Points title="Try next cycle" items={r.tips} icon="bulb" tone="tips" />
+          </div>
+
+          {/* The longer write-up and the category totals (also shown lower on the page) are a tap away. */}
+          <DetailsToggle open={more} onChange={setMore} />
+          <Collapse open={more} stacked><div className="stack gap-16">
+          {r.summary && <p className="small muted">{r.summary}</p>}
           {r.categories.length > 0 && (
             <section className="stack gap-8">
               <h3 className="rv-sub">Where it went</h3>
@@ -214,12 +225,8 @@ export function MonthlyInsights() {
               </div>
             </section>
           )}
-
-          <div className="rv-grid">
-            <Points title="What went well" items={r.good} icon="check" tone="good" />
-            <Points title="What to watch" items={r.bad} icon="alert" tone="bad" />
-            <Points title="Try next cycle" items={r.tips} icon="bulb" tone="tips" />
-          </div>
+          <p className="xs muted">Updated {made(r.made)} · Totals from {r.sources.join(', ') || 'your transactions'} · Commentary by Gemini</p>
+          </div></Collapse>
         </>
       )}
 
@@ -236,7 +243,6 @@ export function MonthlyInsights() {
         {err && <p className="small error" role="status">{err}</p>}
         {!soFarCount && <p className="xs muted">No transactions since {fmtShort(soFar.start)} yet. Connect your bank or upload a statement to add them.</p>}
         {!hasKey && r && <p className="xs muted">Add your Google API key in <a href="#/settings">Settings → Reading documents</a> to create new reviews.</p>}
-        {r && <p className="xs muted">Updated {made(r.made)} · Totals from {r.sources.join(', ') || 'your transactions'} · Commentary by Gemini</p>}
       </div>
       </div></Collapse>
     </section>

@@ -6,7 +6,7 @@ transactions), and the monthly cycle review written by Gemini.
 ## Files
 - `InsightsPage.tsx`: the page: where pay goes by group, compared with the budgeting rule (50/30/20), by account, and suggestions; with the spending card and the cycle review.
 - `SpendingCard.tsx`: "Where your money went": spending by category; tap a category to see its shops and change a shop's category (saved in `budget.shopCategories`).
-- `MonthlyInsights.tsx`: the cycle review card (the latest review, past ones, and the cycle so far), and two jobs mounted by `app/App.tsx` that run while the app is open: `ReviewAutoRun` (makes the review after payday) and `ShopSortAutoRun` (asks Gemini to place shops the rules left in Other).
+- `MonthlyInsights.tsx`: the cycle review card (the latest review, past ones, and the cycle so far: figures, headline and the went well / watch / try lists; the write-up, category totals and sources behind Details), and two jobs mounted by `app/App.tsx` that run while the app is open: `ReviewAutoRun` (makes the review after payday) and `ShopSortAutoRun` (asks Gemini to place shops the rules left in Other).
 - `logic/`: spending categories and the review's numbers (its own README).
 
 ## Watch out for

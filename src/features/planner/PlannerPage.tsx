@@ -271,10 +271,7 @@ export function PlannerPage() {
 
   return (
     <>
-      <header className="page-head">
-        <PayNav />
-        <ViewModes />
-      </header>
+      <PayNav><ViewModes /></PayNav>
 
       <section className="grid-2 planner-hero">
         <div className="card stack gap-16">

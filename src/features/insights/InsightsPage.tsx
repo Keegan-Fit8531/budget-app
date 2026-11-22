@@ -75,10 +75,7 @@ export function InsightsPage() {
 
   return (
     <>
-      <header className="page-head">
-        <PayNav title="Insights" />
-        <ViewModes />
-      </header>
+      <PayNav title="Insights"><ViewModes /></PayNav>
       {mode !== 'period' && (
         <p className="note" style={{ marginTop: -8 }}>
           {perPeriod ? `This pay's ${cash(plan.pay)} as ${per}: ${cash(pay)}.`
