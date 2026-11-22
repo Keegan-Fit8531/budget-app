@@ -9,7 +9,7 @@ the device and never sent anywhere.
 - `bankConfig.ts`: the connection's settings in this browser (`BANK_URL`, `readBankConfig`, `writeBankConfig`), kept apart so the QR code can set them without loading `bank.ts`.
 - `BankCard.tsx`: Settings → Bank connection (`BankCard`: passphrase, and which account or card each bank account fills), `BankAutoSync` (mounted by `app/App.tsx`: syncs on open and hourly), `useBankSyncing`, and the "bank synced" event other parts follow.
 - `csv.ts`: reading exports on the device: `readTransactionsCsv` (finds the date, description and amount columns by name), `parseCsv`, `csvDate` (NZ day-first dates), `csvAmount` (-$44.60, (12.40), 12.40 DR), `endingOf` (account number ending in a file name or header), `fromStatementRows` (rows read from a bank statement by Gemini, in the same form), `joinReads`.
-- `cardPayments.ts`: payments to cards that can't be linked (Gem Visa, Q Mastercard), seen as transfers out of a linked bank account: `cardPaid`, `recordCardPayments` (takes what was paid over the plan off what's owed), `knownSince`.
+- `cardPayments.ts`: payments to cards that can't be linked (Gem Visa, Q Mastercard), seen as transfers out of a linked bank account: `cardPaid`, `recordCardPayments` (takes what was paid over the plan off what's owed; a planned payment the bill check says is still to send (`unpaid` key) doesn't count as planned, so the later payment for it all comes off), `knownSince`.
 - `goalMoves.ts`: money moved to or from a savings goal's fund at another provider, seen in a linked account (ANZ → Kernel): `goalMoved`, `goalWords`, `recordGoalMoves`, `settleGoalMoves`, `setGoalBankBalance`.
 - `bank.test.ts`, `csv.test.ts`, `cardPayments.test.ts`: tests (all bank replies and files are made up).
 

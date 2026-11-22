@@ -10,6 +10,7 @@ import {
 } from '../engine/envelope';
 import { periodContaining, shiftPeriod } from '../engine/periods';
 import { categorizeTxn, shopMap } from '../features/insights/logic/spending';
+import { billChecks } from '../features/accounts/logic/billCheck';
 
 // A plain-text look at a budget the way the Accounts page sees it: what's in an account, what's spoken
 // for, each envelope and what counted against it, the next pays. For checking a change against the real
@@ -42,7 +43,18 @@ export function inspectAccount(b: Budget, which: string, today: ISODate = todayI
     `Pay ${span(t.period.start, t.period.end)} · payday sent ${cash(t.deposit)}`,
     `Balance ${t.balanceKnown ? `${cash(t.balance)} (${t.balanceSource})` : 'unknown'} · bills paid ${cash(t.paid)}, to come ${cash(t.toCome)} · spare after bills ${cash(t.spare)}`,
   ];
-  for (const r of t.rows.filter((x) => x.status !== 'paid')) out.push(`  to come ${fmtShort(r.date)} ${r.name} ${cash(r.amount)}`);
+  const accName = (id?: string) => b.accounts.find((x) => x.id === id)?.name ?? id ?? '?';
+  // Each bill and debt payment this pay, and what the bank showed paid it (the key to most "why is it paid?" questions).
+  for (const r of t.rows) {
+    const m = r.match;
+    const how = !m?.how ? (r.status === 'paid' ? 'counted as paid, not seen in the bank' : r.late ? 'late: not seen in the bank' : '')
+      : `${m.how === 'card' ? `on ${accName(m.from)}` : m.how === 'moved' ? `money moved to ${accName(m.from)}` : 'from here'}: `
+        + `${m.txn!.description} ${cash(m.txn!.amount)} on ${fmtShort(m.txn!.date)}${m.shared ? ' (shared)' : ''}${m.cover ? ` · made up ${fmtShort(m.cover.date)}` : ''}`;
+    out.push(`  ${r.status === 'paid' ? 'paid   ' : 'to come'} ${fmtShort(r.date)} ${r.name} ${cash(r.amount)}${r.debtId ? ' [debt]' : ''}${how ? ` · ${how}` : ''}`);
+  }
+  for (const m of t.toMove) out.push(`  to move ${cash(m.amount)} to ${accName(m.to)} for ${m.row.name}`);
+  const asks = billChecks(b, today).filter((c) => c.accountId === a.id);
+  if (asks.length) out.push('', 'Bill check asks:', ...asks.map((c) => `  ${c.title} (${c.apply ? `${c.apply.label} / ` : ''}${c.skip}) · key ${c.key}`));
 
   const envelopes = accountEnvelopes(b, a.id, today);
   if (envelopes.length) {

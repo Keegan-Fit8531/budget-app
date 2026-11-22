@@ -44,6 +44,16 @@ describe('card payments seen in a bank account', () => {
     expect(q.bankPayments?.[0]).toMatchObject({ amount: 15000, counted: 3000 });
   });
 
+  it('a payment you said is still to send isn’t covered by the extra one that paid it early', () => {
+    const b = debtBudget();
+    const q = debt(b, 'qcard');
+    q.paid = [{ date: '2026-11-14', amount: 12000, name: 'Other purchases', synthetic: true }];
+    b.billChecks = { 'unpaid|qcard|2026-11-14': '2026-11-15' };
+    applyBank(b, { accounts: [go], transactions: [tx('t1', '2026-11-15', 'BP Q Mastercard Fitzgerald', -150)] }, links, '2026-11-16');
+    expect(owed(q)).toBe(50000 - 15000); // all of it
+    expect(q.bankPayments?.[0]).toMatchObject({ amount: 15000, counted: 15000 });
+  });
+
   it('a balance checked after the payment already has it taken off', () => {
     const b = debtBudget();
     debt(b, 'qcard').balance = { amount: 40000, asOf: '2026-11-16' };

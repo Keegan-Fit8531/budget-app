@@ -46,13 +46,14 @@ before dev/build), `.github/workflows/pages.yml` (deploys `main` to GitHub Pages
 | Pay periods, paydays, weekend rules, a moved payday | `engine/periods.ts` |
 | When a cost falls (weekly, monthly, skip near payday) | `engine/occurrences.ts` |
 | Money put aside (WOF, tyres) or envelopes (Gas a month, Food a week) | `engine/setAside.ts`, `engine/envelope.ts`; what counts against one (purchases, transfers that paid for one): `engine/envelopeMatch.ts`; a shop counted as the wrong kind (a fuel station as food): the shop rules in `features/insights/logic/spending.ts` (`FUEL_SHOPS`); Accounts card: `features/accounts/EnvelopeCards.tsx` |
-| Which bank transaction paid a bill (card on another account, made-up transfers), bills not seen; the Accounts bill check pop-up | `engine/billMatch.ts`; suggestions: `features/accounts/logic/billCheck.ts`; pop-up: `features/accounts/BillCheck.tsx` |
+| Which bank transaction paid a bill (card on another account, made-up transfers), bills not seen, a held debt (Gem) paid from another account; the Accounts bill check pop-up | `engine/billMatch.ts`; suggestions: `features/accounts/logic/billCheck.ts`; pop-up: `features/accounts/BillCheck.tsx` |
 | What payday sends each account (fixed / exact / steady); "allocated this pay" (what it sent this pay: `depositFor`) | `engine/balances/` (README lists which file does what) |
 | A pay's plan: totals, leftover, what each account needs | `engine/plan.ts` → `planFor()` |
 | Automatic balancing, "Balance this pay" | `engine/rebalance.ts` |
 | Planner page, Optimise the leftover | `features/planner/` |
 | Accounts page, Deposits pop-up, balances, account history | `features/accounts/` |
 | Debts: schedules, Gem Visa rules, payments, advice | `features/debts/logic/` (UI in `features/debts/`) |
+| A debt's payment held in a bank account until statement day (Gem in Misc bills: `Debt.holdAccountId`) | `features/debts/logic/funding.ts` (`debtPaymentsIn`: its payments, paid ones included, leave the hold account), `engine/balances/outflows.ts` (Gem's hold top-up); a payment seen in the bank: `services/bank/cardPayments.ts` → `gem.ts` `gemApply`. An early or extra payment that clears this pay's statement payment logs it in `debt.paid`, so the hold account shows it paid (Bill check then asks) |
 | Savings goals, goal costs, gifts, KiwiSaver | `features/savings/` |
 | Insights, spending categories, monthly review | `features/insights/` |
 | Settings page, export to spreadsheet | `features/settings/` |
@@ -77,7 +78,7 @@ questions are answered there):
    usually older). Its README says how the owner's accounts are used (which one is the EFTPOS card, what each
    holds) and how to query `budget.json` without reading all of it.
 2. `npm run inspect` (every account) or `npm run inspect -- food --today 2026-11-22` (one account in detail):
-   the tracker, envelopes and what counted against them (each transfer with the purchase it was matched to), transfers the card asks about, next pays and any
+   the tracker (each bill paid or to come, and the bank transaction that paid it), what Bill check asks, envelopes and what counted against them (each transfer with the purchase it was matched to), transfers the card asks about, next pays and any
    Steady buffer, and the last 14 days of transactions with what each counted as. It loads the budget the
    way the app does (`state/upgrade.ts`). The first line says when that copy was saved: if it's older than
    the owner's screenshot, the browser has changes the repo hasn't got yet.
@@ -87,7 +88,7 @@ questions are answered there):
    Accounts the Bill check pop-up opens by itself and covers the page: add `--click 'text=Later'` (it can open after
    a bank sync, later than the clicks: if it's still there, or "Nothing to click" is printed, run it again). Open a card
    with `--click '.acct:has-text("Rent") >> text=Details'`, and picture just it with `--only '.acct:has-text("Rent")'`
-   (see `scripts/README.md`). Look before and after your change.
+   (see `scripts/README.md`). To see the Bill check pop-up itself, leave out the click and use `--only '.modal'`. Look before and after your change.
 
 That output is private: never put it in commits, PRs, code or fixtures. `testing/fixtures.ts` →
 `foodGasBudget()` is a made-up budget shaped like the real Food and gas account, for tests.
@@ -155,8 +156,8 @@ Run one test file with `npx vitest run src/engine/periods.test.ts`. Test budgets
 The owner asks for changes "live" (or "push live"): push the session branch, open a PR into `main` and merge it.
 Merging to `main` runs `.github/workflows/pages.yml`, which publishes to GitHub Pages in about 1–2 minutes. Two
 merges close together cancel the first run, which is fine: the second builds everything. To check it's live,
-search the live bundle for a CSS class you added (text in JSX is split up when built, so search a class name, not
-a sentence):
+search the live bundle for a CSS class you added, or a string built in a `.ts` file (text in JSX is split up when
+built, so search a class name or a `logic/` string, not JSX text):
 
 ```bash
 js=$(curl -s https://keegan-fit8531.github.io/budget-app/ | grep -o 'assets/index-[^"]*\.js' | head -1)

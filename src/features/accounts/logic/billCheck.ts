@@ -3,14 +3,16 @@ import { cash } from '../../../core/money';
 import { itemDates } from '../../../engine/occurrences';
 import { periodContaining } from '../../../engine/periods';
 import { billTracker } from '../../../engine/balances/billTracker';
-import { bankFed, businessDay, checkKey, matchBills, sameAmount, type BillMatch } from '../../../engine/billMatch';
+import { bankFed, businessDay, checkKey, matchBills, outflowId, sameAmount, type BillMatch } from '../../../engine/billMatch';
+import type { BillRow } from '../../../engine/balances/billTracker';
 import type { Budget, Cents, Item } from '../../../core/types';
 
 // The bill check: after a bank sync, what the bank shows about your bills that the plan should know.
 // Bills that come out on a different day (Skinny on the 19th, not the 17th) or for a different amount,
-// bills paid on another account's card whose money hasn't been moved back yet, and bills not seen at all.
+// bills paid on another account's card whose money hasn't been moved back yet, bills not seen at all, and a
+// debt payment held here (Gem Visa in Misc bills) that the bank shows paid from another account: was that it?
 
-export type CheckKind = 'day' | 'amount' | 'move' | 'late';
+export type CheckKind = 'day' | 'amount' | 'move' | 'late' | 'held';
 
 export interface BillCheck {
   /** Kept in `budget.billChecks` when you say no (or that it's fine). */
@@ -69,7 +71,6 @@ export function billChecks(b: Budget, today: ISODate = todayISO()): BillCheck[] 
   for (const acc of b.accounts) {
     if (acc.kind !== 'bank' || acc.archived || !bankFed(b, acc.id) || !b.balances?.[acc.id]) continue;
     const items = b.items.filter((i) => i.accountId === acc.id && !i.setAside && !i.envelope && (!i.end || i.end >= today));
-    if (!items.length) continue;
     const history = matchBills(b, acc.id, addDays(today, -LOOK_BACK), today, today);
     const where = (m: BillMatch) => (m.how === 'card' ? `${name(m.from)} card` : acc.name);
 
@@ -113,16 +114,39 @@ export function billChecks(b: Budget, today: ISODate = todayISO()): BillCheck[] 
       }
     }
 
-    // This pay: bills paid on another card whose money is still here, and bills the bank hasn't shown.
+    // This pay: debt payments held here that the bank shows paid from another account, bills paid on
+    // another card whose money is still here, and bills the bank hasn't shown.
     const t = billTracker(b, acc.id, today);
-    for (const m of t.toMove) {
-      const id = m.row.match!.outflow.itemId!;
-      const txn = m.row.match!.txn!;
+    const byKey = (rows: BillRow[], key: (r: BillRow) => string) => {
+      const m = new Map<string, BillRow[]>();
+      for (const r of rows) m.set(key(r), [...(m.get(key(r)) ?? []), r]);
+      return m;
+    };
+    const held = t.rows.filter((r) => r.debtId && r.match?.how === 'card' && r.match.txn && r.match.from);
+    for (const [key, rows] of byKey(held, (r) => checkKey('held', r.debtId!, r.date))) {
+      if (answered(key)) continue;
+      const { txn, from } = rows[0].match!;
+      const total = rows.reduce((n, r) => n + r.amount, 0);
+      const debtId = rows[0].debtId!, date = rows[0].date, debt = rows[0].name, there = name(from);
       out.push({
-        key: checkKey('move', id, m.row.date), kind: 'move', accountId: acc.id, itemId: id,
-        seen: [{ date: txn.date, amount: -txn.amount, where: `${name(m.to)} card` }],
-        title: `Move ${cash(m.amount)} to ${name(m.to)}`,
-        detail: `${m.row.name} came out on the ${name(m.to)} card on ${fmtShort(txn.date)}, so its money is still in ${acc.name}. Once the transfer shows in the bank, this clears itself.`,
+        key, kind: 'held', accountId: acc.id, itemId: debtId,
+        seen: [{ date: txn!.date, amount: -txn!.amount, where: there }],
+        title: `Did ${there} pay ${debt}'s ${cash(total)}?`,
+        detail: `${debt}'s ${cash(total)} for ${fmtShort(date)} is kept in ${acc.name}. The bank showed ${cash(-txn!.amount)} paid to ${debt} from ${there} on ${fmtShort(txn!.date)}, so it's counted as paid. If that was extra and you'll still send it from ${acc.name}, say so.`,
+        apply: { label: `Still to send from ${acc.name}`, run: (d) => { d.billChecks = { ...(d.billChecks ?? {}), [checkKey('unpaid', debtId, date)]: today }; } },
+        skip: 'Yes, that paid it',
+      });
+    }
+    for (const [key, ms] of byKey(t.toMove.map((m) => m.row), (r) => checkKey('move', outflowId(r), r.date))) {
+      const moves = t.toMove.filter((m) => ms.includes(m.row));
+      const { row, to } = moves[0];
+      const txn = row.match!.txn!;
+      const amount = moves.reduce((n, m) => n + m.amount, 0);
+      out.push({
+        key, kind: 'move', accountId: acc.id, itemId: outflowId(row),
+        seen: [{ date: txn.date, amount: -txn.amount, where: row.debtId ? name(to) : `${name(to)} card` }],
+        title: `Move ${cash(amount)} to ${name(to)}`,
+        detail: `${row.name} ${row.debtId ? `was paid from ${name(to)}` : `came out on the ${name(to)} card`} on ${fmtShort(txn.date)}, so its money is still in ${acc.name}. Once the transfer shows in the bank, this clears itself.`,
         skip: `Keep it in ${acc.name}`,
       });
     }
