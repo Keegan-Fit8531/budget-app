@@ -5,7 +5,7 @@ import { SYNCED } from '../../services/bank/BankCard';
 import { useBudget } from '../../state/store';
 import { Icon } from '../../ui/Icon';
 import { Modal } from '../../ui/components';
-import { answeredChecks, billChecks, type BillCheck, type CheckKind } from './logic/billCheck';
+import { answeredChecks, billChecks, type Ask, type BillCheck, type CheckKind } from './logic/billCheck';
 
 // The bill check pop-up: after a bank sync, what the bank shows about your bills (a different day or
 // amount, a bill paid on another card to make up for, one not seen at all), each with a change to make
@@ -63,16 +63,16 @@ export function BillCheckButton({ count, onClick }: { count: number; onClick: ()
   );
 }
 
-/** "Still to send from Misc bills": how much, before it's saved. */
-function AskAmount({ c, onSave, onCancel }: { c: BillCheck; onSave: (amount: number) => void; onCancel: () => void }) {
-  const [text, setText] = useState((c.ask!.initial / 100).toFixed(2));
+/** "No, Misc bills paid it": how much, before it's saved. */
+function AskAmount({ ask, onSave, onCancel }: { ask: Ask; onSave: (amount: number) => void; onCancel: () => void }) {
+  const [text, setText] = useState((ask.initial / 100).toFixed(2));
   const amount = parseMoney(text);
   const ok = amount !== null && amount >= 0;
   return (
     <div className="stack gap-6">
-      <span className="small">{c.ask!.prompt}</span>
+      <span className="small">{ask.prompt}</span>
       <div className="row wrap gap-6">
-        <input className="input" style={{ maxWidth: 140 }} inputMode="decimal" autoFocus value={text} aria-label={c.ask!.prompt}
+        <input className="input" style={{ maxWidth: 140 }} inputMode="decimal" autoFocus value={text} aria-label={ask.prompt}
           onChange={(e) => setText(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && ok && onSave(amount!)} />
         <button className="btn small primary" disabled={!ok} onClick={() => ok && onSave(amount!)}>Save</button>
         <button className="btn small ghost" onClick={onCancel}>Cancel</button>
@@ -85,9 +85,9 @@ export function BillCheckModal({ checks, onClose }: { checks: BillCheck[]; onClo
   const { budget, update } = useBudget();
   const today = todayISO();
   const [asking, setAsking] = useState<string>();
-  const answer = (c: BillCheck, change: boolean, amount?: number) => update((b) => {
+  const answer = (c: BillCheck, change: boolean, ask?: Ask, amount?: number) => update((b) => {
     if (change) c.apply?.run(b);
-    if (amount !== undefined) c.ask?.run(b, amount);
+    if (ask && amount !== undefined) ask.run(b, amount);
     b.billChecks = { ...(b.billChecks ?? {}), [c.key]: today };
     return b;
   });
@@ -114,15 +114,17 @@ export function BillCheckModal({ checks, onClose }: { checks: BillCheck[]; onClo
                       {c.seen.length > 0 && (
                         <span className="xs muted">{seenLine(c, a.name)}</span>
                       )}
-                      {asking === c.key ? (
-                        <AskAmount c={c} onSave={(amount) => { answer(c, false, amount); setAsking(undefined); }} onCancel={() => setAsking(undefined)} />
-                      ) : (
-                        <div className="row wrap gap-6">
-                          {c.apply && <button className="btn small primary" onClick={() => answer(c, true)}>{c.apply.label}</button>}
-                          {c.ask && <button className="btn small primary" onClick={() => setAsking(c.key)}>{c.ask.label}</button>}
-                          <button className={`btn small${c.apply || c.ask ? ' ghost' : ''}`} onClick={() => answer(c, false)}>{c.skip}</button>
-                        </div>
-                      )}
+                      {(() => {
+                        const open = c.asks?.find((_, i) => asking === `${c.key}#${i}`);
+                        if (open) return <AskAmount key={asking} ask={open} onSave={(amount) => { answer(c, false, open, amount); setAsking(undefined); }} onCancel={() => setAsking(undefined)} />;
+                        return (
+                          <div className="row wrap gap-6">
+                            {c.apply && <button className="btn small primary" onClick={() => answer(c, true)}>{c.apply.label}</button>}
+                            {c.skip && <button className={`btn small${c.apply ? ' ghost' : c.asks ? ' primary' : ''}`} onClick={() => answer(c, false)}>{c.skip}</button>}
+                            {c.asks?.map((a, i) => <button key={a.label} className="btn small" onClick={() => setAsking(`${c.key}#${i}`)}>{a.label}</button>)}
+                          </div>
+                        );
+                      })()}
                     </div>
                   </div>
                 ))}

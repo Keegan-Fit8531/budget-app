@@ -26,11 +26,21 @@ export interface BillCheck {
   seen: { date: ISODate; amount: Cents; where: string }[];
   /** The change, made on a copy of the budget inside `update()`, and what its button says. */
   apply?: { label: string; run: (b: Budget) => void };
-  /** What "no" says. Answering keeps `key` in `budget.billChecks`. */
-  skip: string;
-  /** Instead of `apply`: a change that needs an amount (what you'll send), with its starting figure. */
-  ask?: { label: string; prompt: string; initial: Cents; run: (b: Budget, amount: Cents) => void };
+  /** What "no" says (none: there's no plain no, only `apply` or an `asks`). Answering keeps `key` in `budget.billChecks`. */
+  skip?: string;
+  /** Answers that need an amount (what was or will be sent), each with its starting figure. */
+  asks?: Ask[];
 }
+
+export interface Ask { label: string; prompt: string; initial: Cents; run: (b: Budget, amount: Cents) => void }
+
+/** A held debt's amount for one statement (`Debt.heldPay`), set or (amount undefined) taken off. */
+const setHeld = (d: Budget, debtId: string, date: ISODate, amount?: Cents) => {
+  const x = d.debts?.find((y) => y.id === debtId);
+  if (!x) return;
+  if (amount !== undefined) { x.heldPay = { ...(x.heldPay ?? {}), [date]: amount }; return; }
+  if (x.heldPay) { delete x.heldPay[date]; if (!Object.keys(x.heldPay).length) delete x.heldPay; }
+};
 
 /** How far back to look for a bill's usual day and amount. */
 const LOOK_BACK = 130;
@@ -130,20 +140,37 @@ export function billChecks(b: Budget, today: ISODate = todayISO()): BillCheck[] 
       const { txn, from } = rows[0].match!;
       const total = rows.reduce((n, r) => n + r.amount, 0);
       const debtId = rows[0].debtId!, date = rows[0].date, debt = rows[0].name, there = name(from);
+      // Not it: the payment from the other account isn't matched to this one again ('unpaid').
+      const notIt = (d: Budget, amount: Cents, paid: boolean) => {
+        d.billChecks = { ...(d.billChecks ?? {}), [checkKey('unpaid', debtId, date)]: today, ...(paid ? { [checkKey('paid', debtId, date)]: today } : {}) };
+        if (amount !== total) setHeld(d, debtId, date, amount);
+      };
       out.push({
         key, kind: 'held', accountId: acc.id, itemId: debtId,
         seen: [{ date: txn!.date, amount: -txn!.amount, where: there }],
-        title: `Did ${there} pay ${debt}'s ${cash(total)}?`,
-        detail: `${debt}'s ${cash(total)} for ${fmtShort(date)} is kept in ${acc.name}. The bank showed ${cash(-txn!.amount)} paid to ${debt} from ${there} on ${fmtShort(txn!.date)}, so it's counted as paid. If that was extra and you'll still send it from ${acc.name}, say so.`,
-        ask: {
-          label: `Still to send from ${acc.name}`, prompt: `How much will you send ${debt} from ${acc.name}?`, initial: total,
-          run: (d, amount) => {
-            d.billChecks = { ...(d.billChecks ?? {}), [checkKey('unpaid', debtId, date)]: today };
-            const x = d.debts?.find((y) => y.id === debtId);
-            if (x && amount !== total) x.heldPay = { ...(x.heldPay ?? {}), [date]: amount };
-          },
-        },
+        title: `Was ${debt}'s ${cash(total)} paid from ${there}?`,
+        detail: `${acc.name} keeps ${cash(total)} for ${debt}'s ${fmtShort(date)} payment. The bank shows ${cash(-txn!.amount)} paid to ${debt} from ${there} on ${fmtShort(txn!.date)}, so for now that's counted as paying it.`,
+        asks: [
+          { label: `No, ${acc.name} paid it`, prompt: `How much did ${acc.name} pay ${debt}?`, initial: total, run: (d, amount) => notIt(d, amount, true) },
+          { label: `No, ${acc.name} will pay it`, prompt: `How much will ${acc.name} pay ${debt}?`, initial: total, run: (d, amount) => notIt(d, amount, false) },
+        ],
         skip: 'Yes, that paid it',
+      });
+    }
+    // Paid part of a held debt's payment from here ($150 of Gem's $315): is the rest still to send?
+    for (const r of t.rows) {
+      if (!r.rest || !r.debtId) continue;
+      const key = checkKey('rest', r.debtId, r.date);
+      if (answered(key)) continue;
+      const { of, sent, txn } = r.rest;
+      const debtId = r.debtId, date = r.date;
+      out.push({
+        key, kind: 'held', accountId: acc.id, itemId: debtId,
+        seen: [{ date: txn.date, amount: -txn.amount, where: acc.name }],
+        title: `Is the rest of ${r.name}'s payment still to send?`,
+        detail: `${acc.name} kept ${cash(of)} for ${r.name}'s ${fmtShort(date)} payment and paid ${cash(sent)} on ${fmtShort(txn.date)}. The other ${cash(r.amount)} is counted as still to come.`,
+        apply: { label: `No, ${cash(sent)} was all`, run: (d) => setHeld(d, debtId, date, sent) },
+        asks: [{ label: 'Yes, more to send', prompt: `How much more will ${acc.name} send ${r.name}?`, initial: r.amount, run: (d, amount) => setHeld(d, debtId, date, sent + amount) }],
       });
     }
     for (const [key, ms] of byKey(t.toMove.map((m) => m.row), (r) => checkKey('move', outflowId(r), r.date))) {
@@ -192,22 +219,22 @@ export function answeredChecks(b: Budget, today: ISODate = todayISO()): Answered
       d.billChecks = Object.fromEntries(Object.entries(d.billChecks ?? {}).filter(([k]) => !keys.includes(k)));
     };
     const item = b.items.find((i) => i.id === id);
-    if (kind === 'held') {
+    if (kind === 'held' || kind === 'rest') {
       const debt = b.debts?.find((d) => d.id === id);
-      const unpaid = checkKey('unpaid', id, v);
+      const unpaid = checkKey('unpaid', id, v), paid = checkKey('paid', id, v);
       const set = debt?.heldPay?.[v];
       const hold = acc(debt?.holdAccountId)?.name ?? 'its account';
+      const amt = set !== undefined ? ` (${cash(set)})` : '';
       out.push({
         key, on, accountId: debt?.holdAccountId,
-        title: b.billChecks?.[unpaid]
-          ? `${named(id)} ${fmtShort(v)}: still to send from ${hold}${set !== undefined ? ` (${cash(set)})` : ''}`
+        title: kind === 'rest' ? `${named(id)} ${fmtShort(v)}: ${set !== undefined ? `${cash(set)} in all from ${hold}` : 'what was paid'}`
+          : b.billChecks?.[paid] ? `${named(id)} ${fmtShort(v)}: paid from ${hold}${amt}`
+          : b.billChecks?.[unpaid] ? `${named(id)} ${fmtShort(v)}: still to send from ${hold}${amt}`
           : `${named(id)} ${fmtShort(v)}: paid from another account`,
-        undo: (d) => {
-          drop([key, unpaid])(d);
-          const x = d.debts?.find((y) => y.id === id);
-          if (x?.heldPay) { delete x.heldPay[v]; if (!Object.keys(x.heldPay).length) delete x.heldPay; }
-        },
+        undo: (d) => { drop(kind === 'rest' ? [key] : [key, unpaid, paid])(d); setHeld(d, id, v); },
       });
+    } else if (kind === 'paid' && b.billChecks?.[checkKey('held', id, v)]) {
+      continue; // part of the held answer above ("No, Misc bills paid it"), undone with it
     } else if (kind === 'paid' || kind === 'move') {
       const where = acc(item?.accountId ?? b.debts?.find((d) => d.id === id)?.holdAccountId);
       out.push({

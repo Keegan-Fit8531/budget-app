@@ -198,6 +198,9 @@ export function Modal({ title, sub, onClose, children, width = 540, actions, cla
   const id = useId();
   const done = useRef(onClose);
   done.current = onClose;
+  // Only a tap that starts on the backdrop closes it: pressing inside (selecting an amount in a box) and
+  // letting go outside makes a click on the backdrop too, which used to close the pop-up mid-edit.
+  const downOnBack = useRef(false);
   const close = useCallback(() => {
     if (reducedMotion()) { done.current(); return; }
     setClosing(true);
@@ -217,7 +220,9 @@ export function Modal({ title, sub, onClose, children, width = 540, actions, cla
     };
   }, [close]);
   return createPortal(
-    <div className={`modal-back${closing ? ' closing' : ''}`} onClick={close}>
+    <div className={`modal-back${closing ? ' closing' : ''}`}
+      onPointerDown={(e) => { downOnBack.current = e.target === e.currentTarget; }}
+      onClick={(e) => { if (downOnBack.current && e.target === e.currentTarget) close(); downOnBack.current = false; }}>
       <div className={`modal${className ? ` ${className}` : ''}`} role="dialog" aria-modal="true" aria-labelledby={id} style={{ maxWidth: width }} onClick={(e) => e.stopPropagation()}>
         <div className="modal-head">
           <div className="grow min0">

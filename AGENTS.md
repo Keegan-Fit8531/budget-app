@@ -80,7 +80,9 @@ questions are answered there):
    usually older). Its README says how the owner's accounts are used (which one is the EFTPOS card, what each
    holds) and how to query `budget.json` without reading all of it. Every save is a commit, so to see what an
    upload or tap changed, compare saves: `git -C ../budget-data show <commit>:budget.json | jq '.debts[] | select(.id=="gem")'`.
-2. `npm run inspect` (every account) or `npm run inspect -- food --today 2026-11-22` (one account in detail):
+   To see what the owner tapped, one field across saves: `for c in $(git -C ../budget-data log --format=%h -20); do git -C ../budget-data show $c:budget.json | jq -c .billChecks; done`.
+2. `npm run inspect` (every account) or `npm run inspect -- food --today 2026-11-22` (one account in detail; give `--today`
+   as the NZ date: this container's clock is UTC, a day behind NZ until 1pm):
    the tracker (each bill paid or to come, and the bank transaction that paid it), what Bill check asks, envelopes and what counted against them (each transfer with the purchase it was matched to), transfers the card asks about, next pays and any
    Steady buffer, and the last 14 days of transactions with what each counted as. It loads the budget the
    way the app does (`state/upgrade.ts`). The first line says when that copy was saved: if it's older than

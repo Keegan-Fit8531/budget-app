@@ -6,9 +6,9 @@ import type { Budget } from '../../../core/types';
 
 const { out, toWeekly } = billTxns;
 
-/** Misc bills holding Gem Visa's statement-day payment, with $200 paid to Gem from Weekly allowance the day before. */
-function gemHeld(): Budget {
-  const b = bills([], { weekly: [out('2026-11-20', 20000, 'Gem Visa Fitzgerald K 000000601073')] });
+/** Misc bills holding Gem Visa's statement-day payment, with $200 paid to Gem from Weekly allowance the day before (or `txns`). */
+function gemHeld(txns: Parameters<typeof bills>[1] = { weekly: [out('2026-11-20', 20000, 'Gem Visa Fitzgerald K 000000601073')] }): Budget {
+  const b = bills([], txns);
   b.accounts.push({ id: 'gem', name: 'Gem Visa', kind: 'external', color: '#000', groupId: 'debt' });
   b.split.push({ accountId: 'gem', amount: 0, mode: 'exact' });
   b.debts = [{
@@ -63,7 +63,8 @@ describe('bill check', () => {
     expect(gem().length).toBeGreaterThan(0);
     expect(gem().every((r) => r.status === 'paid')).toBe(true);
     const held = billChecks(b, '2026-11-22').find((c) => c.kind === 'held')!;
-    expect(held.title).toMatch(/^Did Weekly allowance pay Gem Visa's \$/);
+    expect(held.title).toMatch(/^Was Gem Visa's \$[\d.,]+ paid from Weekly allowance\?$/);
+    expect(held.asks!.map((a) => a.label)).toEqual(['No, Misc bills paid it', 'No, Misc bills will pay it']);
     expect(held.key).toBe('held|gem|2026-11-21');
 
     // "Yes, that paid it": its money is still in Misc bills, so suggest moving it back.
@@ -72,9 +73,9 @@ describe('bill check', () => {
     expect(billChecks(yes, '2026-11-22').map((c) => c.kind)).toEqual(['move']);
     expect(billTracker(yes, 'bills', '2026-11-22').toMove.length).toBe(gem().length);
 
-    // "Still to send from Misc bills": it's to come again, and isn't asked again.
+    // "No, Misc bills will pay it": it's to come again, and isn't asked again.
     const still = structuredClone(b);
-    held.ask!.run(still, held.ask!.initial);
+    held.asks![1].run(still, held.asks![1].initial);
     still.billChecks![held.key] = '2026-11-22';
     const rows = billTracker(still, 'bills', '2026-11-22').rows.filter((r) => r.debtId === 'gem');
     expect(rows.every((r) => r.status === 'due' && r.late)).toBe(true);
@@ -85,7 +86,7 @@ describe('bill check', () => {
     const b = gemHeld();
     const held = billChecks(b, '2026-11-22').find((c) => c.kind === 'held')!;
     let d = structuredClone(b);
-    held.ask!.run(d, 15000);
+    held.asks![1].run(d, 15000);
     d.billChecks![held.key] = '2026-11-22';
     d = structuredClone(d);
     const rows = billTracker(d, 'bills', '2026-11-22').rows.filter((r) => r.debtId === 'gem');
@@ -99,6 +100,49 @@ describe('bill check', () => {
     expect(d.debts![0].heldPay).toBeUndefined();
     expect(billChecks(d, '2026-11-22').map((c) => c.kind)).toEqual(['held']);
     expect(answeredChecks(d, '2026-11-22')).toEqual([]);
+  });
+
+  it("already paid from Misc bills (the bank doesn't show it yet): counted as paid, for that amount", () => {
+    const b = gemHeld();
+    const held = billChecks(b, '2026-11-22').find((c) => c.kind === 'held')!;
+    let d = structuredClone(b);
+    held.asks![0].run(d, 6000);
+    d.billChecks![held.key] = '2026-11-22';
+    d = structuredClone(d);
+    const rows = billTracker(d, 'bills', '2026-11-22').rows.filter((r) => r.debtId === 'gem');
+    expect(rows.map((r) => [r.amount, r.status])).toEqual([[6000, 'paid']]);
+    expect(billChecks(d, '2026-11-22')).toEqual([]);
+    expect(answeredChecks(d, '2026-11-22').map((a) => a.title)).toEqual(['Gem Visa 21 Nov: paid from Misc bills ($60)']);
+  });
+
+  it('Misc bills paid part of it: only that is paid, and it asks about the rest', () => {
+    const b = gemHeld({ bills: [out('2026-11-22', 3000, 'Gem Visa Fitzgerald K 000000601073')] });
+    const kept = billTracker(b, 'bills', '2026-11-20').rows.filter((r) => r.debtId === 'gem').reduce((t, r) => t + r.amount, 0);
+    expect(kept).toBeGreaterThan(3000 * 1.2);
+    const gem = (x: Budget) => billTracker(x, 'bills', '2026-11-22').rows.filter((r) => r.debtId === 'gem').map((r) => [r.amount, r.status]);
+    expect(gem(b)).toEqual([[3000, 'paid'], [kept - 3000, 'due']]);
+    const rest = billChecks(b, '2026-11-22').find((c) => c.key === 'rest|gem|2026-11-21')!;
+    expect(rest.title).toBe("Is the rest of Gem Visa's payment still to send?");
+
+    // "No, $30 was all": that's the whole payment.
+    let all = structuredClone(b);
+    rest.apply!.run(all);
+    all.billChecks = { [rest.key]: '2026-11-22' };
+    all = structuredClone(all);
+    expect(gem(all)).toEqual([[3000, 'paid']]);
+    expect(billChecks(all, '2026-11-22')).toEqual([]);
+
+    // "Yes, more to send": $20 more, still to come.
+    let more = structuredClone(b);
+    rest.asks![0].run(more, 2000);
+    more.billChecks = { [rest.key]: '2026-11-22' };
+    more = structuredClone(more);
+    expect(gem(more)).toEqual([[3000, 'paid'], [2000, 'due']]);
+    expect(billChecks(more, '2026-11-22')).toEqual([]);
+    // Undo: asked again, as it was.
+    answeredChecks(more, '2026-11-22')[0].undo(more);
+    more = structuredClone(more);
+    expect(gem(more)).toEqual(gem(b));
   });
 
   it('no suggestions for accounts the bank connection does not fill', () => {

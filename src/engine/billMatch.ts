@@ -27,9 +27,10 @@ export interface BillMatch {
 
 /**
  * How a bill-check answer is kept in `budget.billChecks`. 'held': you've answered whether a debt payment
- * seen from another account paid the one held here; 'unpaid': it didn't, so it's still to send from here.
+ * seen from another account paid the one held here; 'unpaid': it didn't, so it's still to send from here;
+ * 'rest': you've answered whether the rest of a held payment this account paid part of is still to send.
  */
-export const checkKey = (kind: 'move' | 'paid' | 'day' | 'amount' | 'held' | 'unpaid', id: string, v: string | number): string => `${kind}|${id}|${v}`;
+export const checkKey = (kind: 'move' | 'paid' | 'day' | 'amount' | 'held' | 'unpaid' | 'rest', id: string, v: string | number): string => `${kind}|${id}|${v}`;
 
 /** The cost or debt an outflow is for. */
 export const outflowId = (o: Outflow): string => o.itemId ?? o.debtId ?? o.name;
