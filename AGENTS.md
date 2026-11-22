@@ -87,7 +87,7 @@ questions are answered there):
    Accounts the Bill check pop-up opens by itself and covers the page: add `--click 'text=Later'` (it can open after
    a bank sync, later than the clicks: if it's still there, or "Nothing to click" is printed, run it again). Open a card
    with `--click '.acct:has-text("Rent") >> text=Details'`, and picture just it with `--only '.acct:has-text("Rent")'`
-   (see `scripts/README.md`). Look before and after your change.
+   (see `scripts/README.md`). To see the Bill check pop-up itself, leave out the click and use `--only '.modal'`. Look before and after your change.
 
 That output is private: never put it in commits, PRs, code or fixtures. `testing/fixtures.ts` →
 `foodGasBudget()` is a made-up budget shaped like the real Food and gas account, for tests.
@@ -155,8 +155,8 @@ Run one test file with `npx vitest run src/engine/periods.test.ts`. Test budgets
 The owner asks for changes "live" (or "push live"): push the session branch, open a PR into `main` and merge it.
 Merging to `main` runs `.github/workflows/pages.yml`, which publishes to GitHub Pages in about 1–2 minutes. Two
 merges close together cancel the first run, which is fine: the second builds everything. To check it's live,
-search the live bundle for a CSS class you added (text in JSX is split up when built, so search a class name, not
-a sentence):
+search the live bundle for a CSS class you added, or a string built in a `.ts` file (text in JSX is split up when
+built, so search a class name or a `logic/` string, not JSX text):
 
 ```bash
 js=$(curl -s https://keegan-fit8531.github.io/budget-app/ | grep -o 'assets/index-[^"]*\.js' | head -1)
