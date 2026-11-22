@@ -206,6 +206,7 @@ export function DebtsPage() {
               )}
             </div>
 
+            <DetailsToggle open={isOpen} onChange={() => toggle(d.id)} />
             <Collapse open={isOpen} stacked><FlatDetails.Provider value>
             <div className="acct-body sections">
             {d.payroll && <p className="small muted">Taken from your salary: about {cash(d.payroll.perPay)} each payday, before pay reaches you. Not part of the payday split.</p>}
@@ -291,7 +292,6 @@ export function DebtsPage() {
             </div>}
             </div>
             </FlatDetails.Provider></Collapse>
-            <DetailsToggle open={isOpen} onChange={() => toggle(d.id)} />
           </section>
         );
       })}

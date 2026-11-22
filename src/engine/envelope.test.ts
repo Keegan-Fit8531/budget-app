@@ -5,7 +5,7 @@ import { outflows } from './balances/outflows';
 import { envelopeBudget, envelopeOn, envelopePerPay, envelopeWindow } from './setAside';
 import { periodContaining } from './periods';
 import { accountEnvelopes, envelopeHeld, envelopeStatus, guessTransfer, matchesEnvelope, transferKey, unsortedTransfers } from './envelope';
-import { budget } from '../testing/fixtures';
+import { budget, foodGasBudget } from '../testing/fixtures';
 
 describe('month envelope (Gas)', () => {
   it('funds a share of the monthly budget on each payday and tracks fuel spend', () => {
@@ -148,15 +148,8 @@ describe('week and fortnight envelopes (Food shop)', () => {
 describe('transfers that paid for an envelope', () => {
   // Food and gas (…-55) moves $50 to Everyday (…-00) after a supermarket shop on the Everyday card.
   function setup() {
-    const b = budget();
-    b.accounts.push(
-      { id: 'food', name: 'Food and gas', kind: 'bank', color: '#000', groupId: 'needs', number: '06-0115-0324910-55' },
-      { id: 'day', name: 'Everyday', kind: 'bank', color: '#000', groupId: 'needs', number: '06-0115-0324910-00' },
-    );
-    b.items.push(
-      { id: 'shop', name: 'Food shop', amount: 20000, frequency: 'weekly', start: '2026-11-05', accountId: 'food', envelope: 'week' },
-      { id: 'car', name: 'Car gas', amount: 25000, frequency: 'monthly', start: '2026-11-01', accountId: 'food', envelope: 'month' },
-    );
+    const b = foodGasBudget();
+    b.items = b.items.filter((i) => i.id !== 'scoot');
     const move = { date: '2026-11-22', description: 'To: 06-0115-0324910-00 Debit Transfer 002552', amount: -5000 };
     b.pendingTransactions = { food: [move], day: [{ date: '2026-11-21', description: 'Freshchoice', amount: -5394 }] };
     return { b, move };
@@ -233,5 +226,20 @@ describe('two envelopes that share shops (Car gas and Scooter gas)', () => {
     expect(guessTransfer(b, 'food', move)).toMatchObject({ itemIds: ['scoot'], sure: true });
     b.accountTransactions!.day = [{ date: '2026-11-20', description: 'Z ENERGY', amount: -7400 }];
     expect(guessTransfer(b, 'food', move)).toMatchObject({ itemIds: ['car'], sure: true });
+  });
+});
+
+describe('the real Food and gas account (fixture)', () => {
+  it('has nothing spare once this week, the later weeks and the gas are kept back', () => {
+    const b = foodGasBudget();
+    b.pendingTransactions = {
+      food: [{ date: '2026-11-22', description: 'To: 06-0115-0324910-00 Debit Transfer 002552', amount: -5000 }],
+      day: [{ date: '2026-11-21', description: 'Freshchoice', amount: -5394 }],
+    };
+    const today = '2026-11-22';
+    const t = billTracker(b, 'food', today);
+    // $150 left this week + 4 more weeks ($800) + Car gas $250 + Scooter gas $50 = the $1,250 in it.
+    expect(envelopeHeld(b, 'food', today)).toBe(125000);
+    expect(t.spare - envelopeHeld(b, 'food', today)).toBe(0);
   });
 });

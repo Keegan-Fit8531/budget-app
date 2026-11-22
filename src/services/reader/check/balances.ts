@@ -1,6 +1,6 @@
 import { addDays, fmtShort, type ISODate } from '../../../core/dates';
 import type { Budget, Cents } from '../../../core/types';
-import { numberKey } from '../../bank/bank';
+import { numberKey } from '../../../engine/transfers';
 import type { RawBalances } from '../types';
 import { NOT_MINE, type Draft, type DraftBalances, type DraftBalanceRow, type Issue, type Review } from './draft';
 import { toCents, validDate } from './figures';

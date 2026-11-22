@@ -14,6 +14,8 @@ GitHub repo (`budget-data`). `CLAUDE.md` points here.
    and line that uses it, so you reach every page that shows it. The READMEs say what a file does, not
    who uses it: the script answers that from the code, so it's never out of date.
 5. Don't read `package-lock.json`, `dist/`, `public/ocr/`, or the whole of `core/types.ts` (search it for the type you need).
+6. **Every change also improves these notes** (this file and the READMEs). As you work, keep track of what
+   was wrong, missing or cost you time. Fix it before you finish (see **Before you finish a change**, step 4).
 
 ## Folder map
 
@@ -40,11 +42,12 @@ before dev/build), `.github/workflows/pages.yml` (deploys `main` to GitHub Pages
 
 | To change… | Start in |
 |---|---|
-| What's saved (a new field on accounts, debts, goals…) | `core/types.ts`, then `state/store.tsx` → `tidy()` for older saves, `core/valid.ts` |
+| What's saved (a new field on accounts, debts, goals…) | `core/types.ts`, then `state/upgrade.ts` → `tidy()` for older saves, `core/valid.ts` |
 | Pay periods, paydays, weekend rules, a moved payday | `engine/periods.ts` |
 | When a cost falls (weekly, monthly, skip near payday) | `engine/occurrences.ts` |
 | Money put aside (WOF, tyres) or envelopes (Gas a month, Food a week) | `engine/setAside.ts`, `engine/envelope.ts`; what counts against one (purchases, transfers that paid for one): `engine/envelopeMatch.ts`; Accounts card: `features/accounts/EnvelopeCards.tsx` |
-| What payday sends each account (fixed / exact / steady) | `engine/balances/` (README lists which file does what) |
+| Which bank transaction paid a bill (card on another account, made-up transfers), bills not seen; the Accounts bill check pop-up | `engine/billMatch.ts`; suggestions: `features/accounts/logic/billCheck.ts`; pop-up: `features/accounts/BillCheck.tsx` |
+| What payday sends each account (fixed / exact / steady); "allocated this pay" (what it sent this pay: `depositFor`) | `engine/balances/` (README lists which file does what) |
 | A pay's plan: totals, leftover, what each account needs | `engine/plan.ts` → `planFor()` |
 | Automatic balancing, "Balance this pay" | `engine/rebalance.ts` |
 | Planner page, Optimise the leftover | `features/planner/` |
@@ -60,7 +63,33 @@ before dev/build), `.github/workflows/pages.yml` (deploys `main` to GitHub Pages
 | Page routing, nav, the Add button | `app/` |
 | Saved daily copies, Undo by restoring | `state/versions.ts` |
 | Every page that uses a function, type or file | `npm run uses -- <name or src-relative file>` |
-| Renaming a saved field | `core/types.ts` (keep the old one, marked "Older saves"), `state/store.tsx` → `tidy()` converts it |
+| What the owner's real budget shows, and why | `npm run inspect` / `npm run screenshot` (see **Checking a change against the real budget**) |
+| How a loaded budget is upgraded (older saves, one-off fixes) | `state/upgrade.ts` → `tidy()`, `bringUpToDate()` |
+| Renaming a saved field | `core/types.ts` (keep the old one, marked "Older saves"), `state/upgrade.ts` → `tidy()` converts it |
+
+## Checking a change against the real budget
+
+Tests use made-up budgets. To see what a change does to the owner's real one (most "why does it show X?"
+questions are answered there):
+
+1. Get the latest copy. The app saves to **`main`** of `budget-data`, so if that repo is checked out next to
+   this one, run `git -C ../budget-data checkout main && git -C ../budget-data pull` (a session branch there is
+   usually older). Its README says how the owner's accounts are used (which one is the EFTPOS card, what each
+   holds) and how to query `budget.json` without reading all of it.
+2. `npm run inspect` (every account) or `npm run inspect -- food --today 2026-11-22` (one account in detail):
+   the tracker, envelopes and what counted against them, transfers the card asks about, next pays and any
+   Steady buffer, and the last 14 days of transactions with what each counted as. It loads the budget the
+   way the app does (`state/upgrade.ts`). The first line says when that copy was saved: if it's older than
+   the owner's screenshot, the browser has changes the repo hasn't got yet.
+3. `npm run dev`, then `npm run screenshot -- '#/accounts' --today 2026-11-22` to see the page itself, in New
+   Zealand time. (A browser left on UTC is on yesterday's date until 1pm in NZ, which changes what's shown.)
+   The owner uses a phone in dark mode, so for a layout change look as they do: `--width 400 --dark`. On
+   Accounts the Bill check pop-up opens by itself and covers the page: add `--click 'text=Later'`. Open a card
+   with `--click '.acct:has-text("Rent") >> text=Details'`, and picture just it with `--only '.acct:has-text("Rent")'`
+   (see `scripts/README.md`). Look before and after your change.
+
+That output is private: never put it in commits, PRs, code or fixtures. `testing/fixtures.ts` →
+`foodGasBudget()` is a made-up budget shaped like the real Food and gas account, for tests.
 
 ## Rules the code relies on
 
@@ -68,8 +97,11 @@ before dev/build), `.github/workflows/pages.yml` (deploys `main` to GitHub Pages
 - **Dates are `YYYY-MM-DD` strings** (`ISODate`), worked out in UTC by `core/dates.ts`. Do date maths with its helpers (`todayISO()`, `addDays()`, `diffDays()` …), not with `Date` directly, and pass `today` through so tests can fix the date.
 - **Every change goes through `useBudget().update(fn)`** (`state/store.tsx`): it clones the budget, runs your `fn`, re-balances upcoming pays (`autoBalance`), keeps the day's saved copy and syncs. Don't mutate the budget anywhere else.
 - **Logic is pure and testable.** `engine/`, `core/` and every `logic/` folder take a `Budget` and return values. No React and no storage there. Pages (`*.tsx`) call them.
-- **Dependencies point inward**: `core` ← `engine` ← `features`/`services` ← `app`. `ui/` knows nothing about budgets. (`engine` and `features/debts|savings/logic` call each other; don't add new cycles.)
+- **Dependencies point inward**: `core` ← `engine` ← `features`/`services` ← `app`. `ui/` knows nothing about budgets. (`engine` and `features/debts|savings/logic` call each other; don't add new cycles.) `features/` and `services/` sit side by side: a page may use a service (Accounts uses `bankSync` and the bank's `SYNCED` event), and a service may use a page's `logic/`. `engine/` and `core/` never import a service's code (`core/types.ts` only borrows the `Payslip` type).
+- **One reader per bank format**: transfers between your own accounts are read by `engine/transfers.ts` → `ownTransfer` only; shop categories by `features/insights/logic/spending.ts` → `categorizeTxn`. Use them; don't parse descriptions again.
 - **Design**: use the tokens and classes in `ui/styles/` and the pieces in `ui/components.tsx`, never new colours or sizes. Green/red only ever mean "fine"/"short". An account's colour is only a small mark beside its name.
+  Cards are read on a phone: the summary is figures and one line per item, plus anything to act on; explanations go
+  behind Details, and the Details button sits above what it opens (`ui/README.md`).
 - **Privacy**: the Gemini key, GitHub token and bank passphrase stay in the browser's storage only, never in the budget, the repo or the code. `src/personal/` (git-ignored) holds the owner's own data and is never committed.
 - **Keep files small**: aim for under ~400 lines. When one grows past that, split it by its sections into files named for their job, and update the README. Over 500 lines fails `npm test`.
 
@@ -91,6 +123,15 @@ The folder rules above (file size, no React in `core/`/`engine/`/`logic/`, a gen
 1. `npm test`, `npx tsc -b` and `npm run lint` pass (lint warnings are OK, errors aren't).
 2. Every folder you touched has its README updated: new, renamed, moved or deleted files, and changed purposes.
 3. If you added a new kind of task or a new rule, update **Where to look** or **Rules the code relies on** here.
+4. **Leave the notes more accurate than you found them, every time.** Look back on the task: what went well
+   and what didn't. Then fix the notes for the next agent, in the same change:
+   - Anything in this file or a README that was wrong or out of date: correct it.
+   - Anything you had to search for, guess, or learn the hard way (a gotcha, a missing tool, a step that
+     wasn't written down): add it where the next agent will look first (the folder's README, or **Where to
+     look** / **Rules** / **Commands** here).
+   - Anything that misled you or wasn't needed: shorten it or remove it. Keep notes short. One sentence
+     beats a paragraph.
+   - When you finish, tell the owner in one or two lines what you changed in the notes and why.
 
 ## Commands
 
@@ -102,9 +143,27 @@ npx tsc -b         # type-check
 npm run lint
 npm run build      # production build in dist/ (pushing to main deploys it)
 npm run uses -- envelopeHeld   # every file and line that uses a name (or a file's exports)
+npm run inspect -- food        # the real budget (../budget-data) as the app sees it, one account
+npm run screenshot -- '#/accounts' --today 2026-11-22   # a page with the real budget (needs npm run dev)
 ```
 
 Run one test file with `npx vitest run src/engine/periods.test.ts`. Test budgets and helpers are in `src/testing/fixtures.ts`.
+
+## Making a change live
+
+The owner asks for changes "live" (or "push live"): push the session branch, open a PR into `main` and merge it.
+Merging to `main` runs `.github/workflows/pages.yml`, which publishes to GitHub Pages in about 1–2 minutes. Two
+merges close together cancel the first run, which is fine: the second builds everything. To check it's live,
+search the live bundle for a CSS class you added (text in JSX is split up when built, so search a class name, not
+a sentence):
+
+```bash
+js=$(curl -s https://keegan-fit8531.github.io/budget-app/ | grep -o 'assets/index-[^"]*\.js' | head -1)
+curl -s "https://keegan-fit8531.github.io/budget-app/$js" | grep -c 'your-new-class'
+```
+
+Then tell the owner to refresh. The app keeps an offline copy (`public/sw.js`), so on a phone it can take a
+reopen to show the new version.
 
 ## Keeping the READMEs current (required)
 

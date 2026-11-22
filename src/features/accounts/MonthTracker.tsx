@@ -6,7 +6,8 @@ import { nextBufferUse, payProjection } from '../../engine/balances/projection';
 import { fmtDay, fmtShort, monthName, ordinal, todayISO } from '../../core/dates';
 import { debtAdvice } from '../debts/logic/advice';
 import { accountEnvelopes, envelopeHeld } from '../../engine/envelope';
-import { EnvelopeCards } from './EnvelopeCards';
+import { EnvelopeDetails, EnvelopeSummary } from './EnvelopeCards';
+import { MovesSummary, OtherMoves, ToMoveNotes, paidHow } from './BankSeen';
 import { asideMaxSaved, hasSetAsides, isHeldInAccount } from '../../engine/setAside';
 import { type Period } from '../../engine/periods';
 import { asideNames } from '../../engine/rebalance';
@@ -19,10 +20,14 @@ import { Collapse, Disclosure, FlatDetails, ShortList } from '../../ui/component
 const when = (days: number) => (days === 0 ? 'today' : days === 1 ? 'tomorrow' : days > 0 ? `in ${days} days` : days === -1 ? 'yesterday' : `${-days} days ago`);
 
 /**
- * An account across the pay you're in. Always shown: the three figures that matter (what's in it,
- * what's still to come out, what's left) and one bar of them. With `open`: every payment behind them.
+ * An account across the pay you're in. Always shown, kept short: the three figures that matter (paid,
+ * still to come, what's left) with one bar, a line per envelope, and anything that needs doing. Then
+ * `toggle` (the card's Details button, so it stays at the top of what it opens). With `open`: the
+ * explanations and every payment behind the figures.
  */
-export function MonthTracker({ budget, account, today = todayISO(), open }: { budget: Budget; account: Account; today?: string; open: boolean }) {
+export function MonthTracker({ budget, account, today = todayISO(), open, toggle }: {
+  budget: Budget; account: Account; today?: string; open: boolean; toggle?: ReactNode;
+}) {
   const t = billTracker(budget, account.id, today);
   const toCome = t.rows.filter((r) => r.status !== 'paid');
   const paid = t.rows.filter((r) => r.status === 'paid');
@@ -32,6 +37,8 @@ export function MonthTracker({ budget, account, today = todayISO(), open }: { bu
   const gasHeld = envelopeHeld(budget, account.id, today);
   // After bills and reserved gas: negative = short for this pay + this month's gas.
   const afterReserved = t.spare - gasHeld;
+  // Bills paid on another account's card: their money is still here, waiting to be moved across.
+  const moveOut = t.toMove.reduce((s, m) => s + m.amount, 0);
   // A steady account (e.g. rent) builds a buffer for pays with an extra week; what's left isn't spare.
   // Money put aside here (a car fund: WOF, tyres) builds up until it's needed; it isn't spare either —
   // unless every set-aside has a max (Haircut $60) and the account is already over it.
@@ -61,6 +68,8 @@ export function MonthTracker({ budget, account, today = todayISO(), open }: { bu
     : steady ? 'Ends'
     : 'Spare';
   const envNames = envelopes.map((e) => e.item.name).join(' and ');
+  // Only envelopes here (no bills, nothing to move): their lines say it all, so no bar or figures.
+  const envOnly = envelopes.length > 0 && total === 0 && moveOut === 0;
   // Accounts = this pay with what's in the account now. Planner's "Buffer" is often the *next* pay's end.
   const leftNote = short
     ? (gasHeld > 0 ? `after bills and ${envNames || 'envelopes'}` : 'this pay after bills')
@@ -78,17 +87,18 @@ export function MonthTracker({ budget, account, today = todayISO(), open }: { bu
     const adv = debtAdvice(budget, d, t.period);
     const due = t.rows.filter((r) => r.name === d.name && r.status !== 'paid');
     const held = due.reduce((s, r) => s + r.amount, 0);
-    if (held <= 0 && adv.recommended <= 0) return null;
+    // Nothing still held this pay (paid already, or the statement falls in the next pay): nothing to say.
+    if (held <= 0) return null;
     const dayLabel = d.statementDay ? `the ${ordinal(d.statementDay)}` : 'statement day';
     return {
       id: d.id,
-      text: <>{d.name} {cash(held || adv.recommended)} held for {dayLabel} — Gem’s allocation (instalments first, then interest-free by expiry; min {cash(adv.minimum ?? 0)}).</>,
+      text: <>{d.name} {cash(held)} held for {dayLabel} — Gem’s allocation (instalments first, then interest-free by expiry; min {cash(adv.minimum ?? 0)}).</>,
     };
   }).filter(Boolean) as { id: string; text: ReactNode }[];
 
   return (
     <>
-      <EnvelopeCards budget={budget} account={account} envelopes={envelopes} color={color} today={today} />
+      <EnvelopeSummary budget={budget} account={account} envelopes={envelopes} color={color} today={today} />
 
       {!t.balanceKnown && (
         <div className="tip small stack gap-4">
@@ -125,13 +135,21 @@ export function MonthTracker({ budget, account, today = todayISO(), open }: { bu
         </div>
       )}
 
-      {t.balanceKnown && !(aside && !paysBills) && (
+      {t.balanceKnown && !(aside && !paysBills) && envOnly && (short || leftAmount > 0) && (
+        <div className="env-line">
+          <span className="small muted">{leftLabel} {leftNote}</span>
+          <b className={`num ${short ? 'neg' : ''}`}>{cash(leftAmount)}</b>
+        </div>
+      )}
+
+      {t.balanceKnown && !(aside && !paysBills) && !envOnly && (
         <div className="stack gap-8">
-          {(total > 0 || gasHeld > 0) && (
+          {(total > 0 || gasHeld > 0 || moveOut > 0) && (
             <div className="parts" role="img" aria-label={`${cash(t.paid)} paid, ${cash(t.toCome)} still to come${gasHeld ? `, ${cash(gasHeld)} reserved for ${envNames}` : ''}, ${cash(leftAmount)} ${leftWord}`}>
               {t.paid > 0 && <div title={`Paid ${cash(t.paid)}`} style={{ flex: t.paid, background: 'var(--line)' }} />}
               {t.toCome > 0 && <div title={`Still to come ${cash(t.toCome)}`} style={{ flex: t.toCome, background: color }} />}
-              {gasHeld > 0 && !short && <div title={`Reserved for ${envNames} ${cash(gasHeld)}`} style={{ flex: gasHeld, background: 'var(--warn, #C4A35A)' }} />}
+              {moveOut > 0 && <div title={`To move across ${cash(moveOut)}`} style={{ flex: moveOut, background: 'var(--pal-stone)' }} />}
+              {gasHeld > 0 && !short && <div title={`Reserved for ${envNames} ${cash(gasHeld)}`} style={{ flex: gasHeld, background: 'var(--pal-ochre)' }} />}
               {leftAmount > 0 && !short && <div title={`${leftLabel} ${cash(leftAmount)}`} style={{ flex: leftAmount, background: 'var(--good)' }} />}
               {short && <div title={`Short ${cash(leftAmount)}`} style={{ flex: leftAmount, background: 'var(--bad)' }} />}
             </div>
@@ -159,24 +177,21 @@ export function MonthTracker({ budget, account, today = todayISO(), open }: { bu
               ({cash(t.toCome + gasHeld)} total) against {cash(t.balance)} in the account.
             </p>
           )}
-          {!short && gasHeld > 0 && spareAmt > 0 && bufferShown === undefined && (
-            <p className="small muted">
-              {cash(gasHeld)} still budgeted for {envNames} (assumed spent). Anything left when each one resets is yours.
-            </p>
-          )}
-          {overAsideMax && (
-            <p className="small muted">
-              Put aside {cash(asideHeld)} for {names} (max {cash(maxAside!)}); the rest after bills is spare.
-            </p>
-          )}
-          {gemNotes.map((n) => (
-            <p className="small muted" key={n.id}>{n.text}</p>
-          ))}
         </div>
       )}
+      {t.balanceKnown && <ToMoveNotes budget={budget} t={t} />}
 
+      {toggle}
       <Collapse open={open} stacked><FlatDetails.Provider value>
         <div className="stack gap-12">
+          {t.balanceKnown && !(aside && !paysBills) && <>
+            {!short && gasHeld > 0 && spareAmt > 0 && bufferShown === undefined && (
+              <p className="small muted">{cash(gasHeld)} still budgeted for {envNames} (assumed spent). Anything left when each one resets is yours.</p>
+            )}
+            {overAsideMax && <p className="small muted">Put aside {cash(asideHeld)} for {names} (max {cash(maxAside!)}); the rest after bills is spare.</p>}
+            {!short && <MovesSummary t={t} />}
+            {gemNotes.map((n) => <p className="small muted" key={n.id}>{n.text}</p>)}
+          </>}
           {steady && t.balanceKnown && bufferShown !== undefined && bufferFor && (
             <p className="small muted">
               Buffer {cash(bufferShown)} is for the {fmtShort(bufferFor.period.start)} pay: it needs {cash(bufferFor.need)}, gets {cash(bufferFor.deposit)}.
@@ -185,19 +200,7 @@ export function MonthTracker({ budget, account, today = todayISO(), open }: { bu
             </p>
           )}
 
-          {envelopes.map((e) => e.txns.length > 0 && (
-            <Disclosure key={`env-${e.item.id}`} title={`${e.item.name} spending · ${e.label}`} meta={cash(e.spent)}>
-              <ShortList>
-                {e.txns.map((t, i) => (
-                  <div className="list-row small" key={`${t.date}-${t.amount}-${i}`}>
-                    <span style={{ flex: '0 0 72px' }} className="muted">{fmtShort(t.date)}</span>
-                    <span className="grow clip">{t.merchant || t.description}</span>
-                    <span className="num">{cash(-t.amount)}</span>
-                  </div>
-                ))}
-              </ShortList>
-            </Disclosure>
-          ))}
+          <EnvelopeDetails budget={budget} account={account} envelopes={envelopes} />
 
           {/* Bills still to come this pay */}
           {toCome.length > 0 && <div>
@@ -208,7 +211,10 @@ export function MonthTracker({ budget, account, today = todayISO(), open }: { bu
                   <span className="small strong block">{fmtShort(r.date)}</span>
                   <span className="xs muted">{when(r.days)}</span>
                 </span>
-                <span className="grow">{r.name}</span>
+                <span className="grow min0">
+                  <span className="block">{r.name}</span>
+                  {r.late && <span className="xs muted block">not out of any account yet</span>}
+                </span>
                 <b className="num">{cash(r.amount)}</b>
                 {t.balanceKnown ? (
                   <span className={r.covered ? 'pos' : 'neg'} aria-label={r.covered ? 'covered' : 'not covered'} style={{ display: 'grid' }}>
@@ -225,7 +231,10 @@ export function MonthTracker({ budget, account, today = todayISO(), open }: { bu
                 {paid.map((r, i) => (
                   <div className="list-row small muted" key={`${r.name}-${r.date}-${i}`}>
                     <span style={{ flex: '0 0 72px' }}>{fmtShort(r.date)}</span>
-                    <span className="grow">{r.name}</span>
+                    <span className="grow min0">
+                      <span className="block">{r.name}</span>
+                      {paidHow(budget, r) && <span className="xs block">{paidHow(budget, r)}</span>}
+                    </span>
                     <span className="num">{cash(r.amount)}</span>
                     <Icon name="check" size={14} />
                   </div>
@@ -233,6 +242,8 @@ export function MonthTracker({ budget, account, today = todayISO(), open }: { bu
               </ShortList>
             </Disclosure>
           )}
+
+          <OtherMoves t={t} account={account} />
 
           {t.next.rows.length > 0 && (
             <Disclosure title={`Next pay, ${fmtShort(t.next.period.start)}`}
@@ -262,7 +273,9 @@ export function MonthTracker({ budget, account, today = todayISO(), open }: { bu
  * what's been paid by then and what's still to come. With `open`: every payment on its date, with
  * the balance after it.
  */
-export function PayProjectionView({ budget, account, period, day, today = todayISO(), open }: { budget: Budget; account: Account; period: Period; day: string; today?: string; open: boolean }) {
+export function PayProjectionView({ budget, account, period, day, today = todayISO(), open, toggle }: {
+  budget: Budget; account: Account; period: Period; day: string; today?: string; open: boolean; toggle?: ReactNode;
+}) {
   const pr = payProjection(budget, account.id, period, today);
   const onDay = balanceOn(budget, account.id, day, today);
   const paidRows = pr.rows.filter((r) => r.date <= day);
@@ -309,6 +322,7 @@ export function PayProjectionView({ budget, account, period, day, today = todayI
         <div className="alert small" role="status"><Icon name="alert" /><span>Projected to be <b>{cash(-pr.lowest.amount)} short</b> on {fmtDay(pr.lowest.date)}.</span></div>
       )}
 
+      {toggle}
       <Collapse open={open} stacked><FlatDetails.Provider value>
         <div className="stack gap-8">
           <div>

@@ -1,7 +1,8 @@
 import { addDays, type ISODate } from '../core/dates';
 import { isEnvelope } from './setAside';
+import { ownTransfer } from './transfers';
 import { categorizeTxn, shopMap } from '../features/insights/logic/spending';
-import type { Account, Budget, Item, Txn } from '../core/types';
+import type { Budget, Item, Txn } from '../core/types';
 
 // Which synced transactions count against an envelope: purchases that match it (fuel for Gas), and
 // transfers out of its account that paid for one (bought food on another card, then moved $50 over).
@@ -83,12 +84,6 @@ export function txnsIn(b: Budget, accountId: string, from: ISODate, to: ISODate)
   return out.sort((a, b) => b.date.localeCompare(a.date) || a.description.localeCompare(b.description));
 }
 
-/** The account a transfer went to, from the account number in "To: 06-0115-0324910-00 …". */
-export function transferTarget(b: Budget, t: Pick<Txn, 'description'>): Account | undefined {
-  const num = t.description.match(/\bto:?\s*(\d{2}-\d{4}-\d{7}-\d{2,3})/i)?.[1];
-  return num ? b.accounts.find((a) => a.number === num) : undefined;
-}
-
 export interface TransferGuess {
   /** The envelope it most likely paid for, best first. */
   itemIds: string[];
@@ -107,7 +102,7 @@ export interface TransferGuess {
 export function guessTransfer(b: Budget, accountId: string, t: Txn, mine: Shops = shopMap(b)): TransferGuess | undefined {
   const envelopes = envelopesAt(b, accountId, t.date);
   if (!envelopes.length) return undefined;
-  const target = transferTarget(b, t);
+  const target = ownTransfer(b, t)?.account;
   const from = addDays(t.date, -NEAR_DAYS), to = addDays(t.date, NEAR_DAYS);
   const where = target ? [target.id] : b.accounts.filter((a) => a.id !== accountId && a.kind === 'bank').map((a) => a.id);
   const purchases = where.flatMap((id) => txnsIn(b, id, from, to).map((txn) => ({ txn, accountId: id })))

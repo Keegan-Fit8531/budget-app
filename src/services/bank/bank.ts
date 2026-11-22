@@ -203,20 +203,3 @@ export function bankSync(b: Budget, link: string): { linked: boolean; at?: strin
 /** The day to fetch from: a week before the last sync (so late-settling ones are caught), or everything the first time. */
 export const sinceFor = (conf: BankConfig): ISODate | undefined => (conf.lastSync ? addDays(conf.lastSync.slice(0, 10), -7) : undefined);
 
-/** An account number as numbers (bank, branch, account, suffix), so 06-0115-0324910-055 and -55 are the same. */
-export const numberKey = (n: string): string | undefined => {
-  const m = n.match(/(\d{2})\D?(\d{4})\D?(\d{7})\D?(\d{2,3})/);
-  return m ? m.slice(1).map((x) => String(Number(x))).join('-') : undefined;
-};
-
-/**
- * A transfer between your own accounts, named: "To: 06-0115-0324910-55 Debit Transfer 083615" is
- * "To Rent". Undefined when it isn't one, or the number isn't one of your accounts.
- */
-export function transferTo(b: Pick<Budget, 'accounts'>, description: string): { dir: 'to' | 'from'; name: string } | undefined {
-  const m = description.match(/\b(to|from)\b:?\s*(\d{2}-?\d{4}-?\d{7}-?\d{2,3})/i);
-  if (!m) return undefined;
-  const key = numberKey(m[2]);
-  const acc = key ? b.accounts.find((a) => a.number && numberKey(a.number) === key) : undefined;
-  return acc ? { dir: m[1].toLowerCase() as 'to' | 'from', name: acc.name } : undefined;
-}

@@ -12,7 +12,7 @@ import { toDraft } from './toDraft';
 import { parseReply } from '../gemini';
 import type { Extraction } from '../types';
 import { guessDebt } from './toDraft';
-import { transferTo } from '../../bank/bank';
+import { ownTransfer } from '../../../engine/transfers';
 import { budget, debtBudget, seq, checkDoc, upload, gemStatement, debt } from '../../../testing/fixtures';
 
 describe('reading documents: statements', () => {
@@ -326,8 +326,9 @@ describe('telling cards and accounts apart', () => {
   it('a transfer between your own accounts is named by the account', () => {
     const b = debtBudget();
     b.accounts.push({ id: 'rent', name: 'Rent', kind: 'bank', color: '#000', groupId: 'g', number: '06-0115-0324910-055' });
-    expect(transferTo(b, 'To: 06-0115-0324910-55 Debit Transfer 083615')).toEqual({ dir: 'to', name: 'Rent' });
-    expect(transferTo(b, 'From: 06-0115-0324910-00 Credit Transfer 071301')).toBeUndefined();
+    expect(ownTransfer(b, { description: 'To: 06-0115-0324910-55 Debit Transfer 083615' })).toMatchObject({ dir: 'to', account: { name: 'Rent' } });
+    expect(ownTransfer(b, { description: '06-0115-0324910-055 DEBIT TRANSFER', amount: -100 })).toMatchObject({ dir: 'to', account: { name: 'Rent' } });
+    expect(ownTransfer(b, { description: 'From: 06-0115-0324910-00 Credit Transfer 071301' })).toBeUndefined();
   });
 });
 

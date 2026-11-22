@@ -5,7 +5,7 @@ import { CATEGORY_LABEL, categorizeTxn, cleanDescription, shopMap } from '../fea
 import { useBudget } from '../state/store';
 import type { Txn } from '../core/types';
 import { Disclosure } from '../ui/components';
-import { transferTo } from '../services/bank/bank';
+import { ownTransfer } from '../engine/transfers';
 
 /** Transactions from bank or card exports, latest first, each with the category it's counted in. */
 export function TransactionList({ items, card, pending = [], first = 8 }: {
@@ -23,11 +23,11 @@ export function TransactionList({ items, card, pending = [], first = 8 }: {
   return (
     <Disclosure title="Transactions" meta={items.length + pending.length}>
       <div>
-      {latest.slice(0, shown).map((t, i) => { const own = transferTo(budget, t.description); return (
+      {latest.slice(0, shown).map((t, i) => { const own = ownTransfer(budget, t); return (
         <div key={`${t.date}-${i}`} className={`list-row small${t.pending ? ' pending' : ''}`}>
           <span style={{ flex: '0 0 56px' }} className="muted">{fmtShort(t.date)}</span>
           <span className="grow min0">
-            {own ? `${own.dir === 'to' ? 'To' : 'From'} ${own.name}` : cleanDescription(t.description)}
+            {own ? `${own.dir === 'to' ? 'To' : own.dir === 'from' ? 'From' : 'Moved:'} ${own.account.name}` : cleanDescription(t.description)}
             <span className="xs muted block">{t.pending ? 'Pending' : own ? 'Between your accounts' : t.amount > 0 ? (card ? 'Payment' : 'Money in') : CATEGORY_LABEL[categorizeTxn(t, mine).category]}</span>
           </span>
           <b className="num">{t.amount > 0 ? `+${cash(t.amount)}` : `−${cash(-t.amount)}`}</b>

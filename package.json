@@ -12,7 +12,9 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "test": "vitest run",
-    "uses": "node scripts/uses.mjs"
+    "uses": "node scripts/uses.mjs",
+    "inspect": "vite-node scripts/inspect.ts --",
+    "screenshot": "node scripts/screenshot.mjs"
   },
   "dependencies": {
     "@tesseract.js-data/eng": "^1.0.0",

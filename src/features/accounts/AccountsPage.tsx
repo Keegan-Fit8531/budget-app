@@ -19,6 +19,7 @@ import { setBalance } from './logic/history';
 import { newId, useBudget } from '../../state/store';
 import type { Account } from '../../core/types';
 import { DepositsModal } from './Deposits';
+import { BillCheckButton, BillCheckModal, useBillCheck } from './BillCheck';
 
 /** Balances: what's in each account, what it's for before next payday, and where it's heading. */
 export function AccountsPage({ deposits }: { deposits?: string }) {
@@ -34,6 +35,8 @@ export function AccountsPage({ deposits }: { deposits?: string }) {
     if (/deposits/.test(window.location.hash)) history.replaceState(null, '', '#/accounts');
   };
   const [reorder, setReorder] = useState(false);
+  // After a bank sync: what the bank shows about your bills (opens by itself when there's something new).
+  const check = useBillCheck();
 
   const goals = budget.savings ?? [];
   const managed = new Set(goals.map((g) => g.accountId));
@@ -59,12 +62,15 @@ export function AccountsPage({ deposits }: { deposits?: string }) {
   const onDay = accounts.map((a) => ({ a, v: live ? balanceToday(budget, a.id, today) : balanceOn(budget, a.id, day, today) })).filter((x) => x.v !== undefined);
   const known = onDay.map((x) => x.a);
   const total = onDay.reduce((t, x) => t + (x.v ?? 0), 0);
+  // What payday put into (or sends) those same accounts in the pay being looked at, to set beside it.
+  const allocated = known.reduce((t, a) => t + depositFor(budget, a.id, view, today), 0);
 
   return (
     <>
       <DayPicker dv={dv} title="Accounts">
         <div className="page-actions">
           <ReorderToggle on={reorder} onChange={setReorder} />
+          <BillCheckButton count={check.checks.length} onClick={() => check.setOpen(true)} />
           <button className="btn primary" onClick={() => setDepOpen('')}><Icon name="transfer" size={16} /> Deposits</button>
         </div>
       </DayPicker>
@@ -74,6 +80,7 @@ export function AccountsPage({ deposits }: { deposits?: string }) {
           <div className="stat">
             <span className="small muted">{live ? `Across ${known.length} account${known.length === 1 ? '' : 's'}` : `Estimated on ${fmtDay(day)}`}</span>
             <b>{cash(total)}</b>
+            {live && <span className="small muted">vs {cash(allocated)} allocated</span>}
             {!live && <span className="small muted">across {known.length} account{known.length === 1 ? '' : 's'}{known.length < accounts.length ? ` (${accounts.length - known.length} without a balance)` : ''}</span>}
           </div>
           {live
@@ -92,6 +99,7 @@ export function AccountsPage({ deposits }: { deposits?: string }) {
         })}
       </CardColumns>
 
+      {check.open && <BillCheckModal checks={check.checks} onClose={() => check.setOpen(false)} />}
       {depOpen !== undefined && <DepositsModal openId={depOpen || undefined} onClose={closeDeposits} />}
     </>
   );
@@ -149,6 +157,11 @@ function BalanceCard({ account: a, view, day, mover, onPick }: {
   // Nominal payday day-of-month can move for the weekend (e.g. 20th on Sunday → Friday 18th).
   const nominalDay = budget.settings.paydayDay;
   const movedForWeekend = Number(pay.start.slice(8, 10)) !== nominalDay;
+  // What payday put in this pay (or the pay being looked at), beside what's in it now.
+  const thisPay = view ?? periodContaining(today, budget.settings);
+  const allocated = depositFor(budget, a.id, thisPay, today);
+  const isThisPay = thisPay.start === periodContaining(today, budget.settings).start;
+  const toggle = entry && hasDetails ? <DetailsToggle open={open} onChange={setOpen} /> : null;
 
   return (
     <section className={`card acct${open ? ' open' : ''}`} data-flip={a.id}>
@@ -169,6 +182,12 @@ function BalanceCard({ account: a, view, day, mover, onPick }: {
       ) : (
         <div className="acct-fig">
           <b className={`fig ${shown !== undefined && shown < 0 ? 'neg' : ''}`}>{shown !== undefined ? cash(shown) : '—'}</b>
+          {allocated > 0 && (
+            <span className="acct-alloc">
+              <span className="xs muted">Allocated {isThisPay ? 'this pay' : `${monthName(thisPay.start)} pay`}</span>
+              <b className="num">{cash(allocated)}</b>
+            </span>
+          )}
           {(view || estimated) && (
             <span className="xs muted note-line">
               {view ? `${day > today ? 'Estimated' : 'On'} ${fmtShort(day)}` : `Estimated from ${fmtShort(entry.asOf)}${dueToday ? ", before today's bills" : ''}`}
@@ -177,9 +196,11 @@ function BalanceCard({ account: a, view, day, mover, onPick }: {
         </div>
       )}
 
+      {/* Details sits above what it opens, so Hide details is where you left it. */}
       {tracked && (view
-        ? <PayProjectionView budget={budget} account={a} period={view} day={day} today={today} open={open} />
-        : <MonthTracker budget={budget} account={a} today={today} open={open} />)}
+        ? <PayProjectionView budget={budget} account={a} period={view} day={day} today={today} open={open} toggle={toggle} />
+        : <MonthTracker budget={budget} account={a} today={today} open={open} toggle={toggle} />)}
+      {!tracked && toggle}
 
       <Collapse open={open} stacked><FlatDetails.Provider value>
         <div className="acct-body">
@@ -209,7 +230,6 @@ function BalanceCard({ account: a, view, day, mover, onPick }: {
         </div>
       </FlatDetails.Provider></Collapse>
 
-      {entry && hasDetails && <DetailsToggle open={open} onChange={setOpen} />}
       {editing && <AccountEditModal account={a} onClose={() => setEditing(false)} />}
     </section>
   );
@@ -265,12 +285,12 @@ function BankOnlyCard({ account: a, mover }: { account: Account; mover: React.Re
         </div>
       ) : <p className="small muted">Upload a statement or CSV export to see what goes in and out.</p>}
 
+      {txns.length > 0 && <DetailsToggle open={open} onChange={setOpen} />}
       <Collapse open={open} stacked><FlatDetails.Provider value>
         <div className="acct-body">
           <TransactionList items={txns} pending={budget.pendingTransactions?.[a.id]} first={10} />
         </div>
       </FlatDetails.Provider></Collapse>
-      {txns.length > 0 && <DetailsToggle open={open} onChange={setOpen} />}
     </section>
   );
 }

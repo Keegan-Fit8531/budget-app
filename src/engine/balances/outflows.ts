@@ -17,7 +17,11 @@ export function accountMode(b: Budget, accountId: string): PaydayMode {
   return modeOf(b.split.find((l) => l.accountId === accountId));
 }
 
-export interface Outflow { date: ISODate; amount: Cents; name: string }
+export interface Outflow {
+  date: ISODate; amount: Cents; name: string;
+  /** The cost (`Item`) or debt it's for, so a bank transaction can be matched to it (`engine/billMatch.ts`). */
+  itemId?: string; debtId?: string;
+}
 
 /**
  * Money leaving an account between two dates (inclusive): its costs and debt plan payments. Money put
@@ -29,18 +33,18 @@ export function outflows(b: Budget, accountId: string, from: ISODate, to: ISODat
   const out: Outflow[] = [];
   for (const item of b.items) {
     if (item.accountId !== accountId || isHeldInAccount(item)) continue;
-    for (const date of itemDates(item, from, to, b.settings)) out.push({ date, amount: item.amount, name: item.name });
+    for (const date of itemDates(item, from, to, b.settings)) out.push({ date, amount: item.amount, name: item.name, itemId: item.id });
   }
   for (const p of debtPaymentsIn(b, accountId, from, to)) {
     // Hold account (Misc bills): show the debt name so Accounts can note Gem Visa on the 21st.
     const name = p.debt.holdAccountId === accountId ? p.debt.name : p.plan.name;
-    out.push({ date: p.date, amount: p.amount, name });
+    out.push({ date: p.date, amount: p.amount, name, debtId: p.debt.id });
   }
   // Gem held here: reserve at least Latitude's recommended amount (and a frozen payday send).
   topUpGemHoldOutflows(b, accountId, from, to, out);
   // Held-elsewhere debts (Gem → Misc bills): still count on the debt card for need/display.
   if (isHoldDisplayAccount(b, accountId)) {
-    for (const p of heldDebtPaymentsIn(b, accountId, from, to)) out.push({ date: p.date, amount: p.amount, name: p.plan.name });
+    for (const p of heldDebtPaymentsIn(b, accountId, from, to)) out.push({ date: p.date, amount: p.amount, name: p.plan.name, debtId: p.debt.id });
   }
   return out.sort((x, y) => x.date.localeCompare(y.date) || y.amount - x.amount);
 }
@@ -68,7 +72,7 @@ function topUpGemHoldOutflows(b: Budget, accountId: string, from: ISODate, to: I
     if (!stmt || stmt < from || stmt > to) continue;
     const hit = rows.find((o) => o.date === stmt) ?? rows[0];
     if (hit) hit.amount += bump;
-    else out.push({ date: stmt, amount: bump, name: debt.name });
+    else out.push({ date: stmt, amount: bump, name: debt.name, debtId: debt.id });
   }
 }
 

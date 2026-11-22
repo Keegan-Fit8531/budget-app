@@ -1,5 +1,5 @@
 import { seedBudget } from '../core/seed';
-import type { Budget } from '../core/types';
+import type { Budget, Item, Txn } from '../core/types';
 import { applyProposal } from '../services/reader/apply';
 import { type Draft } from '../services/reader/check/draft';
 import { review } from '../services/reader/check/review';
@@ -13,6 +13,29 @@ export function budget(): Budget {
   b.settings.paydayDay = 19;
   b.settings.expectedPay = 500000;
   b.settings.autoBalance = false;
+  return b;
+}
+
+/**
+ * A budget shaped like the real Food and gas account: pay lands in Everyday (…-00, the EFTPOS card), and
+ * Food and gas (…-55, Steady) holds three envelopes: Food shop $200 a week (Thursdays), Car gas $250 a
+ * month, and Scooter gas $50 a month that only takes fills under $50. $1,250 in it on 22 Nov. Shopping is
+ * often done on the Everyday card, then money moved over from Food and gas to cover it.
+ */
+export function foodGasBudget(): Budget {
+  const b = budget();
+  b.accounts.push(
+    { id: 'day', name: 'Everyday', kind: 'bank', color: '#000', groupId: 'lifestyle', number: '06-0115-0324910-00' },
+    { id: 'food', name: 'Food and gas', kind: 'bank', color: '#000', groupId: 'needs', number: '06-0115-0324910-55' },
+  );
+  b.settings.payAccountId = 'day';
+  b.split.push({ accountId: 'food', amount: 0, mode: 'smooth' });
+  b.items.push(
+    { id: 'shop', name: 'Food shop', amount: 20000, frequency: 'weekly', start: '2026-01-08', accountId: 'food', envelope: 'week' },
+    { id: 'car', name: 'Car gas', amount: 25000, frequency: 'monthly', start: '2026-11-01', accountId: 'food', envelope: 'month' },
+    { id: 'scoot', name: 'Scooter gas', amount: 5000, frequency: 'monthly', start: '2026-11-01', accountId: 'food', envelope: 'month', envelopeUnder: 5000 },
+  );
+  b.balances = { food: { amount: 125000, asOf: '2026-11-22' } };
   return b;
 }
 
@@ -79,3 +102,25 @@ export const qExport = [
 ].join('\n');
 
 export const csvDoc = (text: string): Extraction => ({ kind: 'transactions', transactions: readTransactionsCsv(text)! });
+
+// Bills and the bank (`engine/billMatch.ts`, the Accounts bill check): Misc bills pays the bills, some on
+// the Weekly allowance card. Both are filled by the bank connection; payday is the 19th. All made up.
+const WEEKLY = '06-0000-0000001-00', BILLS = '06-0000-0000001-54';
+export const billTxns = {
+  out: (date: string, amount: number, description: string): Txn => ({ date, amount: -amount, description }),
+  toWeekly: (date: string, amount: number): Txn => ({ date, amount: -amount, description: `To: ${WEEKLY} Debit Transfer 1234` }),
+  fromWeekly: (date: string, amount: number): Txn => ({ date, amount, description: `From: ${WEEKLY} Credit Transfer 1234` }),
+};
+export function billsBudget(items: Partial<Item>[], txns: { bills?: Txn[]; weekly?: Txn[] }, balance = 50000, asOf = '2026-11-22'): Budget {
+  const b = budget();
+  b.accounts.push(
+    { id: 'weekly', name: 'Weekly allowance', kind: 'bank', color: '#000', groupId: 'lifestyle', number: WEEKLY },
+    { id: 'bills', name: 'Misc bills', kind: 'bank', color: '#000', groupId: 'needs', number: BILLS },
+  );
+  b.split.push({ accountId: 'bills', amount: 50000, mode: 'fixed' });
+  items.forEach((i, n) => b.items.push({ id: `i${n}`, name: 'Bill', amount: 1000, frequency: 'monthly', start: '2026-01-01', accountId: 'bills', ...i } as Item));
+  b.accountTransactions = { bills: txns.bills ?? [], weekly: txns.weekly ?? [] };
+  b.bankLinks = { acc_w: 'account:weekly', acc_b: 'account:bills' };
+  b.balances = { bills: { amount: balance, asOf } };
+  return b;
+}
