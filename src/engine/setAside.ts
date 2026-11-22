@@ -113,6 +113,33 @@ export function asideMaxSaved(b: Pick<Budget, 'items'>, accountId: string): Cent
   return asides.reduce((t, i) => t + (i.maxSaved ?? 0), 0);
 }
 
+/**
+ * Money put aside in an account, split across its set-asides (Haircut, Tyres) for showing each one:
+ * each capped one up to its max, in order, then whatever's over shared by the ones without a max, by what each
+ * puts aside a month (WOF $70 and maintenance $130 a month: 35% and 65%). What's left over when every one is full
+ * isn't in the list (it's spare).
+ */
+export function asideSplit(b: Pick<Budget, 'items'>, accountId: string, amount: Cents): { item: Item; amount: Cents }[] {
+  const asides = b.items.filter((i) => i.accountId === accountId && isSetAside(i));
+  const out = asides.map((item) => ({ item, amount: 0 }));
+  let left = Math.max(0, amount);
+  for (const x of out) {
+    if (!x.item.maxSaved) continue;
+    x.amount = Math.min(left, x.item.maxSaved);
+    left -= x.amount;
+  }
+  const open = out.filter((x) => !x.item.maxSaved);
+  const per = (x: { item: Item }) => Math.max(1, setAsidePerPay(x.item));
+  const weight = open.reduce((t, x) => t + per(x), 0);
+  let given = 0;
+  open.forEach((x, i) => {
+    const share = i === open.length - 1 ? left - given : Math.round((left * per(x)) / weight);
+    x.amount += share;
+    given += share;
+  });
+  return out.filter((x) => x.amount > 0);
+}
+
 /** How long an envelope lasts before it starts fresh (a calendar month, week or fortnight). */
 export const envelopeSpan = (item: Pick<Item, 'envelope'>): EnvelopeSpan => item.envelope ?? 'month';
 

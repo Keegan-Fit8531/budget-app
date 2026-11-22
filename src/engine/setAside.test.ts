@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { estimateBalance } from './balances/estimate';
 import { depositFor } from './balances/deposits';
 import { outflows } from './balances/outflows';
-import { asideMaxSaved, setAsidePerPay } from './setAside';
+import { asideMaxSaved, asideSplit, setAsidePerPay } from './setAside';
 import { averageNeed, planFor } from './plan';
 import { periodContaining, shiftPeriod } from './periods';
 import { autoBalance, balancedMode, balancePay } from './rebalance';
@@ -37,6 +37,21 @@ describe('max saved on money put aside', () => {
     // Uncapped set-aside on the same account → no single account max.
     b.items.push({ id: 'tyres', name: 'Tyres', amount: 5000, frequency: 'monthly', start: '2026-11-01', accountId: 'bills', setAside: true });
     expect(asideMaxSaved(b, 'bills')).toBeUndefined();
+  });
+
+  it("splits what's put aside across set-asides: capped ones up to their max, the rest to an uncapped one", () => {
+    const b = budget();
+    b.items.push(
+      { id: 'cut', name: 'Haircut', amount: 2000, frequency: 'monthly', start: '2026-11-01', accountId: 'bills', setAside: true, maxSaved: 6000 },
+      { id: 'tyres', name: 'Tyres', amount: 5000, frequency: 'monthly', start: '2026-11-01', accountId: 'bills', setAside: true },
+    );
+    expect(asideSplit(b, 'bills', 4000).map((x) => [x.item.id, x.amount])).toEqual([['cut', 4000]]);
+    expect(asideSplit(b, 'bills', 10000).map((x) => [x.item.id, x.amount])).toEqual([['cut', 6000], ['tyres', 4000]]);
+    // Two without a max share by their monthly amounts.
+    b.items.push({ id: 'wof', name: 'WOF', amount: 2000, frequency: 'monthly', start: '2026-11-01', accountId: 'bills', setAside: true });
+    expect(asideSplit(b, 'bills', 13000).map((x) => [x.item.id, x.amount])).toEqual([['cut', 6000], ['tyres', 5000], ['wof', 2000]]);
+    b.items.splice(1);
+    expect(asideSplit(b, 'bills', 10000).map((x) => [x.item.id, x.amount])).toEqual([['cut', 6000]]);
   });
 
   it('does not treat an over-max Haircut account as having no spare at all', () => {
