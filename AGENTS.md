@@ -49,7 +49,7 @@ before dev/build), `.github/workflows/pages.yml` (deploys `main` to GitHub Pages
 | Which bank transaction paid a bill (card on another account, made-up transfers), bills not seen, a held debt (Gem) paid from another account; the Accounts bill check pop-up | `engine/billMatch.ts`; suggestions: `features/accounts/logic/billCheck.ts`; pop-up: `features/accounts/BillCheck.tsx` |
 | What payday sends each account (fixed / exact / steady); "allocated this pay" (what it sent this pay: `depositFor`) | `engine/balances/` (README lists which file does what) |
 | A pay's plan: totals, leftover, what each account needs | `engine/plan.ts` → `planFor()` |
-| Automatic balancing, "Balance this pay" | `engine/rebalance.ts` |
+| Automatic balancing, "Balance this pay"; an odd one-pay amount (a Steady account sending more than usual for one pay: `budget.autoBalanced[pay]` says what set it and why) | `engine/rebalance.ts` |
 | Planner page, Optimise the leftover | `features/planner/` |
 | Accounts page, Deposits pop-up, balances, account history | `features/accounts/` |
 | Debts: schedules, Gem Visa rules, payments, advice | `features/debts/logic/` (UI in `features/debts/`) |

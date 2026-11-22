@@ -150,14 +150,18 @@ function steadyRun(b: Budget, accountId: string, today: ISODate, useBalance = tr
   });
 }
 
+/** How far ahead Balance this pay looks: a year, so every 5-week pay in it is covered. */
+const LEVEL_PAYS = 12;
+
 /**
- * For Balance this pay: what a pay would need to send so every later pay can stay at the usual amount
- * (it leaves enough over for the next 5-week pay). Compare with what it sends now to get the top-up.
+ * For Balance this pay: what a pay would need to send so every pay in the next year can stay at the usual
+ * amount (it leaves enough over for the 5-week pays). Compare with what it sends now to get the top-up.
+ * Only a year: a dip further out (two years on) is too far to put money aside for now.
  */
 export function levelAmount(b: Budget, accountId: string, p: Period, today: ISODate = todayISO()): Cents | undefined {
   const bal = balanceOn(b, accountId, addDays(p.start, -1), today);
   if (bal === undefined) return undefined;
-  const { slots, out } = window(b, accountId, p, HORIZON);
+  const { slots, out } = window(b, accountId, p, LEVEL_PAYS);
   return steadyAt(slots, out, usualSteady(b, accountId), bal, true);
 }
 

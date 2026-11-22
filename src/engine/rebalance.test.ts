@@ -87,3 +87,24 @@ describe('automatic balancing', () => {
     expect(c.to).toBe(15000); // needs $132.10: $150, not $132.10
   });
 });
+
+describe('putting leftover aside in a Steady account', () => {
+  // Rent $400 every Friday, Steady, after the 20 Nov rent: the 18 Dec pay has 5 rents.
+  const rentBudget = (balance: number) => {
+    const b = budget();
+    b.settings.autoBalance = true;
+    b.accounts.push({ id: 'rent', name: 'Rent', kind: 'bank', color: '#000', groupId: 'needs' });
+    b.split.push({ accountId: 'rent', amount: 170000, mode: 'smooth' });
+    b.items.push({ id: 'r', name: 'Rent', amount: 40000, frequency: 'weekly', start: '2026-01-09', accountId: 'rent' });
+    b.balances = { rent: { amount: balance, asOf: '2026-11-20' } };
+    return autoBalance(b, '2026-11-22');
+  };
+
+  it('adds nothing when the buffer lasts the next year (a dip two years out is too far away)', () => {
+    expect(rentBudget(157500).overrides?.['2026-12-18']?.rent).toBeUndefined();
+  });
+
+  it('adds just what the buffer is short within the next year', () => {
+    expect(rentBudget(152500).autoBalanced?.['2026-12-18']?.rent?.reason).toMatch(/aside for the next 5-week pay/);
+  });
+});
