@@ -53,6 +53,7 @@ before dev/build), `.github/workflows/pages.yml` (deploys `main` to GitHub Pages
 | Planner page, Optimise the leftover | `features/planner/` |
 | Accounts page, Deposits pop-up, balances, account history | `features/accounts/` |
 | Debts: schedules, Gem Visa rules, payments, advice | `features/debts/logic/` (UI in `features/debts/`) |
+| A debt's payment held in a bank account until statement day (Gem in Misc bills: `Debt.holdAccountId`) | `features/debts/logic/funding.ts` (`debtPaymentsIn`: its payments, paid ones included, leave the hold account), `engine/balances/outflows.ts` (Gem's hold top-up); a payment seen in the bank: `services/bank/cardPayments.ts` → `gem.ts` `gemApply`. An early or extra payment that clears this pay's statement payment logs it in `debt.paid`, so the hold account shows it paid (Bill check then asks) |
 | Savings goals, goal costs, gifts, KiwiSaver | `features/savings/` |
 | Insights, spending categories, monthly review | `features/insights/` |
 | Settings page, export to spreadsheet | `features/settings/` |
@@ -77,7 +78,7 @@ questions are answered there):
    usually older). Its README says how the owner's accounts are used (which one is the EFTPOS card, what each
    holds) and how to query `budget.json` without reading all of it.
 2. `npm run inspect` (every account) or `npm run inspect -- food --today 2026-11-22` (one account in detail):
-   the tracker, envelopes and what counted against them (each transfer with the purchase it was matched to), transfers the card asks about, next pays and any
+   the tracker (each bill paid or to come, and the bank transaction that paid it), what Bill check asks, envelopes and what counted against them (each transfer with the purchase it was matched to), transfers the card asks about, next pays and any
    Steady buffer, and the last 14 days of transactions with what each counted as. It loads the budget the
    way the app does (`state/upgrade.ts`). The first line says when that copy was saved: if it's older than
    the owner's screenshot, the browser has changes the repo hasn't got yet.
