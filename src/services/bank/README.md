@@ -21,6 +21,7 @@ the device and never sent anywhere.
 
 ## Watch out for
 - The server function (`akahu-sync` in the owner's Supabase project) isn't in this repo: read it with the Supabase tools (`get_edge_function`). It sends each account's `balance.current`/`available`, settled transactions and pending ones, nothing else. Akahu has no field for a card's minimum or amount to avoid interest (those come from statements).
+- After an app update, the hourly sync still waits an hour from the last one (`AUTO_EVERY_MS`, `lastSync` in this browser): something new in a sync only shows on the next one, or on tapping a sync pill.
 - Akahu supports Gem Visa (Latitude) but not Q Mastercard (humm), so Q's balance still comes from statements and payments seen in ANZ.
 - Where a bank account's transactions go is `budget.bankLinks` (`'account:<id>'`, `'debt:<id>'`, `'saving:<id>'` or `'ignore'`). When each last came through is `budget.bankSeen`.
 - Pending (unsettled) transactions are replaced on every sync and never kept (`budget.pendingTransactions`).

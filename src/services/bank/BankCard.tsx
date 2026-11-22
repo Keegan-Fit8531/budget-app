@@ -142,15 +142,19 @@ export async function syncBank(update: (f: (b: Budget) => Budget) => void, force
     const d = await fetchBank(conf, sinceFor(conf), undefined, true);
     let result: BankResult[] = [];
     let linked: string[] = [];
+    let loose: string[] = [];
     update((b) => {
       // A card just added in Akahu that's clearly one of your debts (Gem Visa) is linked by itself.
       const add = newCardLinks(b, d.accounts);
       linked = Object.values(add).map((l) => (b.debts ?? []).find((x) => `debt:${x.id}` === l)?.name ?? l);
       if (linked.length) b.bankLinks = { ...(b.bankLinks ?? {}), ...add };
       result = applyBank(b, d, b.bankLinks ?? {});
+      // At the bank but not linked to anything yet, and not clear enough to link by itself.
+      loose = d.accounts.filter((a) => !b.bankLinks?.[a.id]).map((a) => a.name);
       return b;
     });
     const now = new Date().toISOString();
+    const looseNote = loose.length ? ` New at the bank: ${loose.join(', ')}. Choose where ${loose.length === 1 ? 'it goes' : 'they go'} in Settings → Bank connection.` : '';
     writeBankConfig({ ...conf, lastSync: now, lastRefresh: now });
     synced();
     if (linked.length) {
@@ -162,7 +166,7 @@ export async function syncBank(update: (f: (b: Budget) => Budget) => void, force
       // Asked the bank, but it hadn't answered by the time we had to reply: look again in a minute.
       showToast(`Asked ANZ for the latest. It hasn't come through yet, so this checks again in a minute. ${said(result)}`);
       setTimeout(() => { void syncAgain(update); }, 60_000);
-    } else if (force || result.some((r) => r.added || r.cardPayments?.length || r.goalMoves?.length)) showToast(`Bank sync: ${said(result)}`);
+    } else if (force || result.some((r) => r.added || r.cardPayments?.length || r.goalMoves?.length)) showToast(`Bank sync: ${said(result)}${force ? looseNote : ''}`);
   } catch (e) {
     if (force) showToast(`Bank sync didn’t work: ${bankMessage(e)}`);
   } finally { setRunning(false); }

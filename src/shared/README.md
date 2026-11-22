@@ -8,7 +8,7 @@ logic go in `ui/` instead; a component only one page uses goes in that page's fo
 - `PaydayControl.tsx`: "Sent each payday": a fixed amount or worked out each pay (`PaydayControl`), and an account's rounding (`RoundSetting`: whole dollars to $100; balancing and Steady amounts follow it). Used by Deposits, Debts and Savings. `sentOn`: the pay is already sent, so it says "Payday sent $X" and that a change applies from the next pay.
 - `DayPicker.tsx`: pick a day to see a balance on (`useDayView`, `DayPicker`). Draws the page header of Accounts and Debts, laid out like `PayNav`'s (Today, calendar, ‹ › last). Used by Accounts and Debts.
 - `Transactions.tsx`: a list of transactions, latest first, each with its spending category (`TransactionList`). Used by Accounts and Debts.
-- `SyncPill.tsx`: the pill that says where a balance came from (bank connection, entered, none) and how current it is; tapping it syncs. Used by Accounts, Debts and Savings.
+- `SyncPill.tsx`: the pill that says where a balance came from (bank connection, entered, none) and how current it is; tapping it syncs. An entered balance a sync can still change (`canSync`: a card on Debts while the bank connection is set up) is a sync button too. Used by Accounts, Debts and Savings.
 
 ## Watch out for
 - If a component here ends up used by one page only, move it into that page's folder (and update both READMEs).
