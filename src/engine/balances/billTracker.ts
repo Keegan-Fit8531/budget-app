@@ -4,6 +4,8 @@ import type { Budget, Cents } from '../../core/types';
 import { type Outflow, outflows } from './outflows';
 import { depositFor, depositSansBalance, depositPending } from './deposits';
 import { estimateBalance, balanceToday } from './estimate';
+import { bankFed, checkKey, matchBills, otherMoves, outflowId, type BillMatch } from '../billMatch';
+import type { Account, Txn } from '../../core/types';
 
 // ---------------------------------------------------------------------------------------------
 // Live bill tracking for an account across the current pay period.
@@ -15,7 +17,14 @@ export interface BillRow extends Outflow {
   days: number;
   /** For bills still to come: whether the money in the account covers it (in date order). */
   covered?: boolean;
+  /** What the bank shows for it (bank-connected accounts): how and when it was paid. */
+  match?: BillMatch;
+  /** Its date has passed but the bank doesn't show it yet (so its money is still in the account). */
+  late?: boolean;
 }
+
+/** A bill paid on another account's card, with no transfer from this account to make up for it yet. */
+export interface ToMove { row: BillRow; to: string; amount: Cents }
 
 export interface BillTracker {
   period: Period;
@@ -31,6 +40,11 @@ export interface BillTracker {
   balanceSource: 'entered' | 'estimated';
   /** False when the balance isn't entered and this pay was split before the budget started — so it can't be estimated. */
   balanceKnown: boolean;
+  /** Bills paid on another account's card this pay, whose money is still here to move across. */
+  toMove: ToMove[];
+  /** Money you moved in or out yourself this pay (not payday, not a bill): why it has more or less than planned. */
+  moves: { txn: Txn; other?: Account }[];
+  /** Balance less what's still to come out and what's to move across. */
   spare: Cents;
   /** The next payday's deposit and the bills it's for (the following period). */
   next: { period: Period; deposit: Cents; rows: Outflow[] };
@@ -49,9 +63,10 @@ function debitedToday(b: Budget, accountId: string, today: ISODate): Cents {
  * True when today's entered/synced balance already has today's bills out (e.g. $1,000 in, $200
  * transferred, balance now $800). Without this, those bills stay "to come" and the account looks short.
  */
-function todaysBillsAlreadyOut(b: Budget, accountId: string, today: ISODate, todayOut: Cents): boolean {
+function todaysBillsAlreadyOut(b: Budget, accountId: string, today: ISODate, todayOut: Cents, fed = false): boolean {
   if (todayOut <= 0) return false;
-  if (debitedToday(b, accountId, today) >= todayOut) return true;
+  // With the bank connected, today's lines are already matched to their bills: only the balance can tell.
+  if (!fed && debitedToday(b, accountId, today) >= todayOut) return true;
   const entry = b.balances?.[accountId];
   if (!entry || entry.asOf !== today) return false;
   const period = periodContaining(today, b.settings);
@@ -77,13 +92,30 @@ export function billTracker(b: Budget, accountId: string, today: ISODate = today
     const days = Math.round((Date.parse(o.date) - Date.parse(today)) / 86400000);
     return { ...o, days, status: (days < 0 ? 'paid' : days === 0 ? 'today' : 'due') as BillRow['status'] };
   });
+  const entry = b.balances?.[accountId];
+  const fed = bankFed(b, accountId) && !!entry;
+  if (fed) {
+    // The bank says what's been paid, up to when it was last seen: a bill it shows is paid (even early, or
+    // on another account's card); one it doesn't is still to come, as its money is still in the account.
+    const matches = matchBills(b, accountId, period.start, period.end, today);
+    rows.forEach((r, i) => {
+      const m = matches[i];
+      if (m?.how) { r.match = m; r.status = 'paid'; return; }
+      if (r.date > entry.asOf) return;
+      if (b.billChecks?.[checkKey('paid', outflowId(r), r.date)]) { r.status = 'paid'; return; }
+      r.status = r.days === 0 ? 'today' : 'due';
+      r.late = r.days < 0;
+    });
+  }
   // Bank already shows today's bill(s) out: treat them as paid so $800 after a $200 transfer isn't
-  // "short $200" against five weeks still listed as to come.
+  // "short $200" against five weeks still listed as to come. (With the bank connected, only for bills
+  // dated today that no transaction line shows yet: the balance can arrive before the line does.)
   const todayOut = rows.filter((r) => r.status === 'today').reduce((t, r) => t + r.amount, 0);
-  let cover = todaysBillsAlreadyOut(b, accountId, today, todayOut) ? todayOut : debitedToday(b, accountId, today);
+  let cover = todaysBillsAlreadyOut(b, accountId, today, todayOut, fed) ? todayOut : fed ? 0 : debitedToday(b, accountId, today);
   for (const r of rows) {
     if (r.status !== 'today' || cover < r.amount) continue;
     r.status = 'paid';
+    r.late = false;
     cover -= r.amount;
   }
   const paid = rows.filter((r) => r.status === 'paid').reduce((t, r) => t + r.amount, 0);
@@ -93,14 +125,22 @@ export function billTracker(b: Budget, accountId: string, today: ISODate = today
   const entered = balanceToday(b, accountId, today);
   // Without an entered balance: assume this pay's deposit minus what's been paid so far.
   const balance = entered ?? deposit - paid;
-  let left = balance;
+  // Paid on another account's card (Netflix on the Weekly allowance card): its money is still here until you move it.
+  const toMove: ToMove[] = rows
+    .filter((r) => r.match?.how === 'card' && !r.match.cover && r.match.outflow.itemId && r.match.from
+      && !b.billChecks?.[checkKey('move', r.match.outflow.itemId, r.date)])
+    .map((r) => ({ row: r, to: r.match!.from!, amount: Math.min(r.amount, -r.match!.txn!.amount) }));
+  const owed = toMove.reduce((t, m) => t + m.amount, 0);
+  let left = balance - owed;
   for (const r of rows) if (r.status !== 'paid') { r.covered = left >= r.amount; left -= r.amount; }
   const nextPeriod = shiftPeriod(period, 1, s);
   return {
     period, day: Math.round((Date.parse(today) - Date.parse(period.start)) / 86400000) + 1,
     rows, paid, toCome, deposit, balance, balanceSource: entered === undefined ? 'estimated' : 'entered',
     balanceKnown: entered !== undefined || !s.budgetStart || period.start >= s.budgetStart,
-    spare: balance - toCome,
+    toMove,
+    moves: fed ? otherMoves(b, accountId, period.start, period.end, period.start, deposit, today) : [],
+    spare: balance - toCome - owed,
     next: { period: nextPeriod, deposit: depositFor(b, accountId, nextPeriod, today), rows: outflows(b, accountId, nextPeriod.start, nextPeriod.end) },
   };
 }

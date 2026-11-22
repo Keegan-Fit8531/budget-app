@@ -44,6 +44,7 @@ before dev/build), `.github/workflows/pages.yml` (deploys `main` to GitHub Pages
 | Pay periods, paydays, weekend rules, a moved payday | `engine/periods.ts` |
 | When a cost falls (weekly, monthly, skip near payday) | `engine/occurrences.ts` |
 | Money put aside (WOF, tyres) or envelopes (Gas a month, Food a week) | `engine/setAside.ts`, `engine/envelope.ts`; what counts against one (purchases, transfers that paid for one): `engine/envelopeMatch.ts`; Accounts card: `features/accounts/EnvelopeCards.tsx` |
+| Which bank transaction paid a bill (card on another account, made-up transfers), bills not seen; the Accounts bill check pop-up | `engine/billMatch.ts`; suggestions: `features/accounts/logic/billCheck.ts`; pop-up: `features/accounts/BillCheck.tsx` |
 | What payday sends each account (fixed / exact / steady) | `engine/balances/` (README lists which file does what) |
 | A pay's plan: totals, leftover, what each account needs | `engine/plan.ts` → `planFor()` |
 | Automatic balancing, "Balance this pay" | `engine/rebalance.ts` |
@@ -90,7 +91,8 @@ That output is private: never put it in commits, PRs, code or fixtures. `testing
 - **Dates are `YYYY-MM-DD` strings** (`ISODate`), worked out in UTC by `core/dates.ts`. Do date maths with its helpers (`todayISO()`, `addDays()`, `diffDays()` …), not with `Date` directly, and pass `today` through so tests can fix the date.
 - **Every change goes through `useBudget().update(fn)`** (`state/store.tsx`): it clones the budget, runs your `fn`, re-balances upcoming pays (`autoBalance`), keeps the day's saved copy and syncs. Don't mutate the budget anywhere else.
 - **Logic is pure and testable.** `engine/`, `core/` and every `logic/` folder take a `Budget` and return values. No React and no storage there. Pages (`*.tsx`) call them.
-- **Dependencies point inward**: `core` ← `engine` ← `features`/`services` ← `app`. `ui/` knows nothing about budgets. (`engine` and `features/debts|savings/logic` call each other; don't add new cycles.)
+- **Dependencies point inward**: `core` ← `engine` ← `features`/`services` ← `app`. `ui/` knows nothing about budgets. (`engine` and `features/debts|savings/logic` call each other; don't add new cycles.) `features/` and `services/` sit side by side: a page may use a service (Accounts uses `bankSync` and the bank's `SYNCED` event), and a service may use a page's `logic/`. `engine/` and `core/` never import a service's code (`core/types.ts` only borrows the `Payslip` type).
+- **One reader per bank format**: transfers between your own accounts are read by `engine/transfers.ts` → `ownTransfer` only; shop categories by `features/insights/logic/spending.ts` → `categorizeTxn`. Use them; don't parse descriptions again.
 - **Design**: use the tokens and classes in `ui/styles/` and the pieces in `ui/components.tsx`, never new colours or sizes. Green/red only ever mean "fine"/"short". An account's colour is only a small mark beside its name.
 - **Privacy**: the Gemini key, GitHub token and bank passphrase stay in the browser's storage only, never in the budget, the repo or the code. `src/personal/` (git-ignored) holds the owner's own data and is never committed.
 - **Keep files small**: aim for under ~400 lines. When one grows past that, split it by its sections into files named for their job, and update the README. Over 500 lines fails `npm test`.

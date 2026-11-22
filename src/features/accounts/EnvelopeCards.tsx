@@ -2,7 +2,8 @@ import { useState } from 'react';
 import { fmtShort } from '../../core/dates';
 import { cash } from '../../core/money';
 import type { Account, Budget, Txn } from '../../core/types';
-import { guessTransfer, isTransferOut, transferKey, transferTarget, unsortedTransfers, type EnvelopeStatus } from '../../engine/envelope';
+import { guessTransfer, isTransferOut, transferKey, unsortedTransfers, type EnvelopeStatus } from '../../engine/envelope';
+import { ownTransfer } from '../../engine/transfers';
 import { useBudget } from '../../state/store';
 
 /**
@@ -72,7 +73,7 @@ function EnvelopeCard({ budget, account, e, envelopes, color }: {
 
 /** "$50 moved to Weekly allowance on 22 Nov", and the purchase that explains it when there is one. */
 function describe(budget: Budget, account: Account, t: Txn) {
-  const to = transferTarget(budget, t);
+  const to = ownTransfer(budget, t)?.account;
   const guess = guessTransfer(budget, account.id, t);
   const p = guess?.seen[0];
   const where = p && p.accountId !== to?.id ? ` in ${budget.accounts.find((a) => a.id === p.accountId)?.name ?? 'another account'}` : '';

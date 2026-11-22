@@ -2,7 +2,7 @@ import { addDays, diffDays, fmtShort, monthName, todayISO, type ISODate } from '
 import { periodContaining } from './periods';
 import { envelopeBudget, envelopeSpan, envelopeWindow, isEnvelope } from './setAside';
 import { envelopesAt, purchaseEnvelope } from './envelopeMatch';
-export { envelopesAt, guessTransfer, isTransferOut, matchesEnvelope, purchaseEnvelope, transferKey, transferTarget, type TransferGuess } from './envelopeMatch';
+export { envelopesAt, guessTransfer, isTransferOut, matchesEnvelope, purchaseEnvelope, transferKey, type TransferGuess } from './envelopeMatch';
 import { shopMap } from '../features/insights/logic/spending';
 import { isTransferOut, transferEnvelope, txnsIn } from './envelopeMatch';
 import type { Budget, Cents, EnvelopeSpan, Item, Txn } from '../core/types';

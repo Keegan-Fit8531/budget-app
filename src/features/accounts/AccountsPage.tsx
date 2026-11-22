@@ -19,6 +19,7 @@ import { setBalance } from './logic/history';
 import { newId, useBudget } from '../../state/store';
 import type { Account } from '../../core/types';
 import { DepositsModal } from './Deposits';
+import { BillCheckButton, BillCheckModal, useBillCheck } from './BillCheck';
 
 /** Balances: what's in each account, what it's for before next payday, and where it's heading. */
 export function AccountsPage({ deposits }: { deposits?: string }) {
@@ -34,6 +35,8 @@ export function AccountsPage({ deposits }: { deposits?: string }) {
     if (/deposits/.test(window.location.hash)) history.replaceState(null, '', '#/accounts');
   };
   const [reorder, setReorder] = useState(false);
+  // After a bank sync: what the bank shows about your bills (opens by itself when there's something new).
+  const check = useBillCheck();
 
   const goals = budget.savings ?? [];
   const managed = new Set(goals.map((g) => g.accountId));
@@ -65,6 +68,7 @@ export function AccountsPage({ deposits }: { deposits?: string }) {
       <DayPicker dv={dv} title="Accounts">
         <div className="page-actions">
           <ReorderToggle on={reorder} onChange={setReorder} />
+          <BillCheckButton count={check.checks.length} onClick={() => check.setOpen(true)} />
           <button className="btn primary" onClick={() => setDepOpen('')}><Icon name="transfer" size={16} /> Deposits</button>
         </div>
       </DayPicker>
@@ -92,6 +96,7 @@ export function AccountsPage({ deposits }: { deposits?: string }) {
         })}
       </CardColumns>
 
+      {check.open && <BillCheckModal checks={check.checks} onClose={() => check.setOpen(false)} />}
       {depOpen !== undefined && <DepositsModal openId={depOpen || undefined} onClose={closeDeposits} />}
     </>
   );

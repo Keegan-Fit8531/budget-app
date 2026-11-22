@@ -7,6 +7,7 @@ import { fmtDay, fmtShort, monthName, ordinal, todayISO } from '../../core/dates
 import { debtAdvice } from '../debts/logic/advice';
 import { accountEnvelopes, envelopeHeld } from '../../engine/envelope';
 import { EnvelopeCards } from './EnvelopeCards';
+import { MovesSummary, OtherMoves, ToMoveNotes, paidHow } from './BankSeen';
 import { asideMaxSaved, hasSetAsides, isHeldInAccount } from '../../engine/setAside';
 import { type Period } from '../../engine/periods';
 import { asideNames } from '../../engine/rebalance';
@@ -32,6 +33,8 @@ export function MonthTracker({ budget, account, today = todayISO(), open }: { bu
   const gasHeld = envelopeHeld(budget, account.id, today);
   // After bills and reserved gas: negative = short for this pay + this month's gas.
   const afterReserved = t.spare - gasHeld;
+  // Bills paid on another account's card: their money is still here, waiting to be moved across.
+  const moveOut = t.toMove.reduce((s, m) => s + m.amount, 0);
   // A steady account (e.g. rent) builds a buffer for pays with an extra week; what's left isn't spare.
   // Money put aside here (a car fund: WOF, tyres) builds up until it's needed; it isn't spare either —
   // unless every set-aside has a max (Haircut $60) and the account is already over it.
@@ -78,11 +81,12 @@ export function MonthTracker({ budget, account, today = todayISO(), open }: { bu
     const adv = debtAdvice(budget, d, t.period);
     const due = t.rows.filter((r) => r.name === d.name && r.status !== 'paid');
     const held = due.reduce((s, r) => s + r.amount, 0);
-    if (held <= 0 && adv.recommended <= 0) return null;
+    // Nothing still held this pay (paid already, or the statement falls in the next pay): nothing to say.
+    if (held <= 0) return null;
     const dayLabel = d.statementDay ? `the ${ordinal(d.statementDay)}` : 'statement day';
     return {
       id: d.id,
-      text: <>{d.name} {cash(held || adv.recommended)} held for {dayLabel} — Gem’s allocation (instalments first, then interest-free by expiry; min {cash(adv.minimum ?? 0)}).</>,
+      text: <>{d.name} {cash(held)} held for {dayLabel} — Gem’s allocation (instalments first, then interest-free by expiry; min {cash(adv.minimum ?? 0)}).</>,
     };
   }).filter(Boolean) as { id: string; text: ReactNode }[];
 
@@ -127,11 +131,12 @@ export function MonthTracker({ budget, account, today = todayISO(), open }: { bu
 
       {t.balanceKnown && !(aside && !paysBills) && (
         <div className="stack gap-8">
-          {(total > 0 || gasHeld > 0) && (
+          {(total > 0 || gasHeld > 0 || moveOut > 0) && (
             <div className="parts" role="img" aria-label={`${cash(t.paid)} paid, ${cash(t.toCome)} still to come${gasHeld ? `, ${cash(gasHeld)} reserved for ${envNames}` : ''}, ${cash(leftAmount)} ${leftWord}`}>
               {t.paid > 0 && <div title={`Paid ${cash(t.paid)}`} style={{ flex: t.paid, background: 'var(--line)' }} />}
               {t.toCome > 0 && <div title={`Still to come ${cash(t.toCome)}`} style={{ flex: t.toCome, background: color }} />}
-              {gasHeld > 0 && !short && <div title={`Reserved for ${envNames} ${cash(gasHeld)}`} style={{ flex: gasHeld, background: 'var(--warn, #C4A35A)' }} />}
+              {moveOut > 0 && <div title={`To move across ${cash(moveOut)}`} style={{ flex: moveOut, background: 'var(--pal-stone)' }} />}
+              {gasHeld > 0 && !short && <div title={`Reserved for ${envNames} ${cash(gasHeld)}`} style={{ flex: gasHeld, background: 'var(--pal-ochre)' }} />}
               {leftAmount > 0 && !short && <div title={`${leftLabel} ${cash(leftAmount)}`} style={{ flex: leftAmount, background: 'var(--good)' }} />}
               {short && <div title={`Short ${cash(leftAmount)}`} style={{ flex: leftAmount, background: 'var(--bad)' }} />}
             </div>
@@ -169,6 +174,8 @@ export function MonthTracker({ budget, account, today = todayISO(), open }: { bu
               Put aside {cash(asideHeld)} for {names} (max {cash(maxAside!)}); the rest after bills is spare.
             </p>
           )}
+          <ToMoveNotes budget={budget} t={t} />
+          {!short && <MovesSummary t={t} />}
           {gemNotes.map((n) => (
             <p className="small muted" key={n.id}>{n.text}</p>
           ))}
@@ -208,7 +215,10 @@ export function MonthTracker({ budget, account, today = todayISO(), open }: { bu
                   <span className="small strong block">{fmtShort(r.date)}</span>
                   <span className="xs muted">{when(r.days)}</span>
                 </span>
-                <span className="grow">{r.name}</span>
+                <span className="grow min0">
+                  <span className="block">{r.name}</span>
+                  {r.late && <span className="xs muted block">not out of any account yet</span>}
+                </span>
                 <b className="num">{cash(r.amount)}</b>
                 {t.balanceKnown ? (
                   <span className={r.covered ? 'pos' : 'neg'} aria-label={r.covered ? 'covered' : 'not covered'} style={{ display: 'grid' }}>
@@ -225,7 +235,10 @@ export function MonthTracker({ budget, account, today = todayISO(), open }: { bu
                 {paid.map((r, i) => (
                   <div className="list-row small muted" key={`${r.name}-${r.date}-${i}`}>
                     <span style={{ flex: '0 0 72px' }}>{fmtShort(r.date)}</span>
-                    <span className="grow">{r.name}</span>
+                    <span className="grow min0">
+                      <span className="block">{r.name}</span>
+                      {paidHow(budget, r) && <span className="xs block">{paidHow(budget, r)}</span>}
+                    </span>
                     <span className="num">{cash(r.amount)}</span>
                     <Icon name="check" size={14} />
                   </div>
@@ -233,6 +246,8 @@ export function MonthTracker({ budget, account, today = todayISO(), open }: { bu
               </ShortList>
             </Disclosure>
           )}
+
+          <OtherMoves t={t} account={account} />
 
           {t.next.rows.length > 0 && (
             <Disclosure title={`Next pay, ${fmtShort(t.next.period.start)}`}

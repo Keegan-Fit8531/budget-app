@@ -9,6 +9,8 @@ heading; and the Deposits pop-up (`#/accounts/deposits/<id>`) that sets what pay
 - `AccountEdit.tsx`: an account's pop-up with tabs (`AccountTab`: `balance`, `cost` (a one-off cost), `payday`): `AccountEditModal`. Also opened from the Planner's cards.
 - `AccountHistory.tsx`: one-off costs (`OneOffCostModal`, `OneOffCostForm`: money spent outside the plan, like a tyre puncture) and the account's history list.
 - `EnvelopeCards.tsx`: an account's envelopes on its card (budget, spent, left, later weeks kept), each transfer counted against one (with Change), and the question for a transfer out it couldn't place ("Was it for Food shop / Car gas … or just moving money?", saved in `budget.envelopeTransfers`). Used by `MonthTracker.tsx`.
+- `BankSeen.tsx`: what the bank shows on the tracker: how each paid bill went out (`paidHow`: "Weekly allowance card · made up 18 Nov"), money to move back for a bill paid on another card (`ToMoveNotes`), and money you moved in or out yourself (`MovesSummary`, the line that explains a big spare; `OtherMoves`, the list).
+- `BillCheck.tsx`: the bill check pop-up (`BillCheckModal`, `BillCheckButton` in the page header, `useBillCheck`): after a bank sync, opens by itself when there's something new (keys already shown are kept in this browser), from `logic/billCheck.ts`. Answers are saved in `budget.billChecks`.
 - `MonthTracker.tsx`: an account's live tracker for this pay (bills paid and to come, against what's in it, from `engine/balances/billTracker.ts`) and a future pay day by day (`PayProjectionView`).
 - `logic/`: account history and the payday-mode labels (its own README).
 
