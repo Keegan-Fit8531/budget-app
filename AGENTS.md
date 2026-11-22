@@ -45,7 +45,7 @@ before dev/build), `.github/workflows/pages.yml` (deploys `main` to GitHub Pages
 | What's saved (a new field on accounts, debts, goals…) | `core/types.ts`, then `state/upgrade.ts` → `tidy()` for older saves, `core/valid.ts` |
 | Pay periods, paydays, weekend rules, a moved payday | `engine/periods.ts` |
 | When a cost falls (weekly, monthly, skip near payday) | `engine/occurrences.ts` |
-| Money put aside (WOF, tyres) or envelopes (Gas a month, Food a week) | `engine/setAside.ts`, `engine/envelope.ts`; what counts against one (purchases, transfers that paid for one): `engine/envelopeMatch.ts`; Accounts card: `features/accounts/EnvelopeCards.tsx` |
+| Money put aside (WOF, tyres) or envelopes (Gas a month, Food a week) | `engine/setAside.ts`, `engine/envelope.ts`; what counts against one (purchases, transfers that paid for one): `engine/envelopeMatch.ts`; a shop counted as the wrong kind (a fuel station as food): the shop rules in `features/insights/logic/spending.ts` (`FUEL_SHOPS`); Accounts card: `features/accounts/EnvelopeCards.tsx` |
 | Which bank transaction paid a bill (card on another account, made-up transfers), bills not seen; the Accounts bill check pop-up | `engine/billMatch.ts`; suggestions: `features/accounts/logic/billCheck.ts`; pop-up: `features/accounts/BillCheck.tsx` |
 | What payday sends each account (fixed / exact / steady); "allocated this pay" (what it sent this pay: `depositFor`) | `engine/balances/` (README lists which file does what) |
 | A pay's plan: totals, leftover, what each account needs | `engine/plan.ts` → `planFor()` |
@@ -77,7 +77,7 @@ questions are answered there):
    usually older). Its README says how the owner's accounts are used (which one is the EFTPOS card, what each
    holds) and how to query `budget.json` without reading all of it.
 2. `npm run inspect` (every account) or `npm run inspect -- food --today 2026-11-22` (one account in detail):
-   the tracker, envelopes and what counted against them, transfers the card asks about, next pays and any
+   the tracker, envelopes and what counted against them (each transfer with the purchase it was matched to), transfers the card asks about, next pays and any
    Steady buffer, and the last 14 days of transactions with what each counted as. It loads the budget the
    way the app does (`state/upgrade.ts`). The first line says when that copy was saved: if it's older than
    the owner's screenshot, the browser has changes the repo hasn't got yet.

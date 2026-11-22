@@ -50,7 +50,15 @@ export function inspectAccount(b: Budget, which: string, today: ISODate = todayI
     for (const e of envelopes) {
       out.push(`  ${e.item.name} · ${e.span} ${e.label} · budget ${cash(e.budget)} · spent ${cash(e.spent)} · left ${cash(e.left)}`
         + `${e.item.envelopeUnder ? ` · only under ${cash(e.item.envelopeUnder)}` : ''}${e.laterCount ? ` · ${e.laterCount} later ${e.span}s ${cash(e.later)}` : ''}`);
-      for (const x of e.txns) out.push(`    ${fmtShort(x.date)} ${cash(x.amount)} ${x.merchant || x.description}${isTransferOut(x, mine) ? ' (transfer)' : ''}`);
+      for (const x of e.txns) {
+        // A transfer: the purchase it was matched to, and where (or that you chose it).
+        const why = () => {
+          if (b.envelopeTransfers?.[transferKey(a.id, x)] !== undefined) return 'you chose';
+          const p = guessTransfer(b, a.id, x, mine)?.seen[0];
+          return p ? `matched to ${p.txn.merchant || p.txn.description} ${cash(p.txn.amount)} on ${fmtShort(p.txn.date)} in ${p.accountId}` : 'no purchase';
+        };
+        out.push(`    ${fmtShort(x.date)} ${cash(x.amount)} ${x.merchant || x.description}${isTransferOut(x, mine) ? ` (transfer, ${why()})` : ''}`);
+      }
     }
     const unsorted = unsortedTransfers(b, a.id, today);
     out.push(unsorted.length ? '  Transfers out the card asks about:' : '  No transfers out waiting for an answer.');
