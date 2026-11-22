@@ -81,6 +81,10 @@ questions are answered there):
    the owner's screenshot, the browser has changes the repo hasn't got yet.
 3. `npm run dev`, then `npm run screenshot -- '#/accounts' --today 2026-11-22` to see the page itself, in New
    Zealand time. (A browser left on UTC is on yesterday's date until 1pm in NZ, which changes what's shown.)
+   The owner uses a phone in dark mode, so for a layout change look as they do: `--width 400 --dark`. On
+   Accounts the Bill check pop-up opens by itself and covers the page: add `--click 'text=Later'`. Open a card
+   with `--click '.acct:has-text("Rent") >> text=Details'`, and picture just it with `--only '.acct:has-text("Rent")'`
+   (see `scripts/README.md`). Look before and after your change.
 
 That output is private: never put it in commits, PRs, code or fixtures. `testing/fixtures.ts` →
 `foodGasBudget()` is a made-up budget shaped like the real Food and gas account, for tests.
@@ -94,6 +98,8 @@ That output is private: never put it in commits, PRs, code or fixtures. `testing
 - **Dependencies point inward**: `core` ← `engine` ← `features`/`services` ← `app`. `ui/` knows nothing about budgets. (`engine` and `features/debts|savings/logic` call each other; don't add new cycles.) `features/` and `services/` sit side by side: a page may use a service (Accounts uses `bankSync` and the bank's `SYNCED` event), and a service may use a page's `logic/`. `engine/` and `core/` never import a service's code (`core/types.ts` only borrows the `Payslip` type).
 - **One reader per bank format**: transfers between your own accounts are read by `engine/transfers.ts` → `ownTransfer` only; shop categories by `features/insights/logic/spending.ts` → `categorizeTxn`. Use them; don't parse descriptions again.
 - **Design**: use the tokens and classes in `ui/styles/` and the pieces in `ui/components.tsx`, never new colours or sizes. Green/red only ever mean "fine"/"short". An account's colour is only a small mark beside its name.
+  Cards are read on a phone: the summary is figures and one line per item, plus anything to act on; explanations go
+  behind Details, and the Details button sits above what it opens (`ui/README.md`).
 - **Privacy**: the Gemini key, GitHub token and bank passphrase stay in the browser's storage only, never in the budget, the repo or the code. `src/personal/` (git-ignored) holds the owner's own data and is never committed.
 - **Keep files small**: aim for under ~400 lines. When one grows past that, split it by its sections into files named for their job, and update the README. Over 500 lines fails `npm test`.
 

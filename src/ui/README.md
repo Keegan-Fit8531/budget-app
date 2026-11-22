@@ -17,5 +17,8 @@ the budget's rules (it can use `core/` helpers for dates, money and colours).
 - Use the classes and tokens in `styles/` and the pieces here; don't add one-off colours, sizes or spacing in a page.
 - Brand colour is for the sidebar, primary buttons and payday only. Green and red only ever mean "fine" and "short". An account's colour is only a small mark beside its name, never a whole card.
 - Each screen shows the figures you came for, with the working one click away (a `Disclosure` or a pop-up).
+- A card's summary must fit a phone screen with room to spare (the owner checks on an iPhone, in dark mode):
+  figures and one line per item, plus anything that needs doing. Explanations ("how this works") go behind
+  Details. Put `DetailsToggle` directly above the `Collapse` it opens, so Hide details stays where it was tapped.
 
 Keep this README current: update it in the same change when you add, remove, rename or repurpose a file here (see AGENTS.md).

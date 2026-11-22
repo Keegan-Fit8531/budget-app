@@ -3,6 +3,11 @@
 //   npm run screenshot -- '#/accounts'                           whole page
 //   npm run screenshot -- '#/accounts' --today 2026-11-22        as if it were that day
 //   npm run screenshot -- '#/planner' --file other.json --width 400
+//   npm run screenshot -- '#/accounts' --width 400 --click 'text=Later' \
+//     --click '.acct:has-text("Food and gas") >> text=Details' --only '.acct:has-text("Food and gas")'
+//   --click <selector> (repeatable, in order) taps something first: a pop-up's Later, a card's Details.
+//   --dark: dark mode, as the owner's phone.
+//   --only <selector> pictures just that element (one card) instead of the whole page.
 // Saves the picture outside the repo (it shows the owner's money) and prints where. Needs Playwright
 // (installed in Claude's cloud sessions; elsewhere `npm i -D playwright` and `npx playwright install chromium`).
 // The page has no sync set up, so nothing is written back to the repo.
@@ -19,6 +24,11 @@ const opt = (name, fallback) => {
 const file = resolve(opt('--file', '../budget-data/budget.json'));
 const today = opt('--today');
 const width = Number(opt('--width', '900'));
+// Every --click, in order (Playwright selectors: 'text=Later', '.acct:has-text("Rent") >> text=Details').
+const clicks = [];
+for (let c = opt('--click'); c !== undefined; c = opt('--click')) clicks.push(c);
+const only = opt('--only');
+const dark = args.includes('--dark'); // as on a phone in dark mode
 const out = resolve(opt('--out', join(tmpdir(), `paydays-${Date.now()}.png`)));
 const url = `http://localhost:${opt('--port', '5173')}/${args.find((a) => !a.startsWith('--')) ?? '#/planner'}`;
 
@@ -33,7 +43,7 @@ try {
 const budget = readFileSync(file, 'utf8');
 const browser = await playwright.chromium.launch();
 // The app works out "today" from the device's own clock and time zone: use the owner's.
-const ctx = await browser.newContext({ viewport: { width, height: 1000 }, timezoneId: 'Pacific/Auckland', deviceScaleFactor: 1 });
+const ctx = await browser.newContext({ viewport: { width, height: 1000 }, timezoneId: 'Pacific/Auckland', deviceScaleFactor: 1, colorScheme: dark ? 'dark' : 'light' });
 await ctx.addInitScript((s) => { localStorage.setItem('paydays.budget.v1', s); }, budget);
 const page = await ctx.newPage();
 page.on('pageerror', (e) => console.error('Page error:', e.message));
@@ -46,6 +56,15 @@ try {
   process.exit(1);
 }
 await page.waitForTimeout(1500);
-await page.screenshot({ path: out, fullPage: true });
+for (const sel of clicks) {
+  try {
+    await page.locator(sel).first().click({ timeout: 3000 });
+    await page.waitForTimeout(500); // let it open (Collapse animates)
+  } catch {
+    console.error(`Nothing to click for ${sel}; carrying on.`);
+  }
+}
+if (only) await page.locator(only).first().screenshot({ path: out });
+else await page.screenshot({ path: out, fullPage: true });
 await browser.close();
 console.log(out);

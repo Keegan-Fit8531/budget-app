@@ -154,6 +154,7 @@ function BalanceCard({ account: a, view, day, mover, onPick }: {
   // Nominal payday day-of-month can move for the weekend (e.g. 20th on Sunday → Friday 18th).
   const nominalDay = budget.settings.paydayDay;
   const movedForWeekend = Number(pay.start.slice(8, 10)) !== nominalDay;
+  const toggle = entry && hasDetails ? <DetailsToggle open={open} onChange={setOpen} /> : null;
 
   return (
     <section className={`card acct${open ? ' open' : ''}`} data-flip={a.id}>
@@ -182,9 +183,11 @@ function BalanceCard({ account: a, view, day, mover, onPick }: {
         </div>
       )}
 
+      {/* Details sits above what it opens, so Hide details is where you left it. */}
       {tracked && (view
-        ? <PayProjectionView budget={budget} account={a} period={view} day={day} today={today} open={open} />
-        : <MonthTracker budget={budget} account={a} today={today} open={open} />)}
+        ? <PayProjectionView budget={budget} account={a} period={view} day={day} today={today} open={open} toggle={toggle} />
+        : <MonthTracker budget={budget} account={a} today={today} open={open} toggle={toggle} />)}
+      {!tracked && toggle}
 
       <Collapse open={open} stacked><FlatDetails.Provider value>
         <div className="acct-body">
@@ -214,7 +217,6 @@ function BalanceCard({ account: a, view, day, mover, onPick }: {
         </div>
       </FlatDetails.Provider></Collapse>
 
-      {entry && hasDetails && <DetailsToggle open={open} onChange={setOpen} />}
       {editing && <AccountEditModal account={a} onClose={() => setEditing(false)} />}
     </section>
   );
@@ -270,12 +272,12 @@ function BankOnlyCard({ account: a, mover }: { account: Account; mover: React.Re
         </div>
       ) : <p className="small muted">Upload a statement or CSV export to see what goes in and out.</p>}
 
+      {txns.length > 0 && <DetailsToggle open={open} onChange={setOpen} />}
       <Collapse open={open} stacked><FlatDetails.Provider value>
         <div className="acct-body">
           <TransactionList items={txns} pending={budget.pendingTransactions?.[a.id]} first={10} />
         </div>
       </FlatDetails.Provider></Collapse>
-      {txns.length > 0 && <DetailsToggle open={open} onChange={setOpen} />}
     </section>
   );
 }

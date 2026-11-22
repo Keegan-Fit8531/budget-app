@@ -20,7 +20,14 @@
 .acct-fig .icon-btn.mini { color: var(--muted); }
 .acct-fig .icon-btn.mini:hover { color: var(--ink); }
 .acct-fig .note-line { flex-basis: 100%; margin-top: -4px; }
+/* The Details row: under a card's summary and above what it opens, so Hide details stays where it was tapped. */
 .acct-foot { display: flex; align-items: center; justify-content: space-between; gap: var(--s-3); border-top: 1px solid var(--line); padding-top: var(--s-2); margin-bottom: calc(-1 * var(--s-2)); }
+.acct-foot:has(+ .collapse[data-open="true"]) { margin-bottom: 0; }
+/* An envelope at a glance: name and what's left on one line, a thin bar under it. */
+.env-row { display: flex; flex-direction: column; gap: 6px; }
+.env-line { display: flex; align-items: baseline; justify-content: space-between; gap: var(--s-3); min-width: 0; }
+.env-line > .num { flex: 0 0 auto; }
+.parts.thin { height: 6px; }
 .acct-body { display: flex; flex-direction: column; gap: var(--s-2); }
 /* A card's details: each section under a small heading with its figure on the right, then its rows.
    Sections are spaced apart and ruled off, rows inside are tight, so it reads as a list of lists. */
