@@ -8,14 +8,19 @@ import { debtAdvice } from '../debts/logic/advice';
 import { accountEnvelopes, envelopeHeld } from '../../engine/envelope';
 import { EnvelopeDetails, EnvelopeSummary } from './EnvelopeCards';
 import { MovesSummary, OtherMoves, ToMoveNotes, paidHow } from './BankSeen';
-import { asideMaxSaved, hasSetAsides, isHeldInAccount } from '../../engine/setAside';
+import { asideMaxSaved, asideSplit, hasSetAsides, isHeldInAccount, setAsidePerPay } from '../../engine/setAside';
 import { type Period } from '../../engine/periods';
 import { asideNames } from '../../engine/rebalance';
 import { tone } from '../../core/colors';
 import { cash } from '../../core/money';
 import type { Account, Budget } from '../../core/types';
 import { Icon } from '../../ui/Icon';
+import { PartsBar, type Part } from '../../ui/PartsBar';
 import { Collapse, Disclosure, FlatDetails, ShortList } from '../../ui/components';
+
+/** A colour per put-aside cost on the bar (Haircut, WOF, maintenance), so neighbours differ. */
+const ASIDE_COLORS = ['var(--pal-orchid)', 'var(--pal-plum)', 'var(--pal-indigo)', 'var(--pal-rose)'];
+const asideColor = (i: number) => ASIDE_COLORS[i % ASIDE_COLORS.length];
 
 const when = (days: number) => (days === 0 ? 'today' : days === 1 ? 'tomorrow' : days > 0 ? `in ${days} days` : days === -1 ? 'yesterday' : `${-days} days ago`);
 
@@ -60,7 +65,6 @@ export function MonthTracker({ budget, account, today = todayISO(), open, toggle
     : aside && maxAside !== undefined ? asideHeld
     : bufferShown !== undefined ? bufferShown
     : spareAmt;
-  const leftWord = short ? 'short' : overAsideMax ? 'spare' : aside ? 'put aside' : bufferShown !== undefined ? 'buffer' : steady ? 'ends' : 'spare';
   const leftLabel = short ? 'Short'
     : overAsideMax ? 'Spare'
     : aside ? 'Put aside'
@@ -93,6 +97,21 @@ export function MonthTracker({ budget, account, today = todayISO(), open, toggle
     ? <p className="small muted">Put aside for {names}{maxAside !== undefined ? `, up to ${cash(maxAside)}` : ''}.</p>
     : null;
   const color = tone(account.color);
+  // The bar: every dollar in the account this pay, each part tappable (paid, to come, put aside per cost, spare).
+  const asideParts = aside && !short ? asideSplit(budget, account.id, asideHeld) : [];
+  const greenAmt = short ? 0 : aside ? (overAsideMax ? spareAmt - maxAside! : 0) : leftAmount;
+  const bar: Part[] = [
+    { label: 'Paid', value: t.paid, color: 'var(--line)', note: `${paid.length} bill${paid.length === 1 ? '' : 's'}` },
+    { label: 'Still to come', value: t.toCome, color, note: toCome[0] ? `next ${fmtShort(toCome[0].date)}` : undefined },
+    { label: 'To move across', value: moveOut, color: 'var(--pal-stone)' },
+    { label: `Reserved for ${envNames}`, value: short ? 0 : gasHeld, color: 'var(--pal-ochre)' },
+    ...asideParts.map((x, i) => ({
+      label: `${x.item.name} put aside`, value: x.amount, color: asideColor(i),
+      note: x.item.maxSaved ? (x.amount >= x.item.maxSaved ? 'full' : `max ${cash(x.item.maxSaved)}`) : undefined,
+    })),
+    { label: overAsideMax ? 'Spare above the max' : leftLabel, value: greenAmt, color: 'var(--good)' },
+    { label: 'Short', value: short ? leftAmount : 0, color: 'var(--bad)' },
+  ];
   // Gem Visa held in this account until statement day — note the amount from Latitude's allocation.
   const gemHolds = (budget.debts ?? []).filter((d) => d.holdAccountId === account.id && d.rules === 'gem' && !d.payroll);
   const gemNotes = gemHolds.map((d) => {
@@ -125,6 +144,15 @@ export function MonthTracker({ budget, account, today = todayISO(), open, toggle
       {/* Money put aside (a car fund): nothing comes out on a date, so what matters is what's built up and what's next. */}
       {t.balanceKnown && aside && !paysBills && (
         <div className="stack gap-8">
+          {t.balanceSource === 'entered' && t.balance > 0 && (
+            <PartsBar label={`${account.name}: tap a part to see it`} parts={[
+              ...asideSplit(budget, account.id, t.balance).map((x, i) => ({
+                label: x.item.name, value: x.amount, color: asideColor(i),
+                note: x.item.maxSaved ? (x.amount >= x.item.maxSaved ? 'full' : `max ${cash(x.item.maxSaved)}`) : `${cash(setAsidePerPay(x.item))} a month`,
+              })),
+              { label: 'Spare above the max', value: maxAside !== undefined ? Math.max(0, t.balance - maxAside) : 0, color: 'var(--good)' },
+            ]} />
+          )}
           <div className="trio">
             <div className="stat">
               <span className="small muted">Put aside</span>
@@ -157,14 +185,7 @@ export function MonthTracker({ budget, account, today = todayISO(), open, toggle
       {t.balanceKnown && !(aside && !paysBills) && !envOnly && (
         <div className="stack gap-8">
           {(total > 0 || gasHeld > 0 || moveOut > 0) && (
-            <div className="parts" role="img" aria-label={`${cash(t.paid)} paid, ${cash(t.toCome)} still to come${gasHeld ? `, ${cash(gasHeld)} reserved for ${envNames}` : ''}, ${cash(leftAmount)} ${leftWord}`}>
-              {t.paid > 0 && <div title={`Paid ${cash(t.paid)}`} style={{ flex: t.paid, background: 'var(--line)' }} />}
-              {t.toCome > 0 && <div title={`Still to come ${cash(t.toCome)}`} style={{ flex: t.toCome, background: color }} />}
-              {moveOut > 0 && <div title={`To move across ${cash(moveOut)}`} style={{ flex: moveOut, background: 'var(--pal-stone)' }} />}
-              {gasHeld > 0 && !short && <div title={`Reserved for ${envNames} ${cash(gasHeld)}`} style={{ flex: gasHeld, background: 'var(--pal-ochre)' }} />}
-              {leftAmount > 0 && !short && <div title={`${leftLabel} ${cash(leftAmount)}`} style={{ flex: leftAmount, background: 'var(--good)' }} />}
-              {short && <div title={`Short ${cash(leftAmount)}`} style={{ flex: leftAmount, background: 'var(--bad)' }} />}
-            </div>
+            <PartsBar parts={bar} label={`${account.name} this pay: tap a part to see it`} />
           )}
           <div className="trio">
             <div className="stat">

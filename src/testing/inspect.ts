@@ -9,6 +9,7 @@ import {
   accountEnvelopes, envelopeHeld, guessTransfer, isTransferOut, transferKey, unsortedTransfers,
 } from '../engine/envelope';
 import { periodContaining, shiftPeriod } from '../engine/periods';
+import { asideMaxSaved, asideSplit, hasSetAsides } from '../engine/setAside';
 import { categorizeTxn, shopMap } from '../features/insights/logic/spending';
 import { billChecks } from '../features/accounts/logic/billCheck';
 
@@ -51,6 +52,13 @@ export function inspectAccount(b: Budget, which: string, today: ISODate = todayI
       : `${m.how === 'card' ? `on ${accName(m.from)}` : m.how === 'moved' ? `money moved to ${accName(m.from)}` : 'from here'}: `
         + `${m.txn!.description} ${cash(m.txn!.amount)} on ${fmtShort(m.txn!.date)}${m.shared ? ' (shared)' : ''}${m.cover ? ` · made up ${fmtShort(m.cover.date)}` : ''}`;
     out.push(`  ${r.status === 'paid' ? 'paid   ' : 'to come'} ${fmtShort(r.date)} ${r.name} ${cash(r.amount)}${r.debtId ? ' [debt]' : ''}${how ? ` · ${how}` : ''}`);
+  }
+  if (hasSetAsides(b, a.id)) {
+    // Money put aside (Haircut, WOF): what's after bills and envelopes, each up to its max; the rest is spare.
+    const after = Math.max(0, t.spare - held), max = asideMaxSaved(b, a.id);
+    const kept = max !== undefined ? Math.min(after, max) : after;
+    out.push(`  put aside ${asideSplit(b, a.id, kept).map((x) => `${x.item.name} ${cash(x.amount)}${x.item.maxSaved ? ` of max ${cash(x.item.maxSaved)}` : ''}`).join(', ') || 'nothing'}`
+      + (max !== undefined ? ` · spare above the max ${cash(Math.max(0, after - max))}` : ''));
   }
   for (const m of t.toMove) out.push(`  to move ${cash(m.amount)} to ${accName(m.to)} for ${m.row.name}`);
   const asks = billChecks(b, today).filter((c) => c.accountId === a.id);

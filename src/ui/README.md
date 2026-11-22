@@ -7,6 +7,7 @@ the budget's rules (it can use `core/` helpers for dates, money and colours).
 - `components.tsx`: the shared building blocks: `PageHead` (page header), things that open (`Disclosure`, `Section`, `Collapse`, `DetailsToggle`, `FlatDetails`), `Modal` (Escape closes the top one only), `Dot` and `AccIcon` (colour marks), `Chevron`, `ColorPicker`, Reorder (`ReorderToggle`, `MoveButtons`, `useFlip`), `CardColumns`, `ShortList`, and `ago` ("5 min ago").
 - `Icon.tsx`: `Icon`, the app's line icons by name.
 - `Donut.tsx`: charts: `Donut`, `Legend` (largest first), `BarList`.
+- `PartsBar.tsx`: `PartsBar`, one bar split into parts (paid, to come, put aside, spare); hover or tap a part to see its name and amount underneath. Use it for any bar of amounts, so every part can be looked at.
 - `LogoMark.tsx`: the Paydays logo.
 - `ErrorBoundary.tsx`: shows a message instead of a blank screen when a page fails (`isStaleBuild` spots an old cached build and offers a reload).
 - `toast.ts`: `showToast`, a short note at the bottom of the screen that goes by itself.
