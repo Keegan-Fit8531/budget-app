@@ -1,0 +1,12 @@
+/*
+ * The app's whole stylesheet, in order (imported once, by src/main.tsx).
+ * Order matters: later files build on the tokens and classes in earlier ones.
+ *   tokens.css      colours, type, spacing, radii — light and dark (the design system's rules are at its top)
+ *   base.css        element defaults, text, layout helpers, the app shell (sidebar, bottom bar)
+ *   components.css  shared pieces: page header, cards, buttons, figures, pills, forms, pop-ups, charts, things that open
+ *   pages.css       classes used by one page only (Accounts cards, Planner, Savings, Insights, Add menu)
+ */
+@import './tokens.css';
+@import './base.css';
+@import './components.css';
+@import './pages.css';

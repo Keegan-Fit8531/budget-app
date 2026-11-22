@@ -16,17 +16,28 @@ A payday-to-payday budget planner (NZD). Works on laptop and phone, and can be i
 ```bash
 npm install
 npm run dev     # http://localhost:5173
-npm test        # pay-period engine tests
+npm test        # all tests (next to the code they test, as *.test.ts)
 npm run build   # production build in dist/
 ```
+
+## Finding your way around the code
+
+The code is grouped by what it does, and every folder in `src/` has a `README.md` saying what's in it:
+`app/` (the shell), `core/` (data types and helpers), `engine/` (the budget maths), `state/` (the store),
+`features/` (one folder per page), `services/` (bank, sync, document reading), `shared/` and `ui/`.
+
+[`AGENTS.md`](AGENTS.md) is the guide for AI assistants (Claude Code reads it through `CLAUDE.md`, Cursor reads it
+directly): the folder map, where to look for each kind of change, the rules the code relies on, and the
+rule that every change updates its folder's README. A test (`src/testing/readmes.test.ts`) fails if a
+README is missing or doesn't mention a file in its folder.
 
 ## Design
 
 How the app looks is set in one place, so pages stay consistent:
 
-- `src/index.css` holds the tokens (colours, type sizes, spacing, corner radii, light and dark) and the classes built on them. Pages use those rather than their own values.
-- `src/components/ui.tsx` holds the shared pieces: the page header, anything that opens (`Disclosure`, `Section`), account icons and colour dots, and the colour picker.
-- `src/lib/colors.ts` holds the palette for accounts, groups and categories. Colours saved by earlier versions are shown as their nearest palette colour; nothing saved is changed.
+- `src/ui/styles/tokens.css` holds the tokens (colours, type sizes, spacing, corner radii, light and dark), and the other files in `src/ui/styles/` the classes built on them. Pages use those rather than their own values.
+- `src/ui/components.tsx` holds the shared pieces: the page header, anything that opens (`Disclosure`, `Section`), account icons and colour dots, and the colour picker.
+- `src/core/colors.ts` holds the palette for accounts, groups and categories. Colours saved by earlier versions are shown as their nearest palette colour; nothing saved is changed.
 
 The rules it follows: the brand colour is for the sidebar, primary buttons and payday; green and red only ever mean "fine" and "short"; an account's colour is a small mark beside its name, never a whole card. Each screen shows the figures you came for, with the working behind them one click away.
 
@@ -51,8 +62,8 @@ from them, and Insights shows what the spending went on.
 A copy of everything is saved in the browser once a day, before that day's first change, and kept for
 3 months (Settings → Saved copies), so an upload or an edit that went wrong can be put back.
 
-The published app starts with a blank budget. `src/lib/personal/` (git-ignored) can hold your own
-starting data, one-off data updates and the tests that use them; it stays on your computer.
+The published app starts with a blank budget. `src/personal/` (git-ignored) can hold your own
+starting data, one-off data updates (`migrate.ts`) and the tests that use them; it stays on your computer.
 
 ## Publishing
 

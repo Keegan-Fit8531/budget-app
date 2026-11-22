@@ -11,7 +11,8 @@
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "test": "vitest run"
+    "test": "vitest run",
+    "uses": "node scripts/uses.mjs"
   },
   "dependencies": {
     "@tesseract.js-data/eng": "^1.0.0",

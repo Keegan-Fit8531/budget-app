@@ -1,0 +1,353 @@
+/* ---------- Page header ---------- */
+.page-head { display: flex; align-items: center; justify-content: space-between; gap: var(--s-3) var(--s-4); flex-wrap: wrap; }
+.page-head > .grow { flex: 1 1 240px; }
+.page-sub { font-size: var(--fs-sm); color: var(--muted); margin-top: 2px; }
+.page-actions { display: flex; align-items: center; gap: var(--s-2); flex-wrap: wrap; }
+/* ‹ November pay › : the pay being looked at */
+.pay-nav { display: flex; align-items: center; gap: var(--s-3); min-width: 0; }
+.pay-nav-steps { display: flex; align-items: center; gap: var(--s-1); flex: 0 0 auto; }
+.pay-nav.compact { background: var(--card); border-radius: var(--r-md); padding: 6px 6px 6px var(--s-3); gap: var(--s-2); }
+.pay-nav.compact .icon-btn { width: 36px; height: 36px; border-color: transparent; }
+@media (max-width: 899px) {
+  .h1 { font-size: var(--fs-2xl); }
+  .page-sub { display: none; }                 /* what a page is for doesn't need saying on a phone */
+  /* Title and its button share the first row; the view switch and pay stepper get a row of their own. */
+  .page-head { gap: var(--s-3); }
+  /* ...unless it would be squeezed below a readable width: then the buttons drop to a row of their own. */
+  .page-head > .grow { flex: 1 1 0; min-width: min(260px, 100%); }
+  .page-head > .btn { min-height: 36px; padding: 0 var(--s-3); font-size: var(--fs-sm); }
+  .page-head > .seg, .page-head > .pay-nav.compact { width: 100%; order: 3; }
+  .page-head .pay-nav.compact { justify-content: space-between; }
+  .pay-nav-steps .icon-btn, .day-steps .icon-btn { width: 36px; }
+  .acc-head .h2 { font-size: var(--fs-lg); }
+}
+
+/* ---------- Card ---------- */
+.card { background: var(--card); border-radius: var(--r-xl); padding: var(--s-6); }
+@media (max-width: 899px) { .card { padding: var(--s-4); } }
+.card-head { display: flex; align-items: center; justify-content: space-between; gap: var(--s-2) var(--s-3); flex-wrap: wrap; }
+
+/* Two columns of cards, each column its own stack */
+.cols-2 { display: grid; gap: var(--s-5); align-items: start; }
+@media (min-width: 1100px) { .cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 899px) { .cols-2, .cols-2 > .stack { gap: var(--s-4); } }
+/* Cards that sit two across when there's room (each keeps its own height) */
+.cards-2 { display: grid; gap: var(--s-5); align-items: start; }
+@media (min-width: 1180px) { .cards-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 899px) { .cards-2 { gap: var(--s-4); } }
+
+/* ---------- Buttons ---------- */
+.btn { min-height: var(--tap); padding: 0 var(--s-4); border-radius: var(--r-md); border: 1px solid var(--line); background: var(--card); font-size: var(--fs-md); font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: var(--s-2); text-decoration: none; color: inherit; white-space: nowrap; }
+.btn:hover { border-color: var(--muted); }
+.btn:disabled { opacity: 0.55; cursor: default; }
+.btn.primary { background: var(--brand); border-color: var(--brand); color: var(--on-brand); }
+.btn.primary:hover { filter: brightness(1.12); }
+.btn.small { min-height: 36px; padding: 0 var(--s-3); font-size: var(--fs-sm); }
+@media (max-width: 899px) { .btn.small { padding: 0 10px; gap: 6px; } }
+.btn.ghost { border-color: transparent; background: transparent; }
+.btn.ghost:hover { background: var(--soft); }
+.btn.danger { color: var(--bad); }
+.btn.good { color: var(--good); border-color: var(--good); }
+.btn.link { min-height: 0; padding: 0; border: 0; background: none; color: var(--brand-2); font-weight: 600; }
+.icon-btn { width: var(--tap); height: var(--tap); border-radius: var(--r-md); border: 1px solid var(--line); background: var(--card); display: grid; place-items: center; cursor: pointer; flex: 0 0 auto; color: inherit; text-decoration: none; }
+.icon-btn:hover { border-color: var(--muted); }
+.icon-btn:disabled { opacity: 0.4; cursor: default; }
+.icon-btn.mini { width: 32px; height: 32px; border-radius: var(--r-sm); color: var(--muted); }
+/* The height of a small button, to sit beside one */
+.icon-btn.sm { width: 36px; height: 36px; color: var(--muted); }
+.icon-btn.plain { border-color: transparent; background: transparent; }
+.icon-btn.plain:hover, .icon-btn.plain.on { background: var(--soft); }
+.icon-btn.brand { background: var(--brand); border-color: var(--brand); color: var(--on-brand); }
+
+/* ---------- Segmented control (a choice of views) ---------- */
+.seg { display: inline-flex; background: var(--soft); border-radius: var(--r-md); padding: 3px; gap: 2px; max-width: 100%; overflow-x: auto; scrollbar-width: none; }
+.seg::-webkit-scrollbar { display: none; }
+.seg button { min-height: 36px; padding: 0 var(--s-3); border: 0; border-radius: 9px; background: transparent; color: var(--muted); font-size: var(--fs-sm); font-weight: 500; cursor: pointer; white-space: nowrap; flex: 0 0 auto; }
+.seg button:hover { color: var(--ink); }
+.seg button[aria-pressed="true"], .seg button[aria-selected="true"] { background: var(--card); color: var(--ink); font-weight: 600; box-shadow: var(--shadow-seg); }
+.seg.fill { display: flex; }
+.seg.fill button { flex: 1 1 0; padding: 0 6px; }
+@media (max-width: 899px) {
+  .seg-modes { display: flex; width: 100%; }
+  .seg-modes button { flex: 1 1 auto; padding: 0 6px; }
+}
+
+/* ---------- Figures ---------- */
+.big { font-size: var(--fs-hero); font-weight: 700; line-height: 1; letter-spacing: -0.02em; }
+.big small { font-size: 0.48em; font-weight: 600; letter-spacing: 0; }
+@media (max-width: 899px) { .big { font-size: 40px; } }
+.fig { font-size: var(--fs-2xl); font-weight: 700; line-height: 1.15; }
+.fig-sm { font-size: var(--fs-xl); font-weight: 700; line-height: 1.2; }
+
+/* A labelled figure. Inside a card it's an inset tile; in a .stats strip it's a column. */
+.stat { background: var(--soft); border-radius: var(--r-md); padding: var(--s-3) var(--s-4); min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.stat > b { font-size: var(--fs-xl); line-height: 1.25; }
+.stat.tight { padding: 10px var(--s-3); }
+.stat.tight > b { font-size: var(--fs-lg); }
+/* The row of headline figures at the top of a page: one card, divided by hairlines. */
+.stats { display: flex; flex-wrap: wrap; gap: 1px; background: var(--line); border-radius: var(--r-xl); overflow: hidden; }
+.stats > .stat { flex: 1 1 150px; background: var(--card); border-radius: 0; padding: var(--s-4) var(--s-5); }
+.stats > .stat > b { font-size: var(--fs-2xl); }
+@media (max-width: 899px) {
+  .stats > .stat { flex-basis: 40%; padding: var(--s-3) var(--s-4); }
+  .stats > .stat > b { font-size: var(--fs-xl); }
+}
+/* Pay and Total budgeted, side by side (stacked on a narrow phone so the pay's icons fit) */
+.pay-stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--s-3); }
+/* Pay has a label, a pill and two buttons: two boxes side by side only fit once there is room. */
+@media (max-width: 520px) { .pay-stats { grid-template-columns: minmax(0, 1fr); gap: var(--s-2); } }
+/* Keep the Pay and Total budgeted amounts level when one label row wraps. */
+.pay-stats .stat > b { margin-top: auto; }
+/* Three figures in a row that never wrap their labels (e.g. in the account / still to come / spare) */
+.trio { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: var(--s-2); }
+.trio .stat { padding: 10px var(--s-3); }
+.trio .stat > b { font-size: var(--fs-lg); }
+.trio .stat > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ---------- Marks: dots, icon chips, pills ---------- */
+.dot { width: 10px; height: 10px; border-radius: 3px; flex: 0 0 auto; background: var(--muted); }
+.dot.sm { width: 8px; height: 8px; border-radius: 2px; }
+.acc-icon { width: 36px; height: 36px; border-radius: var(--r-md); color: #fff; background: var(--muted); display: grid; place-items: center; flex: 0 0 auto; }
+.pill { font-size: var(--fs-xs); font-weight: 600; border-radius: var(--r-pill); padding: 3px 10px; background: var(--soft); color: var(--muted); white-space: nowrap; border: 0; }
+.pill.good { color: var(--good); background: var(--good-bg); }
+.pill.bad { color: var(--bad); background: var(--bad-bg); }
+button.pill { cursor: pointer; font-family: inherit; }
+/* Where a balance came from and when. The whole pill shows how current it is: green while it's
+   today's, plain once it's a few days old. From the bank it's a button that syncs again. */
+.sync-pill { display: inline-flex; align-items: center; gap: 5px; height: 28px; padding: 0 10px; border-radius: var(--r-pill);
+  border: 1px solid transparent; background: var(--soft); color: var(--muted); font: inherit; font-size: var(--fs-xs); font-weight: 600;
+  white-space: nowrap; flex: 0 0 auto; transition: background-color .2s, color .2s, border-color .2s; }
+.sync-pill.fresh { background: var(--good-bg); color: var(--good); }
+.sync-pill.aging { background: color-mix(in srgb, var(--accent) 18%, var(--card)); color: var(--ink); }
+.sync-pill.stale { background: var(--soft); color: var(--muted); }
+.sync-pill.busy { background: color-mix(in srgb, var(--brand-2) 14%, var(--card)); color: var(--brand-2); }
+.sync-icon { display: grid; }
+button.sync-pill { cursor: pointer; }
+button.sync-pill:hover { border-color: currentColor; }
+button.sync-pill:disabled { cursor: default; }
+.sync-pill.busy .sync-icon { animation: spin .9s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .sync-pill.busy .sync-icon { animation: none; } }
+.conv { display: flex; flex-wrap: wrap; gap: 6px; }
+.conv span { background: var(--soft); border-radius: var(--r-sm); padding: 4px var(--s-2); font-size: var(--fs-xs); color: var(--muted); }
+
+/* ---------- Messages ---------- */
+.alert { background: var(--bad-bg); color: var(--bad); border-radius: var(--r-lg); padding: var(--s-3) var(--s-4); font-size: var(--fs-md); display: flex; gap: 10px; }
+.tip { background: var(--soft); border-radius: var(--r-lg); padding: var(--s-3) var(--s-4); font-size: var(--fs-md); display: flex; gap: 10px; }
+.alert.small, .tip.small { font-size: var(--fs-sm); }
+.alert > svg, .tip > svg { flex: 0 0 auto; margin-top: 1px; }
+.alert a { color: inherit; font-weight: 600; }
+.note { font-size: var(--fs-sm); color: var(--muted); }
+
+/* ---------- Lists and tables ---------- */
+.list-row { display: flex; align-items: center; gap: var(--s-3); padding: 10px 0; border-bottom: 1px solid var(--line); font-size: var(--fs-md); }
+.list-row:last-child { border-bottom: 0; }
+.list-row.small { font-size: var(--fs-sm); padding: var(--s-2) 0; }
+button.list-row, a.list-row { width: 100%; background: none; border: 0; border-bottom: 1px solid var(--line); cursor: pointer; text-align: left; color: inherit; text-decoration: none; }
+button.list-row:hover, a.list-row:hover { background: color-mix(in srgb, var(--soft) 60%, transparent); }
+.list-row.picked { background: var(--soft); border-radius: var(--r-sm); padding-inline: var(--s-2); border-bottom-color: transparent; }
+.table { width: 100%; border-collapse: collapse; font-size: var(--fs-sm); font-variant-numeric: tabular-nums; }
+.table th { font-weight: 500; color: var(--muted); text-align: right; padding: 6px var(--s-1); }
+.table td { text-align: right; padding: var(--s-2) var(--s-1); border-top: 1px solid var(--line); }
+.table th:first-child, .table td:first-child { text-align: left; }
+.table tr.picked td { background: var(--soft); }
+.table tr[role="button"]:hover td { background: color-mix(in srgb, var(--soft) 60%, transparent); }
+.table-scroll { overflow-x: auto; }
+
+/* ---------- Bars ---------- */
+.bar { position: relative; height: 8px; border-radius: var(--r-pill); background: var(--soft); margin-top: var(--s-2); }
+.bar > div { height: 100%; border-radius: var(--r-pill); max-width: 100%; background: var(--brand-2); }
+.bar.moving > div { transition: width 0.25s linear; }
+.bar .target { position: absolute; top: -4px; width: 2px; height: 16px; background: var(--ink); border-radius: 1px; }
+/* A bar made of labelled parts (paid / still to come / spare), with a 2px gap between them */
+.parts { display: flex; height: 8px; border-radius: var(--r-pill); overflow: hidden; background: var(--soft); gap: 2px; }
+.parts > div { min-width: 2px; }
+.key { display: flex; flex-wrap: wrap; gap: var(--s-1) var(--s-4); font-size: var(--fs-sm); color: var(--muted); }
+.key > span { display: inline-flex; align-items: center; gap: 6px; }
+.key .dot { width: 8px; height: 8px; border-radius: 2px; }
+.end { justify-content: flex-end; }
+
+/* ---------- Forms ---------- */
+.field { display: flex; flex-direction: column; gap: 6px; font-size: var(--fs-sm); color: var(--muted); min-width: 0; }
+.field input, .field select, .field textarea, .input {
+  min-height: var(--tap); padding: 0 var(--s-3); border-radius: var(--r-md); border: 1px solid var(--line); background-color: var(--card); color: var(--ink); font-size: var(--fs-lg); min-width: 0; width: 100%;
+}
+.field textarea { padding: 10px var(--s-3); min-height: 72px; }
+/* Date fields: iOS draws its own control, which ignores the width and height above (it spills out of a
+   narrow column, sits shorter than the fields beside it, shrinks when empty) and centres the date. */
+/* Its height comes from padding around one line of text (iOS puts the date at the top of a box that's
+   given a fixed height), and the empty value keeps that line so an empty field is the same size. */
+input[type="date"] { -webkit-appearance: none; appearance: none; display: block; height: auto; min-height: var(--tap); padding-top: 8px; padding-bottom: 8px; line-height: 24px; text-align: left; max-width: 100%; }
+input[type="date"]::-webkit-date-and-time-value { text-align: left; margin: 0; min-height: 24px; line-height: 24px; }
+.field input:focus, .field select:focus, .field textarea:focus, .input:focus { outline: 2px solid var(--brand-2); outline-offset: 1px; }
+.field input[type="checkbox"], .check { width: 20px; height: 20px; min-height: 0; accent-color: var(--brand); flex: 0 0 auto; }
+input[type="range"] { accent-color: var(--brand); }
+/* Dropdowns: our own chevron with the same padding as the text on the left (the browser's sits on the edge). */
+select {
+  -webkit-appearance: none; appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23566367' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 12px center; background-size: 16px 16px;
+  padding-right: 40px !important; text-overflow: ellipsis;
+  /* A dropdown on its own (not in a .field) gets the same box as the app's other controls. */
+  min-height: 36px; padding-left: var(--s-3); border: 1px solid var(--line); border-radius: var(--r-md);
+  background-color: var(--card); color: var(--ink); font-size: var(--fs-sm); cursor: pointer; max-width: 100%;
+}
+select:hover { border-color: var(--muted); }
+select:focus-visible { outline: 2px solid var(--brand-2); outline-offset: 1px; }
+select::-ms-expand { display: none; }
+/* A small dropdown inside a row (a shop's category): a compact chip with a smaller chevron. */
+select.select-sm { min-height: 30px; padding-left: 10px; padding-right: 28px !important; border-radius: var(--r-sm); font-size: var(--fs-xs); font-weight: 500; background-position: right 8px center; background-size: 14px 14px; background-color: var(--card); }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) select {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%239FADAF' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  }
+}
+:root[data-theme="dark"] select { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%239FADAF' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E"); }
+.form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: var(--s-3); }
+.form-grid.bottom { align-items: end; }
+.form-grid.tight { grid-template-columns: repeat(auto-fit, minmax(90px, 1fr)); }
+/* A prompt that belongs to one field: full width, straight under its field when the grid is one column
+   (a phone, where the keyboard would hide anything further down), and under all the fields when wider. */
+.form-grid > .under { grid-column: 1 / -1; }
+/* A field that takes the whole row (a dropdown whose choices are too long for half a phone). */
+.form-grid > .wide { grid-column: 1 / -1; }
+@media (min-width: 420px) { .form-grid > .under { order: 1; } }
+/* A tick box with its label: the whole row is the target */
+.check-row { display: flex; align-items: center; gap: var(--s-3); min-height: var(--tap); cursor: pointer; font-size: var(--fs-md); }
+/* A choice you tick, outlined when it's on */
+.pick { border: 1px solid var(--line); border-radius: var(--r-md); padding: var(--s-2) var(--s-3); display: flex; align-items: center; gap: var(--s-2); flex-wrap: wrap; }
+.pick.on { border-color: var(--brand-2); }
+/* A quieter panel inside a card */
+.inset { background: var(--soft); border-radius: var(--r-md); padding: var(--s-1) var(--s-3); }
+/* A table-like run of form rows: the labels show once (on the first row) when the fields sit side by side */
+@media (min-width: 620px) { .group-row.rest .field > span:first-child { display: none; } }
+/* Choosing a colour: swatches from the palette */
+.swatches { display: flex; flex-wrap: wrap; gap: 6px; }
+.swatch { width: 28px; height: 28px; border-radius: 50%; border: 2px solid var(--card); box-shadow: 0 0 0 1px var(--line); cursor: pointer; padding: 0; }
+.swatch[aria-pressed="true"] { box-shadow: 0 0 0 2px var(--ink); }
+.swatch-btn { display: inline-flex; align-items: center; gap: var(--s-2); min-height: var(--tap); padding: 0 var(--s-3); border-radius: var(--r-md); border: 1px solid var(--line); background: var(--card); cursor: pointer; }
+.swatch-btn .dot { width: 18px; height: 18px; border-radius: 50%; }
+
+/* ---------- Pop-ups ---------- */
+.modal-back { position: fixed; inset: 0; background: var(--scrim); z-index: 50; display: flex; align-items: center; justify-content: center; padding: var(--s-4); }
+.modal { background: var(--card); border-radius: var(--r-xl); padding: var(--s-6); width: 100%; max-width: 540px; max-height: 92vh; overflow: auto; display: flex; flex-direction: column; gap: var(--s-4); box-shadow: var(--shadow-pop); }
+/* A tall modal scrolls; its parts keep their height (a scrolling .seg would otherwise be squashed flat). */
+.modal > * { flex-shrink: 0; }
+@media (max-width: 600px) {
+  .modal-back { align-items: flex-end; padding: 0; }
+  .modal { border-radius: var(--r-xl) var(--r-xl) 0 0; padding: var(--s-5) var(--s-4) calc(var(--s-5) + env(safe-area-inset-bottom)); }
+}
+/* Opening and closing: the page dims while the panel rises in (up from the bottom on a phone), and back. */
+.modal-head { display: flex; align-items: flex-start; gap: var(--s-2); }
+.modal-head .icon-btn { margin: -6px -8px 0 0; }
+.modal-back { animation: scrim-in .2s ease both; }
+.modal { animation: modal-in .26s var(--ease-out) both; }
+.modal-back.closing { animation: scrim-out .18s ease both; pointer-events: none; }
+.modal-back.closing .modal { animation: modal-out .18s ease-in both; }
+@keyframes scrim-in { from { background-color: transparent; } }
+@keyframes scrim-out { to { background-color: transparent; } }
+@keyframes modal-in { from { opacity: 0; transform: translateY(12px) scale(.98); } }
+@keyframes modal-out { to { opacity: 0; transform: translateY(8px) scale(.98); } }
+@keyframes sheet-in { from { transform: translateY(100%); } }
+@keyframes sheet-out { to { transform: translateY(100%); } }
+@media (max-width: 600px) {
+  .modal { animation-name: sheet-in; animation-duration: .32s; }
+  .modal-back.closing .modal { animation-name: sheet-out; animation-duration: .22s; }
+}
+/* A wide pop-up for lists of accounts (Deposits): the rows inside are outlined, as they sit on a card. */
+.modal.wide { max-width: 760px; }
+.modal .acc-section { border: 1px solid var(--line); }
+.acc-section.bare, .modal .acc-section.bare { border: 0; background: none; }
+.acc-section.bare > .acc-head { display: none; }
+.acc-section.bare .acc-body, .modal .acc-section.bare .acc-body { padding: 0; }
+/* A pop-up's form shown inside another pop-up's tab: just the form, no second panel or heading. */
+.modal-back.inline { position: static; inset: auto; background: none; padding: 0; z-index: auto; display: block; animation: none; }
+.modal-back.inline > .modal { box-shadow: none; padding: 0; max-width: none !important; max-height: none; overflow: visible; animation: none; border-radius: 0; background: none; }
+.modal-back.inline > .modal > :first-child { display: none; }
+/* Tabs at the top of a pop-up: each one a part of what's being edited. */
+.modal-tabs { position: sticky; top: calc(-1 * var(--s-6)); z-index: 2; background: var(--card); padding: var(--s-2) 0; margin: calc(-1 * var(--s-2)) 0; }
+@media (max-width: 600px) { .modal-tabs { top: calc(-1 * var(--s-5)); } }
+/* A pop-up with tabs keeps its place: pinned near the top on a wide screen, a steady height as a phone sheet. */
+@media (min-width: 601px) { .modal-back:has(> .modal.pinned) { align-items: flex-start; padding-top: 8vh; } .modal.pinned { max-height: 84vh; } }
+@media (max-width: 600px) { .modal.pinned { min-height: 70vh; } }
+.modal .acc-head { padding: var(--s-3) var(--s-4); }
+.modal .acc-body { padding: 0 var(--s-4) var(--s-4); }
+@media (prefers-reduced-motion: reduce) { .modal-back, .modal, .modal-back.closing, .modal-back.closing .modal { animation: none; } }
+
+/* Small floating labels and chart read-outs */
+.pop { background: var(--ink); color: var(--card); border-radius: var(--r-sm); padding: 6px 10px; font-size: var(--fs-xs); line-height: 1.35; box-shadow: var(--shadow-pop); pointer-events: none; }
+.pop-card { background: var(--card); border: 1px solid var(--line); border-radius: var(--r-md); padding: 10px var(--s-3); box-shadow: var(--shadow-pop); font-size: var(--fs-sm); pointer-events: none; display: flex; flex-direction: column; gap: var(--s-1); }
+/* A label that appears straight away when you hover (or tab to) an icon button. It's only drawn while
+   shown: hidden but still there, a label on a button by the screen's edge made the page scroll sideways. */
+.has-tip { position: relative; }
+.has-tip::after {
+  position: absolute; bottom: calc(100% + 8px); left: 50%; transform: translateX(-50%);
+  background: var(--ink); color: var(--card); font-size: var(--fs-xs); font-weight: 600; line-height: 1.3; padding: 6px 10px; border-radius: var(--r-sm);
+  white-space: nowrap; pointer-events: none; opacity: 0; transition: opacity .12s; z-index: 30;
+}
+.has-tip.tip-left::after { left: auto; right: 0; transform: none; }
+.has-tip:hover::after, .has-tip:focus-visible::after { content: attr(data-tip); opacity: 1; }
+@media (hover: none) { .has-tip:hover:not(:focus-visible)::after { content: none; } }
+
+/* ---------- Charts ---------- */
+.donut { border-radius: 50%; display: grid; place-items: center; flex: 0 0 auto; }
+.donut > div { border-radius: 50%; background: var(--card); display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; line-height: 1.2; }
+.chart-row { display: flex; flex-wrap: wrap; align-items: center; align-content: center; gap: var(--s-5) var(--s-6); flex: 1; }
+/* Planner: the pay and chart cards end level, but once "What's different this pay" is open the pay card
+   grows well past the chart. Rather than a tall card with the chart floating in the middle, the chart card
+   keeps its own height at the top and stays in view while the list is scrolled. */
+.planner-hero:has(.disc-head[aria-expanded="true"]) > .card:last-child { align-self: start; position: sticky; top: var(--s-5); }
+.legend { display: flex; flex-direction: column; gap: var(--s-2); font-size: var(--fs-md); flex: 1 1 200px; min-width: 0; }
+.legend-row { display: flex; align-items: center; gap: 10px; }
+.legend-row .pct { width: 40px; text-align: right; }
+/* A ranked list where each row carries its own bar (share of the whole) */
+.bar-list { display: flex; flex-direction: column; gap: 10px; }
+.bar-list-row { display: grid; grid-template-columns: minmax(0, 1fr) auto 40px; gap: 2px 10px; align-items: baseline; font-size: var(--fs-md); }
+.bar-list-row .track { grid-column: 1 / -1; height: 4px; border-radius: var(--r-pill); background: var(--soft); overflow: hidden; }
+.bar-list-row .track > div { height: 100%; border-radius: var(--r-pill); }
+
+/* ---------- Things that open ---------- */
+/* One pattern everywhere: a row with a chevron that turns when it's open. */
+.disc-head { display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 0; background: none; border: 0; cursor: pointer; font-size: var(--fs-sm); font-weight: 600; color: var(--ink); text-align: left; }
+.disc-head.wide { display: flex; width: 100%; justify-content: space-between; gap: var(--s-3); }
+.disc-head .disc-meta { font-weight: 500; color: var(--muted); }
+.disc-head > .disc-meta::before { content: '· '; }
+.chev { display: inline-grid; flex: 0 0 auto; transition: transform .25s var(--ease-out); color: var(--muted); }
+[aria-expanded="true"] > .chev, .chev.open { transform: rotate(180deg); }
+.disc-body { padding-top: var(--s-1); display: flex; flex-direction: column; gap: var(--s-3); }
+/* Opening and closing (Collapse): the height grows from nothing while the content fades in, and back. */
+.collapse { display: grid; grid-template-rows: 0fr; opacity: 0; visibility: hidden;
+  transition: grid-template-rows var(--dur-open) var(--ease-out), opacity .18s ease, visibility 0s linear var(--dur-open); }
+.collapse[data-open="true"] { grid-template-rows: 1fr; opacity: 1; visibility: visible;
+  transition: grid-template-rows var(--dur-open) var(--ease-out), opacity .24s ease .06s, visibility 0s; }
+.collapse > div { min-height: 0; overflow: hidden; }
+.collapse.settled > div { overflow: visible; }
+/* In a stack (a card), it takes none of the stack's gap while closed: it pulls up by the gap and gives it back inside. */
+.collapse.stacked { margin-top: calc(-1 * var(--s-3)); }
+.collapse.stacked > div > .collapse-pad { padding-top: var(--s-3); }
+/* A note that shows for a few seconds at the bottom (above the phone's bottom bar), then goes */
+.toast {
+  position: fixed; left: 50%; bottom: calc(24px + env(safe-area-inset-bottom)); transform: translateX(-50%); z-index: 60;
+  width: max-content; max-width: min(440px, calc(100vw - 32px)); padding: 12px 16px; border-radius: var(--r-md);
+  background: var(--ink); color: var(--bg); box-shadow: var(--shadow-pop); font-size: var(--fs-md); line-height: 1.4;
+  animation: toast-in 0.2s ease-out; transition: opacity 0.25s;
+}
+.toast.out { opacity: 0; }
+@keyframes toast-in { from { opacity: 0; transform: translate(-50%, 8px); } }
+@media (max-width: 899px) { .toast { bottom: calc(84px + env(safe-area-inset-bottom)); } }
+@media (prefers-reduced-motion: reduce) {
+  .collapse, .collapse[data-open="true"], .chev { transition: none; }
+  .bar.moving > div, .toast { transition: none; animation: none; }
+}
+.disc.ruled { border-top: 1px solid var(--line); padding-top: var(--s-1); }
+/* A row (account, debt, setting) that opens to show its details */
+.acc-section { border-radius: var(--r-xl); background: var(--card); }
+.acc-head { width: 100%; display: flex; align-items: center; gap: var(--s-3); padding: var(--s-3) var(--s-4); background: none; border: 0; cursor: pointer; text-align: left; min-height: 64px; border-radius: var(--r-xl); }
+.acc-head.flush { padding: 0; min-height: var(--tap); border-radius: var(--r-md); }
+.acc-body { padding: 0 var(--s-4) var(--s-4); display: flex; flex-direction: column; gap: var(--s-4); }
+@media (min-width: 900px) { .acc-head { padding: var(--s-4) var(--s-6); } .acc-body { padding: 0 var(--s-6) var(--s-6); } }
+
+/* A payment plan inside a debt: tap to edit */
+.plan-row { text-align: left; border: 1px solid var(--line); border-radius: var(--r-md); padding: var(--s-3); background: none; cursor: pointer; display: flex; flex-direction: column; gap: 6px; width: 100%; }
+.plan-row:hover { border-color: var(--muted); }
+

@@ -1,10 +1,10 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
-import { applyTheme, readTheme } from './lib/theme';
-import App from './App';
-import { ErrorBoundary } from './components/ErrorBoundary';
-import { BudgetProvider } from './lib/store';
-import './index.css';
+import { applyTheme, readTheme } from './ui/theme';
+import App from './app/App';
+import { ErrorBoundary } from './ui/ErrorBoundary';
+import { BudgetProvider } from './state/store';
+import './ui/styles/index.css';
 
 applyTheme(readTheme());
 
