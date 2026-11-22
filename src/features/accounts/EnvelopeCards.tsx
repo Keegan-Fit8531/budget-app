@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { fmtShort } from '../../core/dates';
 import { cash } from '../../core/money';
+import { PartsBar } from '../../ui/PartsBar';
 import type { Account, Budget, Txn } from '../../core/types';
 import { guessTransfer, isTransferOut, transferKey, unsortedTransfers, type EnvelopeStatus } from '../../engine/envelope';
 import { ownTransfer } from '../../engine/transfers';
@@ -37,11 +38,11 @@ function EnvelopeRow({ e, color }: { e: EnvelopeStatus; color: string }) {
         </span>
       </div>
       {(e.budget > 0 || e.spent > 0) && (
-        <div className="parts thin" role="img" aria-label={`${cash(e.spent)} spent of ${cash(e.budget)}`}>
-          {e.spent > 0 && <div style={{ flex: Math.min(e.spent, e.budget || e.spent), background: e.over ? 'var(--bad)' : color }} />}
-          {e.left > 0 && <div style={{ flex: e.left, background: 'var(--good)' }} />}
-          {e.over && e.budget > 0 && <div style={{ flex: -e.left, background: 'var(--bad)' }} />}
-        </div>
+        <PartsBar thin label={`${e.item.name} this ${e.span}`} parts={[
+          { label: `Spent this ${e.span}`, value: Math.min(e.spent, e.budget || e.spent), color: e.over ? 'var(--bad)' : color },
+          { label: `Left of ${cash(e.budget)}`, value: Math.max(0, e.left), color: 'var(--good)' },
+          { label: `Over ${cash(e.budget)}`, value: e.over && e.budget > 0 ? -e.left : 0, color: 'var(--bad)' },
+        ]} />
       )}
     </div>
   );
