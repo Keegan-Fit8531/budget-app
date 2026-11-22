@@ -13,7 +13,7 @@ The data model and the small helpers everything else uses. Nothing here depends 
 - `core.test.ts`: tests for `parseMoney`, `looksLikeBudget` and `moveAmong`.
 
 ## Watch out for
-- A new field on the budget: make it optional in `types.ts`, fill it in for older saves in `state/store.tsx` → `tidy()`, and check `valid.ts` still accepts old and new saves.
+- A new field on the budget: make it optional in `types.ts`, fill it in for older saves in `state/upgrade.ts` → `tidy()`, and check `valid.ts` still accepts old and new saves.
 - Renaming a field: keep the old one in `types.ts` marked "Older saves … don't use it" (see `Item.monthEnvelope`), and have `tidy()` move its value to the new one and delete it. Saves in the repo and on other devices still have the old name.
 - `types.ts` takes two types from elsewhere: `Payslip` (`services/reader/payslip.ts`) and `MonthlyReview` (`features/insights/logic/review.ts`).
 - Never store dollars or `Date` objects in the budget: cents and `ISODate` strings only.
