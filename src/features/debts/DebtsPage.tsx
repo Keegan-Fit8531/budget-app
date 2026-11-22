@@ -6,7 +6,7 @@ import {
   AccIcon, CardColumns, Collapse, DetailsToggle, MoveButtons, ReorderToggle, useFlip, FlatDetails,
 } from '../../ui/components';
 import { moveAmong } from '../../core/order';
-import { bankSync } from '../../services/bank/bank';
+import { bankSync, readBankConfig } from '../../services/bank/bank';
 import { DebtPayday } from './DebtPayday';
 import { DebtPlans } from './DebtPlans';
 import { DebtPayments, DebtPaydayHistory, StatementDueLine } from './DebtActivity';
@@ -95,7 +95,9 @@ export function DebtsPage() {
     const seen = d.bankPayments?.[d.bankPayments.length - 1]?.date;
     const planDays = d.rules === 'afterpay' || d.kind === 'bnpl' ? d.plans.map((p) => p.asOf) : [];
     const at = [d.checkedOn, d.checked?.asOf, d.balance?.asOf, seen, ...planDays].filter(Boolean).sort().pop();
-    return at ? <SyncPill source="entered" at={at} /> : <SyncPill source="none" />;
+    // A card's balance can still change on a sync (payments seen in ANZ; Gem links itself once added in Akahu).
+    const canSync = !!readBankConfig() && (d.kind === 'card' || d.kind === 'bnpl');
+    return at ? <SyncPill source="entered" at={at} canSync={canSync} /> : <SyncPill source="none" />;
   };
 
 
