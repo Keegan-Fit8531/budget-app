@@ -12,6 +12,13 @@ Plain functions for debts (no React). The engine uses these too: debt payments a
 - `advice.ts`: the recommended payment per debt for a pay, each by the lowest that keeps every plan on track (`debtAdvice`, `DebtAdvice`, `offRecommended`).
 - `debts.test.ts`: schedules, payments gone out, recording a payment, Gem held until statement day, extra paid for one pay.
 
+## Held debts (Gem in Misc bills)
+A debt with `holdAccountId` keeps its payday money in a bank account until statement day. How it flows:
+- `funding.ts` → `debtPaymentsIn`: its payments (paid ones in `debt.paid` included) leave the hold account, so Accounts lists them there.
+- `engine/balances/outflows.ts` → the hold top-up: at least Gem's recommended amount, or `Debt.heldPay` (an amount you set for one statement in the bill check) instead.
+- A payment seen in the bank: `services/bank/cardPayments.ts` → `gem.ts` `gemApply`. An early or extra payment that clears this pay's statement payment logs it in `debt.paid`, so the hold account shows it paid.
+- When that payment came from another account, the Accounts bill check asks if it was the one (`features/accounts/logic/billCheck.ts`, kind `held`); answers can be undone there.
+
 ## Watch out for
 - These files import each other (schedule ↔ gem ↔ amounts). Add a function to the file whose job it matches.
 - Gem's split can't be directed at one plan; `gem.ts` reproduces Latitude's order. Keep it in line with the clause quoted at the top of that file.

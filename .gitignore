@@ -30,3 +30,6 @@ src/lib/personal/
 
 # The text-recognition engine, copied in from node_modules when the app is built
 public/ocr/
+
+# Throwaway "try a change on the real budget" script (scripts/README.md): it prints the owner's money.
+scripts/_try.ts

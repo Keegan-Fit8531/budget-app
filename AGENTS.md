@@ -53,7 +53,7 @@ before dev/build), `.github/workflows/pages.yml` (deploys `main` to GitHub Pages
 | Planner page, Optimise the leftover | `features/planner/` |
 | Accounts page, Deposits pop-up, balances, account history | `features/accounts/` |
 | Debts: schedules, Gem Visa rules, payments, advice | `features/debts/logic/` (UI in `features/debts/`) |
-| A debt's payment held in a bank account until statement day (Gem in Misc bills: `Debt.holdAccountId`) | `features/debts/logic/funding.ts` (`debtPaymentsIn`: its payments, paid ones included, leave the hold account), `engine/balances/outflows.ts` (Gem's hold top-up, or `Debt.heldPay` when you set the amount); a payment seen in the bank: `services/bank/cardPayments.ts` → `gem.ts` `gemApply`. An early or extra payment that clears this pay's statement payment logs it in `debt.paid`, so the hold account shows it paid (Bill check then asks; answers can be undone there) |
+| A debt's payment held in a bank account until statement day (Gem in Misc bills: `Debt.holdAccountId`) | `features/debts/logic/README.md` → **Held debts** (how the money flows, file by file) |
 | Savings goals, goal costs, gifts, KiwiSaver | `features/savings/` |
 | Insights, spending categories, monthly review | `features/insights/` |
 | Settings page, export to spreadsheet | `features/settings/` |
@@ -89,6 +89,8 @@ questions are answered there):
    a bank sync, later than the clicks: if it's still there, or "Nothing to click" is printed, run it again). Open a card
    with `--click '.acct:has-text("Rent") >> text=Details'`, and picture just it with `--only '.acct:has-text("Rent")'`
    (see `scripts/README.md`). To see the Bill check pop-up itself, leave out the click and use `--only '.modal'`. Look before and after your change.
+4. To try what a change or an answer would do to the real budget without the app, see `scripts/README.md` →
+   **Trying a change on the real budget**.
 
 That output is private: never put it in commits, PRs, code or fixtures. `testing/fixtures.ts` →
 `foodGasBudget()` is a made-up budget shaped like the real Food and gas account, for tests.
@@ -147,7 +149,8 @@ npm run lint
 npm run build      # production build in dist/ (pushing to main deploys it)
 npm run uses -- envelopeHeld   # every file and line that uses a name (or a file's exports)
 npm run inspect -- food        # the real budget (../budget-data) as the app sees it, one account
-npm run screenshot -- '#/accounts' --today 2026-11-22   # a page with the real budget (needs npm run dev)
+npm run screenshot -- '#/accounts' --today 2026-11-22   # a page with the real budget (needs npm run dev); --tap / --hover for tips
+npm run live -- parts-tip --wait   # after merging: waits until the published app has that text
 ```
 
 Run one test file with `npx vitest run src/engine/periods.test.ts`. Test budgets and helpers are in `src/testing/fixtures.ts`.
@@ -157,14 +160,8 @@ Run one test file with `npx vitest run src/engine/periods.test.ts`. Test budgets
 The owner asks for changes "live" (or "push live"): push the session branch, open a PR into `main` and merge it.
 Merging to `main` runs `.github/workflows/pages.yml`, which publishes to GitHub Pages in about 1–2 minutes. Two
 merges close together cancel the first run, which is fine: the second builds everything. To check it's live,
-search the live bundle for a CSS class you added, or a string built in a `.ts` file (text in JSX is split up when
-built, so search a class name or a `logic/` string, not JSX text):
-
-```bash
-js=$(curl -s https://keegan-fit8531.github.io/budget-app/ | grep -o 'assets/index-[^"]*\.js' | head -1)
-curl -s "https://keegan-fit8531.github.io/budget-app/$js" | grep -c 'your-new-class'
-```
-
+run `npm run live -- <a CSS class you added, or a string from a .ts file> --wait` (in the background: it takes 1–2
+minutes). Text in JSX is split up when built, so search a class name or a `logic/` string, not a sentence from a page.
 Then tell the owner to refresh. The app keeps an offline copy (`public/sw.js`), so on a phone it can take a
 reopen to show the new version.
 
