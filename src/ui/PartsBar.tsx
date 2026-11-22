@@ -2,15 +2,30 @@ import { useEffect, useRef, useState, type PointerEvent } from 'react';
 import { cash } from '../core/money';
 import { Dot } from './components';
 
-/** `key`: a shorter name for the key under a `keyed` bar ("Bills" for "Other bills to come"). */
-export interface Part { label: string; value: number; color: string; note?: string; key?: string }
+/** The key's entries: parts with the same `key` name (each bill to come: "Bills") added up, in order of first use. */
+function keyOf(parts: Part[]) {
+  const out: { name: string; value: number; color: string }[] = [];
+  for (const p of parts) {
+    if (p.noKey) continue;
+    const name = p.key ?? p.label;
+    const k = out.find((x) => x.name === name);
+    if (k) k.value += p.value; else out.push({ name, value: p.value, color: p.color });
+  }
+  return out;
+}
+
+/**
+ * `key`: the name in the key under a `keyed` bar; parts with the same one are added up there (every bill: "Bills").
+ * `noKey`: left out of the key, for a part a figure beside the bar already names (Paid, Spare), so the key stays one line.
+ */
+export interface Part { label: string; value: number; color: string; note?: string; key?: string; noKey?: boolean }
 
 /**
  * One bar split into parts (paid, still to come, put aside, spare). Point at it, or tap or slide a finger along
  * it, and a tip above shows the part you're on: its name and amount. The others fade. The part is picked
  * from how far along the bar you are, so you don't have to land on a thin part exactly, and the tip floats,
  * so nothing on the card moves. A tap elsewhere hides it.
- * `keyed`: a key underneath names every part with its amount, so the split reads without tapping.
+ * `keyed`: one small line underneath names each kind of part with its total (not the `noKey` ones), so the split reads without tapping.
  */
 export function PartsBar({ parts, label, thin, keyed }: { parts: Part[]; label: string; thin?: boolean; keyed?: boolean }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -64,12 +79,13 @@ export function PartsBar({ parts, label, thin, keyed }: { parts: Part[]; label: 
       )}
     </div>
   );
-  if (!keyed || shown.length < 2) return bar;
+  const keys = keyed ? keyOf(shown) : [];
+  if (keys.length < 2) return bar;
   return (
     <div className="stack gap-6">
       {bar}
-      <div className="key">
-        {shown.map((p, i) => <span key={`${p.label}-${i}`}><Dot color={p.color} small />{p.key ?? p.label} <b className="num">{cash(p.value)}</b></span>)}
+      <div className="key parts-key">
+        {keys.map((k) => <span key={k.name}><Dot color={k.color} small />{k.name}<span className="num">{cash(k.value)}</span></span>)}
       </div>
     </div>
   );

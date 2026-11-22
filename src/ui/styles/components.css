@@ -180,6 +180,10 @@ button.list-row:hover, a.list-row:hover { background: color-mix(in srgb, var(--s
 .key { display: flex; flex-wrap: wrap; gap: var(--s-1) var(--s-4); font-size: var(--fs-sm); color: var(--muted); }
 .key > span { display: inline-flex; align-items: center; gap: 6px; }
 .key .dot { width: 8px; height: 8px; border-radius: 2px; }
+/* PartsBar's key: one small line tucked under the bar. */
+.parts-key { font-size: var(--fs-xs); gap: 2px var(--s-3); }
+.parts-key > span { gap: var(--s-1); }
+.parts-key .num { color: var(--ink); }
 .end { justify-content: flex-end; }
 
 /* ---------- Forms ---------- */
