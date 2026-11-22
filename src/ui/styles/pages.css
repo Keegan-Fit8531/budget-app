@@ -29,7 +29,6 @@
 .env-row { display: flex; flex-direction: column; gap: 6px; }
 .env-line { display: flex; align-items: baseline; justify-content: space-between; gap: var(--s-3); min-width: 0; }
 .env-line > .num { flex: 0 0 auto; }
-.parts.thin { height: 6px; }
 .acct-body { display: flex; flex-direction: column; gap: var(--s-2); }
 /* A card's details: each section under a small heading with its figure on the right, then its rows.
    Sections are spaced apart and ruled off, rows inside are tight, so it reads as a list of lists. */
