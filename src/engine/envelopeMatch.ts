@@ -1,7 +1,7 @@
 import { addDays, type ISODate } from '../core/dates';
 import { isEnvelope } from './setAside';
 import { ownTransfer } from './transfers';
-import { categorizeTxn, shopMap } from '../features/insights/logic/spending';
+import { categorizeTxn, FUEL_SHOPS, shopMap } from '../features/insights/logic/spending';
 import type { Budget, Item, Txn } from '../core/types';
 
 // Which synced transactions count against an envelope: purchases that match it (fuel for Gas), and
@@ -10,11 +10,13 @@ import type { Budget, Item, Txn } from '../core/types';
 type Shops = ReturnType<typeof shopMap>;
 type TxnLike = Pick<Txn, 'description' | 'merchant' | 'category' | 'amount'>;
 
-/** Fuel shop / description patterns (same idea as Insights transport → Fuel). */
-const FUEL_RE = /z energy|\bmobil\b|\bbp\b|gull|caltex|waitomo|\bnpd\b|\bfuel\b|petrol|gas station/i;
+/** Fuel in a description: the fuel brands Insights knows (`FUEL_SHOPS`), or words that say so. */
+const isFuel = (s: string) => FUEL_SHOPS.test(s) || /petrol|gas station/i.test(s);
 
 /** How far either side of a transfer to look for the purchase it paid for. */
 const NEAR_DAYS = 3;
+/** A purchase this close to a transfer's amount is the one it paid for ($80 for an $80.49 fill). */
+const CLOSE = 500;
 
 /** Whether a synced purchase counts against this envelope (Gas → fuel shops, Food → supermarkets, else by name). */
 export function matchesEnvelope(item: Pick<Item, 'name'>, t: TxnLike, mine?: Shops): boolean {
@@ -23,7 +25,7 @@ export function matchesEnvelope(item: Pick<Item, 'name'>, t: TxnLike, mine?: Sho
   if (category === 'transfers') return false;
   const name = item.name.toLowerCase();
   if (/gas|fuel|petrol/.test(name)) {
-    return shop === 'Fuel' || FUEL_RE.test(t.description) || FUEL_RE.test(t.merchant ?? '');
+    return shop === 'Fuel' || isFuel(t.description) || isFuel(t.merchant ?? '');
   }
   if (/food|grocer|supermarket/.test(name)) return category === 'groceries';
   const hay = `${t.description} ${t.merchant ?? ''} ${shop}`.toLowerCase();
@@ -93,33 +95,76 @@ export interface TransferGuess {
   seen: { txn: Txn; accountId: string }[];
 }
 
+interface Purchase { txn: Txn; accountId: string; item: Item }
+const purchaseKey = (p: Purchase) => `${p.accountId}|${p.txn.date}|${p.txn.amount}|${p.txn.description}`;
+
 /**
- * Which envelope a transfer out of its account paid for, from purchases on the account it went to (or
- * any other account, when the bank doesn't say where) within 3 days either side, each given to one
- * envelope by `purchaseEnvelope` (a $30 fill → Scooter gas, $80 → Car gas). Sure when only one envelope
- * has a purchase; with several, the one whose purchase is nearest the amount comes first. Undefined when nothing nearby matches.
+ * Envelope purchases on the account a transfer went to (or any other bank account, when the bank doesn't
+ * say where) within 3 days either side, each given to one envelope by `purchaseEnvelope`.
+ */
+function purchasesNear(b: Budget, accountId: string, t: Txn, envelopes: Item[], mine: Shops): Purchase[] {
+  const target = ownTransfer(b, t)?.account;
+  const from = addDays(t.date, -NEAR_DAYS), to = addDays(t.date, NEAR_DAYS);
+  const where = target ? [target.id] : b.accounts.filter((a) => a.id !== accountId && a.kind === 'bank').map((a) => a.id);
+  return where.flatMap((id) => txnsIn(b, id, from, to).map((txn) => ({ txn, accountId: id })))
+    .filter((p) => p.txn.amount < 0 && !isTransferOut(p.txn, mine))
+    .flatMap((p) => { const item = purchaseEnvelope(envelopes, p.txn, mine); return item ? [{ ...p, item }] : []; });
+}
+
+/**
+ * The purchases other transfers out of this account (to the same place, within 3 days) paid for, so one
+ * shop isn't claimed twice. Each transfer takes the purchase nearest its amount, closest pairs first: $80,
+ * $50 and $150 moved over after an $80.49 fill, a $53.94 shop and a $111.67 shop get one each. A transfer
+ * you said was for an envelope only takes that envelope's purchases; one you said was "just moving money", none.
+ */
+function claimedByOthers(b: Budget, accountId: string, t: Txn, envelopes: Item[], mine: Shops): Set<string> {
+  const target = ownTransfer(b, t)?.account?.id;
+  const key = transferKey(accountId, t);
+  const movers = txnsIn(b, accountId, addDays(t.date, -NEAR_DAYS), addDays(t.date, NEAR_DAYS))
+    .filter((m) => isTransferOut(m, mine) && ownTransfer(b, m)?.account?.id === target);
+  if (movers.length < 2) return new Set();
+  const pairs = movers.flatMap((m) => {
+    const chosen = b.envelopeTransfers?.[transferKey(accountId, m)];
+    if (chosen === '') return [];
+    return purchasesNear(b, accountId, m, envelopes, mine).filter((p) => chosen === undefined || p.item.id === chosen)
+      .map((p) => ({ mover: transferKey(accountId, m), p: purchaseKey(p), gap: Math.abs(p.txn.amount - m.amount) }));
+  }).sort((x, y) => x.gap - y.gap);
+  const done = new Set<string>(), taken = new Set<string>(), claimed = new Set<string>();
+  for (const { mover, p } of pairs) {
+    if (done.has(mover) || taken.has(p)) continue;
+    done.add(mover); taken.add(p);
+    if (mover !== key) claimed.add(p);
+  }
+  return claimed;
+}
+
+/**
+ * Which envelope a transfer out of its account paid for, from the purchases near it (`purchasesNear`)
+ * that another transfer didn't pay for (`claimedByOthers`). Sure when only one envelope has a purchase,
+ * or when the nearest is within $5 of the amount and no other envelope's is. With several, the one whose
+ * purchase is nearest the amount comes first. Undefined when nothing nearby matches.
  */
 export function guessTransfer(b: Budget, accountId: string, t: Txn, mine: Shops = shopMap(b)): TransferGuess | undefined {
   const envelopes = envelopesAt(b, accountId, t.date);
   if (!envelopes.length) return undefined;
-  const target = ownTransfer(b, t)?.account;
-  const from = addDays(t.date, -NEAR_DAYS), to = addDays(t.date, NEAR_DAYS);
-  const where = target ? [target.id] : b.accounts.filter((a) => a.id !== accountId && a.kind === 'bank').map((a) => a.id);
-  const purchases = where.flatMap((id) => txnsIn(b, id, from, to).map((txn) => ({ txn, accountId: id })))
-    .filter((p) => p.txn.amount < 0 && !isTransferOut(p.txn, mine));
+  const claimed = claimedByOthers(b, accountId, t, envelopes, mine);
+  const purchases = purchasesNear(b, accountId, t, envelopes, mine).filter((p) => !claimed.has(purchaseKey(p)));
   const fits = envelopes
     .map((item) => {
-      const seen = purchases.filter((p) => purchaseEnvelope(envelopes, p.txn, mine)?.id === item.id)
-        .sort((x, y) => Math.abs(x.txn.amount - t.amount) - Math.abs(y.txn.amount - t.amount));
+      const seen = purchases.filter((p) => p.item.id === item.id)
+        .sort((x, y) => Math.abs(x.txn.amount - t.amount) - Math.abs(y.txn.amount - t.amount))
+        .map(({ txn, accountId: id }) => ({ txn, accountId: id }));
       const gap = seen.length ? Math.abs(seen[0].txn.amount - t.amount) : Infinity;
       return { item, seen, gap };
     })
     .filter((f) => f.seen.length > 0)
     .sort((x, y) => x.gap - y.gap);
   if (!fits.length) return undefined;
-  // Two envelopes each have a purchase nearby (a $30 and an $80 fill), or a fill could be either (two gas
-  // envelopes, no limit to tell them apart): that's for you to say.
-  const sure = fits.length === 1 && fits[0].seen.every((p) => pickEnvelope(envelopes, p.txn, mine).clear);
+  // Two envelopes each have a purchase nearby (a $30 and an $80 fill) and neither is near the amount, or a
+  // fill could be either (two gas envelopes, no limit to tell them apart): that's for you to say.
+  const clear = fits[0].seen.every((p) => pickEnvelope(envelopes, p.txn, mine).clear);
+  const close = fits[0].gap <= CLOSE && fits.slice(1).every((f) => f.gap > CLOSE);
+  const sure = clear && (fits.length === 1 || close);
   return { itemIds: fits.map((f) => f.item.id), sure, seen: fits[0].seen };
 }
 
