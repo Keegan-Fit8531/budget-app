@@ -53,7 +53,7 @@ export function ShopSortAutoRun() {
       sortShops(latest.current).then((got) => {
         const placed = Object.values(got).filter((c) => c !== 'other').length;
         update((b) => { b.shopGuesses = { ...(b.shopGuesses ?? {}), ...got }; return b; });
-        if (placed) showToast(`Sorted ${placed} new shop${placed === 1 ? '' : 's'} out of Other.`);
+        if (placed) showToast(`${placed} new shop${placed === 1 ? '' : 's'} from your bank now ${placed === 1 ? 'has a spending category' : 'have spending categories'} (they were in Other). Change any on Insights.`);
       }).catch(() => {
         try { localStorage.setItem(SORT_TRIED, String(Date.now())); } catch { /* storage blocked */ }
       }).finally(() => { running.current = false; });
