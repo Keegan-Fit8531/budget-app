@@ -149,6 +149,22 @@ npm run screenshot -- '#/accounts' --today 2026-11-22   # a page with the real b
 
 Run one test file with `npx vitest run src/engine/periods.test.ts`. Test budgets and helpers are in `src/testing/fixtures.ts`.
 
+## Making a change live
+
+The owner asks for changes "live" (or "push live"): push the session branch, open a PR into `main` and merge it.
+Merging to `main` runs `.github/workflows/pages.yml`, which publishes to GitHub Pages in about 1–2 minutes. Two
+merges close together cancel the first run, which is fine: the second builds everything. To check it's live,
+search the live bundle for a CSS class you added (text in JSX is split up when built, so search a class name, not
+a sentence):
+
+```bash
+js=$(curl -s https://keegan-fit8531.github.io/budget-app/ | grep -o 'assets/index-[^"]*\.js' | head -1)
+curl -s "https://keegan-fit8531.github.io/budget-app/$js" | grep -c 'your-new-class'
+```
+
+Then tell the owner to refresh. The app keeps an offline copy (`public/sw.js`), so on a phone it can take a
+reopen to show the new version.
+
 ## Keeping the READMEs current (required)
 
 The READMEs only save time if they're true. Treat them as part of the code:
