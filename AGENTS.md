@@ -46,6 +46,7 @@ before dev/build), `.github/workflows/pages.yml` (deploys `main` to GitHub Pages
 | Pay periods, paydays, weekend rules, a moved payday | `engine/periods.ts` |
 | When a cost falls (weekly, monthly, skip near payday) | `engine/occurrences.ts` |
 | Money put aside (WOF, tyres) or envelopes (Gas a month, Food a week) | `engine/setAside.ts`, `engine/envelope.ts`; what counts against one (purchases, transfers that paid for one): `engine/envelopeMatch.ts`; a shop counted as the wrong kind (a fuel station as food): the shop rules in `features/insights/logic/spending.ts` (`FUEL_SHOPS`); Accounts card: `features/accounts/EnvelopeCards.tsx` |
+| A card linked to the bank (Gem Visa through Akahu): linking it, its pending purchases, payments Pending vs Received, plan progress, payday history, a statement's amount to avoid interest | `services/bank/bank.ts` → `newCardLinks`; `features/debts/logic/activity.ts`; card: `features/debts/DebtPlans.tsx`, `DebtActivity.tsx`; what the bank server sends: `services/bank/README.md` |
 | Which bank transaction paid a bill (card on another account, made-up transfers), bills not seen, a held debt (Gem) paid from another account; the Accounts bill check pop-up | `engine/billMatch.ts`; suggestions: `features/accounts/logic/billCheck.ts`; pop-up: `features/accounts/BillCheck.tsx` |
 | What payday sends each account (fixed / exact / steady); "allocated this pay" (what it sent this pay: `depositFor`) | `engine/balances/` (README lists which file does what) |
 | A pay's plan: totals, leftover, what each account needs | `engine/plan.ts` → `planFor()` |
@@ -98,7 +99,9 @@ questions are answered there):
    a bank sync, later than the clicks: if it's still there, or "Nothing to click" is printed, run it again). Open a card
    with `--click '.acct:has-text("Rent") >> text=Details'`, and picture just it with `--only '.acct:has-text("Rent")'` (Debts cards are `.acct` too: `'#/debts'`, `.acct:has-text("Gem Visa")`)
    (see `scripts/README.md`). To see the Bill check pop-up itself, leave out the click and use `--only '.modal'`. Look before and after your change.
-4. To try what a change or an answer would do to the real budget without the app, see `scripts/README.md` →
+4. To see a state the real budget isn't in yet (a card newly linked, a pending payment), make a changed copy in your
+   scratchpad with `jq` (`.bankLinks["x"]="debt:gem" | (.debts[]|select(.id=="gem")).pending=[…]`) and pass it with `--file`.
+5. To try what a change or an answer would do to the real budget without the app, see `scripts/README.md` →
    **Trying a change on the real budget**.
 
 That output is private: never put it in commits, PRs, code, fixtures or notes, and a test that copies a real case uses made-up amounts (a $400 rent, not the real one). `testing/fixtures.ts` →

@@ -3,17 +3,19 @@ import { useEffect, useMemo, useState } from 'react';
 import { DebtChart } from './DebtChart';
 import { Icon } from '../../ui/Icon';
 import {
-  AccIcon, CardColumns, Collapse, DetailsToggle, Disclosure, MoveButtons, ReorderToggle, useFlip, FlatDetails,
+  AccIcon, CardColumns, Collapse, DetailsToggle, MoveButtons, ReorderToggle, useFlip, FlatDetails,
 } from '../../ui/components';
 import { moveAmong } from '../../core/order';
 import { bankSync } from '../../services/bank/bank';
 import { DebtPayday } from './DebtPayday';
+import { DebtPlans } from './DebtPlans';
+import { DebtPayments, DebtPaydayHistory, StatementDueLine } from './DebtActivity';
 import { TransactionList } from '../../shared/Transactions';
 import { fmtDay, fmtShort, monthName, todayISO, type ISODate } from '../../core/dates';
 import { gemPlan } from './logic/gem';
 import { debtAdvice, offRecommended as isOffRecommended, type DebtAdvice } from './logic/advice';
 import { debtPay, historyOwed, owed, projectedOwed, unplanned } from './logic/amounts';
-import { debtSchedules, PLAN_LABEL } from './logic/schedule';
+import { debtSchedules } from './logic/schedule';
 import { upcomingPayPeriod } from '../../engine/periods';
 import { planFor } from '../../engine/plan';
 import { DayPicker, useDayView } from '../../shared/DayPicker';
@@ -212,6 +214,7 @@ export function DebtsPage() {
               <div className="stack gap-8">
                 <AllocationRow advice={adv} onApply={() => applyRecommended([adv])} />
                 <p className="small muted"><b>Why {cash(adv.recommended)}:</b> {adv.reason}</p>
+                <StatementDueLine debt={d} />
               </div>
             )}
 
@@ -221,41 +224,11 @@ export function DebtsPage() {
               <p className="small error">At {cash(gem.perPay)} a pay, some interest-free plans won’t clear in time.</p>
             )}
 
-            {d.plans.length === 0 && <p className="small muted">No payment plans yet. Add purchases to schedule payments.</p>}
-            {schedules.filter((sch) => !sch.synthetic)
-              .sort((a, b) => (d.rules === 'gem' ? (a.deadline ?? '').localeCompare(b.deadline ?? '') : 0))
-              .map((sch) => {
-              const p = sch.plan;
-              const next = sch.payments.find((x) => x.date >= period.start);
-              const done = p.original > 0 ? Math.max(0, Math.min(100, ((p.original - p.remaining) / p.original) * 100)) : 0;
-              return (
-                <button key={p.id} className="plan-row" onClick={() => setPlanModal({ debt: d, plan: p })}>
-                  <div className="between nowrap">
-                    <b className="min0">{p.name}</b>
-                    <b className="num">{cash(p.remaining)}</b>
-                  </div>
-                  <span className="small muted">
-                    {PLAN_LABEL[p.type]}{p.months && p.type !== 'afterpay' && p.type !== 'balance' ? ` · ${p.months} months` : ''}
-                    {' · '}bought {fmtShort(p.purchaseDate)} for {cash(p.original)}
-                  </span>
-                  <div className="bar" style={{ marginTop: 2 }} role="img" aria-label={`${Math.round(done)}% paid off`}><div style={{ width: `${done}%` }} /></div>
-                  <span className="small">
-                    {p.remaining <= 0 ? 'Paid off'
-                      : [
-                        next ? `Next ${cash(next.amount)} on ${fmtShort(next.date)}${p.instalments?.find((i) => i.date === next.date)?.label ? ` (${p.instalments.find((i) => i.date === next.date)!.label})` : ''}` : null,
-                        p.instalments?.length ? `${p.instalments.length} left` : null,
-                        sch.paidOffBy ? `paid off by ${fmtShort(sch.paidOffBy)} ${sch.paidOffBy.slice(0, 4)}` : null,
-                        sch.deadline && p.type !== 'afterpay' ? `interest-free until ${fmtShort(sch.deadline)} ${sch.deadline.slice(0, 4)}` : null,
-                        sch.interest ? `${cash(sch.interest)} interest` : null,
-                      ].filter(Boolean).join(' · ')}
-                  </span>
-                  {sch.warning && <span className="small error">{sch.warning}</span>}
-                </button>
-              );
-            })}
+            <DebtPlans debt={d} schedules={schedules} period={period} onEdit={(p) => setPlanModal({ debt: d, plan: p })} />
 
-            {(d.bankPayments?.length ?? 0) > 0 && <BankPayments debt={d} />}
-            <TransactionList items={d.transactions ?? []} card />
+            <DebtPayments debt={d} linked={bankSync(budget, `debt:${d.id}`).linked} />
+            <TransactionList items={d.transactions ?? []} pending={d.pending} card />
+            {!d.payroll && d.kind !== 'person' && <DebtPaydayHistory debt={d} />}
 
             {!d.payroll && <DebtPayday debt={d} funded={funded} period={period} />}
             </div>
@@ -339,29 +312,5 @@ function AllocationRow({ advice: a, onApply }: { advice: DebtAdvice; onApply: ()
       {diff === 0 && <span className="small muted" style={{ paddingBottom: 12 }}>As recommended</span>}
       {a.extra ? <span className="small muted" style={{ paddingBottom: 12, flexBasis: '100%' }}>Plus {cash(a.extra)} extra this pay only, so {cash(a.sending)} goes to {a.debt.name}. It comes off what's owed in the forecast.</span> : null}
     </div>
-  );
-}
-
-/** Payments to a card seen leaving your bank accounts (it can't be linked itself, e.g. Gem Visa). */
-function BankPayments({ debt: d }: { debt: Debt }) {
-  const { budget } = useBudget();
-  const list = (d.bankPayments ?? []).slice().reverse();
-  const name = (id: string) => budget.accounts.find((a) => a.id === id)?.name ?? 'your bank';
-  return (
-    <Disclosure title="Paid from your bank" meta={`${list.length} · latest ${fmtShort(list[0].date)}`}>
-      <div>
-        {list.slice(0, 12).map((p, i) => (
-          <div key={`${p.date}-${i}`} className="list-row small">
-            <span style={{ flex: '0 0 56px' }} className="muted">{fmtShort(p.date)}</span>
-            <span className="grow min0">From {name(p.from)}
-              {p.counted > 0 && <span className="xs muted block">{p.counted === p.amount ? 'Taken off what’s owed' : `${cash(p.amount - p.counted)} planned, ${cash(p.counted)} extra taken off`}</span>}
-            </span>
-            <b className="num">{cash(p.amount)}</b>
-          </div>
-        ))}
-        {/* One note for every payment that was already counted, rather than the same line on each. */}
-        {list.slice(0, 12).some((p) => p.counted === 0) && <p className="xs muted" style={{ marginTop: 6 }}>The rest were planned payments, already counted.</p>}
-      </div>
-    </Disclosure>
   );
 }

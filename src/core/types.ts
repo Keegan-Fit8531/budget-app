@@ -205,8 +205,10 @@ export interface Debt {
   checked?: BalanceEntry;
   /** The card number's last digits, as in its CSV exports, so an export is matched to it. */
   ending?: string;
-  /** Its transactions, from CSV exports, oldest first. */
+  /** Its transactions, from CSV exports or the bank connection, oldest first. */
   transactions?: Txn[];
+  /** Not settled yet on the card (bank connection only); replaced on every sync. */
+  pending?: Txn[];
   /**
    * Planned payments already counted as paid (they're automatic), oldest first. Kept so the pay a payment
    * came out of still shows it once it has gone: without this a pay's total would shrink, and its leftover
@@ -217,6 +219,18 @@ export interface Debt {
   checkedOn?: ISODate;
   /** Payments to it seen leaving a linked bank account on a bank sync (e.g. ANZ → Gem Visa), oldest first. */
   bankPayments?: BankPayment[];
+  /** What the latest statement asks for (read from it; the bank connection doesn't send these). */
+  statementDue?: StatementDue;
+}
+
+export interface StatementDue {
+  /** The statement's date. */
+  date: ISODate;
+  minimum?: Cents;
+  /** What to pay to avoid interest, as printed (Gem: closing balance less what's still interest-free). */
+  avoidInterest?: Cents;
+  /** Pay by this day. */
+  by?: ISODate;
 }
 
 export interface BankPayment {

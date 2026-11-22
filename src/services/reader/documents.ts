@@ -24,6 +24,7 @@ export interface Statement {
   limit?: Cents;
   available?: Cents;
   minimum?: Cents;
+  avoidInterest?: Cents;
 }
 
 /** The first amount that follows one of `labels` (tried in order), within a short distance of it. */
@@ -66,6 +67,7 @@ export function parseStatementText(raw: string): Statement {
     limit: amountAfter(text, ['credit limit']),
     available: amountAfter(text, ['available credit', 'available to spend', 'available balance', 'available funds']),
     minimum: amountAfter(text, ['minimum payment due', 'minimum amount due', 'minimum payment', 'minimum due']),
+    avoidInterest: amountAfter(text, ['to avoid interest charges', 'to avoid paying interest', 'to avoid interest', 'avoid interest']),
   };
   // No balance line, but a limit and what's available: owed is the difference.
   if (out.balance === undefined && out.limit !== undefined && out.available !== undefined) out.balance = Math.max(0, out.limit - out.available);

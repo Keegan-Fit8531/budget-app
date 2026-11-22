@@ -42,7 +42,7 @@ function studentLoanStatement(s: RawStatement): RawStatement {
   const lines: (Fig | undefined)[] = [s.balance, s.available, s.limit, s.minimum, ...(s.plans ?? []).map((r) => r.remaining && { ...r.remaining, label: r.remaining.label ?? r.description })];
   const found = lines.filter((f): f is Fig => !!f?.amount?.trim());
   const balance = s.balance?.amount?.trim() ? s.balance : found.find((f) => owing.test(f.label ?? '')) ?? (s.available?.amount?.trim() ? s.available : undefined);
-  return { ...s, balance, available: undefined, limit: undefined, minimum: undefined, plans: [], purchases: [] };
+  return { ...s, balance, available: undefined, limit: undefined, minimum: undefined, avoidInterest: undefined, dueDate: undefined, plans: [], purchases: [] };
 }
 
 export function toDraft(ex: Extraction, b: Budget, source: ReaderSource, makeId: () => string, today: ISODate = todayISO()): Draft {
@@ -75,6 +75,8 @@ export function toDraft(ex: Extraction, b: Budget, source: ReaderSource, makeId:
       date: s.statementDate ?? (s.appScreen || loan ? today : ''),
       limit: fig(s.limit),
       minimum: fig(s.minimum),
+      avoidInterest: fig(s.avoidInterest),
+      dueDate: s.dueDate ?? '',
       plans: (s.plans ?? []).map((r) => ({
         planId: r.planId ?? '', description: r.description ?? '', remaining: fig(r.remaining), ends: r.ends ?? '', addAsNew: false, newId: makeId(),
         ...(typeof r.months === 'number' && r.months > 0 ? { months: r.months } : {}),

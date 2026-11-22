@@ -1,7 +1,7 @@
 import { type ISODate } from '../../../core/dates';
 import type { Payslip } from '../payslip';
 import type { CsvRead } from '../../bank/csv';
-import type { BalanceEntry, Cents, DebtPlan, KiwiReading, Txn } from '../../../core/types';
+import type { BalanceEntry, Cents, DebtPlan, KiwiReading, StatementDue, Txn } from '../../../core/types';
 import type { DocKind, ReaderSource } from '../types';
 
 // ---------------------------------------------------------------------------------------------
@@ -61,6 +61,8 @@ export interface Draft {
     date: string;
     limit: DraftFig;
     minimum: DraftFig;
+    avoidInterest: DraftFig;
+    dueDate: string;
     plans: DraftPlanRow[];
     purchases: DraftPurchase[];
     payments: { date: string; amount: string }[];
@@ -126,7 +128,7 @@ export interface OrderUpdate { planId: string; instalments: { date: ISODate; amo
 
 export type Proposal =
   | { kind: 'payslip'; slip: Payslip }
-  | { kind: 'statement'; debtId: string; newDebt?: { name: string }; balance: Cents; inCredit: boolean; date: ISODate; limit?: Cents; plans: PlanUpdate[]; newPlans: DebtPlan[] }
+  | { kind: 'statement'; debtId: string; newDebt?: { name: string }; balance: Cents; inCredit: boolean; date: ISODate; limit?: Cents; plans: PlanUpdate[]; newPlans: DebtPlan[]; due?: StatementDue }
   | { kind: 'afterpay'; debtId: string; updates: OrderUpdate[]; paidOff: string[]; newPlans: DebtPlan[] }
   | { kind: 'kiwisaver'; goalId: string; newGoal?: { accountId: string; note?: string }; readings: KiwiReading[] }
   | { kind: 'balances'; asOf: ISODate; set: { accountId: string; amount: Cents; number?: string }[]; eventId: string }

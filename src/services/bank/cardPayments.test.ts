@@ -74,10 +74,14 @@ describe('card payments seen in a bank account', () => {
     expect(ap.bankPayments?.every((p) => p.counted === 0)).toBe(true);
   });
 
-  it('a card linked to the bank itself is left to the bank', () => {
+  it('a card linked to the bank itself: its payments are noted, but what it owes is the card’s own', () => {
     const b = debtBudget();
-    b.bankLinks = { c1: 'debt:qcard' };
-    expect(cardPaid(b, { date: '2026-11-16', description: 'Q Mastercard', amount: -100 })).toBeUndefined();
+    const q = debt(b, 'qcard');
+    q.balance = { amount: 50000, asOf: '2026-11-10' };
+    b.bankLinks = { ...links, c1: 'debt:qcard' };
+    applyBank(b, { accounts: [go], transactions: [tx('t1', '2026-11-15', 'Q Mastercard Fitzgerald Id1105532418', -50)] }, b.bankLinks, '2026-11-16');
+    expect(q.bankPayments).toEqual([expect.objectContaining({ date: '2026-11-15', amount: 5000, counted: 0 })]);
+    expect(owed(q)).toBe(50000);
   });
 
   it('a $50 Q Mastercard transfer is not swallowed by a larger nearby planned payment', () => {

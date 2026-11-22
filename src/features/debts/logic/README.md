@@ -11,6 +11,8 @@ Plain functions for debts (no React). The engine uses these too: debt payments a
 - `labels.ts`: `KIND_LABEL`, the name shown for each kind of debt (card, buy now pay later, person, loan).
 - `advice.ts`: the recommended payment per debt for a pay, each by the lowest that keeps every plan on track (`debtAdvice`, `DebtAdvice`, `offRecommended`).
 - `held.ts`: a held debt's payment this pay (`heldNow`: paid and still to send from the hold account's tracker), `endHeld` ("No more this month": `heldPay` is what was paid, plus a `rest` key so the bill check stops asking) and `resumeHeld` (Undo); `setHeld` (set or take off one statement's `heldPay`, also used by the bill check).
+- `activity.ts`: what a card shows of its activity: `planProgress` (paid of total, months left), `monthsUntil`, `paymentRows` (each payment Pending or Received, matched to the card's own credit of the same amount within a week), `paydayHistory` (what payday sent it, pays already sent).
+- `activity.test.ts`: plan progress, pending and received payments, a statement's amount to avoid interest.
 - `held.test.ts`: "No more this month" and its Undo.
 - `debts.test.ts`: schedules, payments gone out, recording a payment, Gem held until statement day, extra paid for one pay.
 

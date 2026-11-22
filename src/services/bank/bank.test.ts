@@ -3,7 +3,7 @@ import { owed } from '../../features/debts/logic/amounts';
 import { applyProposal } from '../reader/apply';
 import { review } from '../reader/check/review';
 import { toDraft } from '../reader/check/toDraft';
-import { addGoalFor, applyBank, fetchBank, suggestLink } from './bank';
+import { addGoalFor, applyBank, fetchBank, newCardLinks, suggestLink } from './bank';
 import { categorizeTxn } from '../../features/insights/logic/spending';
 import { debtBudget, seq, debt } from '../../testing/fixtures';
 
@@ -73,6 +73,19 @@ describe('bank connection: balances and categories', () => {
     const b = debtBudget();
     applyBank(b, { accounts: [acc({ id: 'c1', type: 'CREDITCARD', balance: -612.48, number: null })], transactions: [] }, { c1: 'debt:qcard' }, '2026-11-16');
     expect(owed(debt(b, 'qcard'))).toBe(61248);
+  });
+  it('a card added in Akahu (Gem Visa at Latitude) links itself to its debt; pending purchases stay on it', () => {
+    const b = debtBudget();
+    const gem = acc({ id: 'c9', name: 'Gem Visa', institution: 'Latitude Financial', type: 'CREDITCARD', balance: -2900, number: null });
+    expect(suggestLink(b, gem)).toBe('debt:gem');
+    expect(newCardLinks(b, [gem, acc({ id: 'a1' })])).toEqual({ c9: 'debt:gem' });
+    b.bankLinks = { c9: 'debt:gem' };
+    expect(newCardLinks(b, [gem])).toEqual({});
+    applyBank(b, { accounts: [gem], transactions: [], pending: [{ account: 'c9', date: '2026-11-16', description: 'NOEL LEEMING', amount: -99, merchant: null }] }, b.bankLinks, '2026-11-16');
+    expect(owed(debt(b, 'gem'))).toBe(290000);
+    expect(debt(b, 'gem').pending).toEqual([{ date: '2026-11-16', description: 'NOEL LEEMING', amount: -9900 }]);
+    applyBank(b, { accounts: [gem], transactions: [], pending: [] }, b.bankLinks, '2026-11-17');
+    expect(debt(b, 'gem').pending).toBeUndefined();
   });
   it('the bank’s shop name and category are used when the description alone doesn’t say', () => {
     expect(categorizeTxn({ description: 'POS W/D 4829 PAK N SAV', merchant: 'PAK’nSAVE' })).toMatchObject({ category: 'groceries', shop: 'PAK’nSAVE' });

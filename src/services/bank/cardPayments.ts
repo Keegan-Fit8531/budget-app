@@ -6,11 +6,12 @@ import { checkKey } from '../../engine/billMatch';
 import type { Budget, Cents, Debt, Txn } from '../../core/types';
 
 // ---------------------------------------------------------------------------------------------
-// Card payments seen in your bank accounts. Some cards (Gem Visa, Q Mastercard) can't be linked to the
-// bank connection, but what you pay them leaves a linked bank account (ANZ) as a transfer named after
-// the card ("Q Mastercard Fitzgerald Id…", "BP Gem Visa …"). Each new one is noted on the card, and
-// whatever it pays over what was already planned (planned payments count as paid automatically) comes
-// off what's owed, the same as recording a payment by hand.
+// Card payments seen in your bank accounts. What you pay a card leaves a linked bank account (ANZ) as a
+// transfer named after the card ("Q Mastercard Fitzgerald Id…", "BP Gem Visa …"). Each new one is noted
+// on the card. For a card that isn't linked itself (Q Mastercard), whatever it pays over what was already
+// planned (planned payments count as paid automatically) comes off what's owed, the same as recording a
+// payment by hand. A card linked to the bank (Gem Visa through Akahu) has its own balance: the payment is
+// only noted, and shows as pending until the card shows it received (`features/debts/logic/activity.ts`).
 // ---------------------------------------------------------------------------------------------
 
 /** Planned payments from this many days before a transfer to a day after it are taken to be that transfer (it's made on or soon after the day). */
@@ -35,10 +36,17 @@ function matcher(debt: Debt): (description: string) => boolean {
   };
 }
 
-/** The cards whose payments are looked for: not repaid from salary, and not already linked to the bank (their balance is the bank's). */
-function watched(b: Budget): Debt[] {
-  const linked = new Set(b.bankAuto === false ? [] : Object.values(b.bankLinks ?? {}));
-  return (b.debts ?? []).filter((d) => !d.payroll && !linked.has(`debt:${d.id}`));
+/** The cards whose payments are looked for: everything not repaid from salary. */
+const watched = (b: Budget): Debt[] => (b.debts ?? []).filter((d) => !d.payroll);
+
+/** Linked to the bank connection itself (Gem Visa through Akahu), so what it owes is the card's own balance. */
+export const debtLinked = (b: Budget, debtId: string): boolean =>
+  b.bankAuto !== false && Object.values(b.bankLinks ?? {}).includes(`debt:${debtId}`);
+
+/** The one card a bank account's name points to ("Gem Visa", institution "Latitude"), for linking it. */
+export function debtNamed(b: Budget, text: string): Debt | undefined {
+  const hits = watched(b).filter((d) => matcher(d)(text));
+  return hits.length === 1 ? hits[0] : undefined;
 }
 
 /** The card a bank account's transaction pays, if it's a payment to one. */
@@ -126,7 +134,7 @@ export function recordCardPayments(b: Budget, accountId: string, txns: Txn[], to
     // What's owed, checked on or after the day it was paid, already has it taken off (an old payment
     // from a bank account's history paid for things long gone, never today's orders).
     const since = knownSince(debt);
-    if (since && since >= t.date) counted = 0;
+    if ((since && since >= t.date) || debtLinked(b, debt.id)) counted = 0;
     if (counted > 0) applyPayment(debt, counted, b.settings, t.date <= today ? t.date : today);
     debt.bankPayments = [...(debt.bankPayments ?? []), { date: t.date, amount, from: accountId, counted, ...(planned.length ? { planned } : {}) }]
       .sort((x, y) => x.date.localeCompare(y.date)).slice(-KEPT);
