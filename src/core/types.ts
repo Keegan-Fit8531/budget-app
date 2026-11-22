@@ -411,6 +411,13 @@ export interface Budget {
    * envelope spending". Counted against that envelope like a purchase.
    */
   envelopeTransfers?: Record<string, string>;
+  /**
+   * Your answers to the bill check (Accounts, after a bank sync), by `engine/billMatch.ts` → `checkKey`,
+   * with the day you answered: `move|item|date` (paid on another account's card, but no need to move
+   * money back), `paid|item|date` (paid, though the bank doesn't show it), `day|item|19` / `amount|item|cents`
+   * (a suggested change you said no to).
+   */
+  billChecks?: Record<string, ISODate>;
   /** This month's insights: one per pay cycle, by its payday (see review.ts), newest first. */
   reviews?: Record<ISODate, import('../features/insights/logic/review').MonthlyReview>;
   /** Account balances you've entered, by account id. */

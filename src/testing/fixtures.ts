@@ -1,5 +1,5 @@
 import { seedBudget } from '../core/seed';
-import type { Budget } from '../core/types';
+import type { Budget, Item, Txn } from '../core/types';
 import { applyProposal } from '../services/reader/apply';
 import { type Draft } from '../services/reader/check/draft';
 import { review } from '../services/reader/check/review';
@@ -79,3 +79,25 @@ export const qExport = [
 ].join('\n');
 
 export const csvDoc = (text: string): Extraction => ({ kind: 'transactions', transactions: readTransactionsCsv(text)! });
+
+// Bills and the bank (`engine/billMatch.ts`, the Accounts bill check): Misc bills pays the bills, some on
+// the Weekly allowance card. Both are filled by the bank connection; payday is the 19th. All made up.
+const WEEKLY = '06-0000-0000001-00', BILLS = '06-0000-0000001-54';
+export const billTxns = {
+  out: (date: string, amount: number, description: string): Txn => ({ date, amount: -amount, description }),
+  toWeekly: (date: string, amount: number): Txn => ({ date, amount: -amount, description: `To: ${WEEKLY} Debit Transfer 1234` }),
+  fromWeekly: (date: string, amount: number): Txn => ({ date, amount, description: `From: ${WEEKLY} Credit Transfer 1234` }),
+};
+export function billsBudget(items: Partial<Item>[], txns: { bills?: Txn[]; weekly?: Txn[] }, balance = 50000, asOf = '2026-11-22'): Budget {
+  const b = budget();
+  b.accounts.push(
+    { id: 'weekly', name: 'Weekly allowance', kind: 'bank', color: '#000', groupId: 'lifestyle', number: WEEKLY },
+    { id: 'bills', name: 'Misc bills', kind: 'bank', color: '#000', groupId: 'needs', number: BILLS },
+  );
+  b.split.push({ accountId: 'bills', amount: 50000, mode: 'fixed' });
+  items.forEach((i, n) => b.items.push({ id: `i${n}`, name: 'Bill', amount: 1000, frequency: 'monthly', start: '2026-01-01', accountId: 'bills', ...i } as Item));
+  b.accountTransactions = { bills: txns.bills ?? [], weekly: txns.weekly ?? [] };
+  b.bankLinks = { acc_w: 'account:weekly', acc_b: 'account:bills' };
+  b.balances = { bills: { amount: balance, asOf } };
+  return b;
+}

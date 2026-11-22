@@ -13,7 +13,7 @@ What payday sends each account, and what's in each account over time. An account
 - `freeze.ts`: once a pay is locked (payday has passed, or its pay or payslip is in), what payday sent is frozen in `budget.splitSent` so later changes don't rewrite it. `paySplitLocked`, `freezePaySplit`, `freezePaySplitFrom`, `freezeLockedPays`, `unfreezePaySplit`.
 - `estimate.ts`: balances over time from the last balance you entered: `estimateBalance`, `balanceToday`, `balanceOn`, `forecastBalances`.
 - `projection.ts`: what an account can spare (`spareBalance`, `spareInfo`), the next pay a steady account needs its cushion for (`nextBufferUse`, the Planner's "Buffer" pill), and a pay day by day (`payProjection`).
-- `billTracker.ts`: the live bill tracker for the current pay (Accounts): each bill, paid or still to come, against what's in the account (`billTracker`).
+- `billTracker.ts`: the live bill tracker for the current pay (Accounts): each bill, paid or still to come, against what's in the account (`billTracker`). For a bank-connected account, what the bank shows decides what's paid (`engine/billMatch.ts`): a bill it shows is paid (even on another card), one it doesn't is still to come (`late` once its date has passed). Also `toMove` (bills paid on another account's card whose money is still here; counted out of spare) and `moves` (money you moved in or out yourself).
 - `topUps.ts`: exact accounts that pay bank bills top up: whatever's left from earlier pays counts towards the next (`topsUp`, `exactTopUp`), and what was in an account before the budget's first pay (`leftoverBeforeBudget`).
 - `balances.test.ts`: frozen splits, payday morning before the deposit lands, the bill tracker.
 
