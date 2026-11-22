@@ -199,6 +199,21 @@ export function beforeStatement(debt: Debt, date: ISODate): boolean {
   return !!debt.statementDay && Number(date.slice(8, 10)) < debt.statementDay;
 }
 
+/**
+ * Take `amount` off the plans in `ids`, in the order Gem applies a payment. No payment is recorded: it's
+ * for plans that haven't caught up with the card's balance (see `payments.ts` → `fitPlansToBalance`).
+ */
+export function gemTakeOff(debt: Debt, ids: Set<string>, amount: Cents, date: ISODate): Cents {
+  const buckets = gemBuckets(debt, date).filter((b) => !b.synthetic && ids.has(b.plan.id));
+  let used = 0;
+  for (const [b, x] of gemSplit(buckets, amount, date)) {
+    used += x;
+    b.plan.remaining = b.left;
+    b.plan.asOf = later(b.plan.asOf, date);
+  }
+  return used;
+}
+
 /** A payment you've made to Gem, split the way Gem splits it. */
 export function gemApply(debt: Debt, amount: Cents, s: Settings, date: ISODate): { applied: Applied[]; leftover: Cents } {
   // With no statement day, payments are planned for paydays: one made on a payday is that payday's own,

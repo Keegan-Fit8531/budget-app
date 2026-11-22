@@ -1,8 +1,8 @@
 import { addDays, type ISODate } from '../../../core/dates';
 import { periodContaining } from '../../../engine/periods';
 import type { Budget, Cents, Debt, PaidPayment, Settings } from '../../../core/types';
-import { PAID_KEPT, historyOwed, recordHistory } from './amounts';
-import { gemApply } from './gem';
+import { PAID_KEPT, historyOwed, plannedOwed, recordHistory } from './amounts';
+import { gemApply, gemTakeOff, planEnds } from './gem';
 import { type PerPay, last, debtSchedules } from './schedule';
 
 export interface Applied { planId: string; planName: string; date: ISODate; amount: Cents; cleared: boolean }
@@ -55,6 +55,33 @@ export function applyPayment(debt: Debt, amount: Cents, s: Settings, date: ISODa
   rememberPaid(debt, log);
   recordPaymentHistory(debt, date, amount);
   return { applied, leftover: left };
+}
+
+/**
+ * A balance lower than the plans add up to means the plans haven't caught up yet (a statement or the
+ * card's app gave the balance, but not every plan's figure). The difference comes off the plans the way
+ * the card applies a payment, plans not in `trusted` (figures just read) first; plans left at $0 are
+ * taken off. No payment is recorded. Returns what came off.
+ */
+export function fitPlansToBalance(debt: Debt, date: ISODate, trusted: Iterable<string> = []): Cents {
+  debt.plans = debt.plans.filter((p) => p.remaining > 0);
+  if (!debt.balance) return 0;
+  const sure = new Set(trusted);
+  const start = plannedOwed(debt) - debt.balance.amount;
+  let excess = start;
+  // Afterpay-style plans are their instalments: those come from their own screenshot, not a balance.
+  const plans = debt.plans.filter((p) => !p.instalments?.length);
+  for (const group of [plans.filter((p) => !sure.has(p.id)), plans.filter((p) => sure.has(p.id))]) {
+    if (excess <= 0 || !group.length) continue;
+    if (debt.rules === 'gem') { excess -= gemTakeOff(debt, new Set(group.map((p) => p.id)), excess, date); continue; }
+    for (const p of [...group].sort((a, b) => planEnds(a).localeCompare(planEnds(b)))) {
+      const x = Math.min(excess, p.remaining);
+      if (x <= 0) break;
+      p.remaining -= x; p.asOf = later(p.asOf, date); excess -= x;
+    }
+  }
+  debt.plans = debt.plans.filter((p) => p.remaining > 0);
+  return Math.max(0, start) - Math.max(0, excess);
 }
 
 export const later = (a: ISODate, b: ISODate): ISODate => (a > b ? a : b);

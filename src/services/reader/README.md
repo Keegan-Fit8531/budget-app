@@ -21,7 +21,7 @@ rundown and pressed Confirm.
 - `types.ts`: the reader's form: `Extraction` and its parts (`RawPayslip`, `RawStatement`, `RawAfterpay`, `RawKiwiSaver`, `RawBalances`), `DocKind`, `Provider`, `ReadContext`.
 - `errors.ts`: every way a read can fail, each with its own message (`ReaderError`, `ReaderErrorKind`, `classifyHttpError`, `blockedError`, `errorMessage`); `DEVICE_FALLBACK` lists the ones where reading on the device is offered.
 - `local.ts`: the on-device reader (`readOnDevice`, `toExtraction`): fills in the same form, so it goes through the same checks.
-- `documents.ts`: on-device reading itself: PDF text or text recognised in a photo (Tesseract OCR, copied to `public/ocr/` by `scripts/copy-ocr.mjs`), `classifyText`, `parseStatementText`, `parseDate`, `matchDebt`, and recording a payslip or statement (`recordPayslip`, `recordStatement`).
+- `documents.ts`: on-device reading itself: PDF text or text recognised in a photo (Tesseract OCR, copied to `public/ocr/` by `scripts/copy-ocr.mjs`), `classifyText`, `parseStatementText`, `parseDate`, `matchDebt`, and recording a payslip or statement (`recordPayslip`; `recordStatement` is only used by tests: statements go through `apply.ts` → `applyStatement`).
 - `payslip.ts`: the `Payslip` type and reading the one known payslip layout (`parsePayslipText`, `readPdfText`, `readPayslipPdf`).
 - `sortShops.ts`: asking Gemini to place shops the rules left in Other (only shop names and one example each are sent): `sortShops`, `sortInput`, `parseSorted`, `allTxns`.
 - `apply.ts`: making the changes: `applyProposal`, `applyStatement`, `applyKiwiSaver`, `windBack` (a debt as it was on a date), `preview` and `fingerprint` (to tell whether the preview changed before Confirm).
@@ -31,6 +31,7 @@ rundown and pressed Confirm.
 
 ## Watch out for
 - Savings goals, deposits and account balances aren't edited by `apply.ts` directly: they move when the next 12 pays re-balance.
+- A statement's balance is used as it is. `applyStatement` then takes off plans shown finished ($0) and brings plans that still add up to more than the balance down to it (`fitPlansToBalance`: plans the statement didn't list first), so you never have to fix the plans by hand.
 - Reading a document twice must not double anything (transactions are de-duplicated in `check/transactions.ts` → `newTransactions`).
 - Google retires models: change `DEFAULT_MODEL` in `config.ts` only.
 

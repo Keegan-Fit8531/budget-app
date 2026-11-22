@@ -65,6 +65,8 @@ export function reviewStatement(d: Draft, b: Budget, today: ISODate): Review {
       const what = row.description || (validDate(row.ends) ? `Plan ending ${fmtShort(row.ends)}` : 'A plan');
       if (!rem) { block(`Check the amount left on “${what}”.`); continue; }
       const plan = resolvePlanRow(row, debt);
+      // A plan shown complete ($0 left) is taken off; one that isn't yours is just skipped.
+      if (!plan && (rem.cents === 0 || rem.credit)) { ignored.push(`${what}: paid off.`); continue; }
       if (plan) {
         if (used.has(plan.id)) { block(`Two plans on the statement matched ${plan.name}. Check them.`); continue; }
         used.set(plan.id, what);
@@ -101,7 +103,7 @@ export function reviewStatement(d: Draft, b: Budget, today: ISODate): Review {
       note('None of the Gem plans were updated, so the difference between the balance and the plans counts as “other purchases”, which are paid first. That changes the recommended payment.');
     }
     const planTotal = [...plans, ...newPlans].reduce((t, x) => t + x.remaining, 0);
-    if (balance !== undefined && planTotal > balance + 100) note('The plans add up to more than what’s owed. Check them.');
+    if (balance !== undefined && planTotal > balance + 100) note('The plans on it add up to more than what’s owed. Check them: they’ll be brought down to match.');
   } else if (s.plans.length) {
     ignored.push(`${s.plans.length === 1 ? 'A plan' : `${s.plans.length} plans`} listed on the statement: the balance already covers ${s.plans.length === 1 ? 'it' : 'them'}.`);
   }
@@ -119,7 +121,7 @@ export function reviewStatement(d: Draft, b: Budget, today: ISODate): Review {
   const added = newPlans.filter((x) => s.purchases.some((y) => y.newId === x.id));
   if (debt && added.length && balance !== undefined) {
     const planned = debt.plans.reduce((t, x) => t + (plans.find((u) => u.planId === x.id)?.remaining ?? x.remaining), 0) + added.reduce((t, x) => t + x.remaining, 0);
-    if (planned > balance + 100) note(`With ${added.length === 1 ? 'that new plan' : 'those new plans'}, your plans add up to ${cash(planned)}, more than the ${cash(balance)} owed. Some may be paid off or already plans: check them.`);
+    if (planned > balance + 100) note(`With ${added.length === 1 ? 'that new plan' : 'those new plans'}, your plans add up to ${cash(planned)}, more than the ${cash(balance)} owed, so your other plans come down to match. If a purchase is already a plan, untick it.`);
   }
   const others = s.purchases.length - rows.filter((r) => r.months).length;
   if (others > 0) ignored.push(`${others === 1 ? 'A purchase' : `${others} purchases`} on the ${s.appScreen ? 'screenshot' : 'statement'}: already in what’s owed.`);

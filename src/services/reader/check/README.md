@@ -16,6 +16,7 @@ every field is checked here, and only a draft with no blocking problems becomes 
 
 ## Watch out for
 - Any new kind of document needs: a `Raw…` type in `../types.ts` and the form in `../prompt.ts`, a `Draft` case here, its check reached from `review()`, a `Proposal` case, and its change in `../apply.ts`.
+- A plan row with $0 left is a finished plan: matched, it's taken off; unmatched, it's skipped (never added). Gemini is told to send completed plans as 0 (`../prompt.ts`).
 - Amounts are kept as typed text in a draft (so you can correct them) and turned into cents only when checked.
 
 Keep this README current: update it in the same change when you add, remove, rename or repurpose a file here (see AGENTS.md).

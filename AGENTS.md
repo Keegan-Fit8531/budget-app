@@ -53,6 +53,7 @@ before dev/build), `.github/workflows/pages.yml` (deploys `main` to GitHub Pages
 | Planner page, Optimise the leftover | `features/planner/` |
 | Accounts page, Deposits pop-up, balances, account history | `features/accounts/` |
 | Debts: schedules, Gem Visa rules, payments, advice | `features/debts/logic/` (UI in `features/debts/`) |
+| A statement or typed balance vs the plans (plans too high, finished plans) | `features/debts/logic/payments.ts` → `fitPlansToBalance`, called from `services/reader/apply.ts` → `applyStatement` |
 | A debt's payment held in a bank account until statement day (Gem in Misc bills: `Debt.holdAccountId`) | `features/debts/logic/README.md` → **Held debts** (how the money flows, file by file) |
 | Savings goals, goal costs, gifts, KiwiSaver | `features/savings/` |
 | Insights, spending categories, monthly review | `features/insights/` |
@@ -76,13 +77,15 @@ questions are answered there):
 1. Get the latest copy. The app saves to **`main`** of `budget-data`, so if that repo is checked out next to
    this one, run `git -C ../budget-data checkout main && git -C ../budget-data pull` (a session branch there is
    usually older). Its README says how the owner's accounts are used (which one is the EFTPOS card, what each
-   holds) and how to query `budget.json` without reading all of it.
+   holds) and how to query `budget.json` without reading all of it. Every save is a commit, so to see what an
+   upload or tap changed, compare saves: `git -C ../budget-data show <commit>:budget.json | jq '.debts[] | select(.id=="gem")'`.
 2. `npm run inspect` (every account) or `npm run inspect -- food --today 2026-11-22` (one account in detail):
    the tracker (each bill paid or to come, and the bank transaction that paid it), what Bill check asks, envelopes and what counted against them (each transfer with the purchase it was matched to), transfers the card asks about, next pays and any
    Steady buffer, and the last 14 days of transactions with what each counted as. It loads the budget the
    way the app does (`state/upgrade.ts`). The first line says when that copy was saved: if it's older than
    the owner's screenshot, the browser has changes the repo hasn't got yet. A bank-synced balance already has
-   pending transactions taken out (they're marked `[pending]`), so don't take them off again. For "is X counted?"
+   pending transactions taken out (they're marked `[pending]`), so don't take them off again. For a debt, `inspect -- gem` shows its payday account, not its plans: print `debt.plans` with a
+   `scripts/_try.ts` (step 4). For "is X counted?"
    questions, add up the tracker rows yourself: "To come" includes a held debt's payment (Gem) until the bank
    shows it gone.
 3. `npm run dev`, then `npm run screenshot -- '#/accounts' --today 2026-11-22` to see the page itself, in New
@@ -144,7 +147,7 @@ The folder rules above (file size, no React in `core/`/`engine/`/`logic/`, a gen
 ## Commands
 
 ```bash
-npm install
+npm install        # a fresh session has no node_modules: tsc then fails with "Cannot find module 'react'"
 npm run dev        # http://localhost:5173
 npm test           # all tests (vitest); tests sit next to the code as *.test.ts
 npx tsc -b         # type-check
@@ -167,6 +170,7 @@ moved, merge it in (`git merge origin/main`) and look at the files you both touc
 ## Making a change live
 
 The owner asks for changes "live" (or "push live"): push the session branch, open a PR into `main` and merge it.
+PRs have no CI (the workflow only runs on `main`), so run the checks in **Before you finish a change** yourself first.
 Merging to `main` runs `.github/workflows/pages.yml`, which publishes to GitHub Pages in about 1–2 minutes. Two
 merges close together cancel the first run, which is fine: the second builds everything. To check it's live,
 run `npm run live -- <a CSS class you added, or a string from a .ts file> --wait` (in the background: it takes 1–2

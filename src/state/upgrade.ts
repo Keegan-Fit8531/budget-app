@@ -1,7 +1,7 @@
 import { freezeLockedPays } from '../engine/balances/freeze';
 import { autoBalance } from '../engine/rebalance';
 import { debtPay } from '../features/debts/logic/amounts';
-import { settleDue } from '../features/debts/logic/payments';
+import { fitPlansToBalance, settleDue } from '../features/debts/logic/payments';
 import { syncGemToRecommended } from '../features/debts/logic/funding';
 import { todayISO } from '../core/dates';
 import type { Budget } from '../core/types';
@@ -43,6 +43,14 @@ export function tidy(b: Budget): Budget {
       if (a && /wedding/i.test(g.name) && a.round === undefined) a.round = 5000;
     }
     b.flags.push('wedding-round-50');
+  }
+  // A statement that set the balance but not every plan left plans adding up to more than it: bring them
+  // down once (statements and typed balances do this themselves now). Only where the balance is newest.
+  if (!b.flags.includes('plans-fit-balance')) {
+    for (const d of b.debts) {
+      if (d.balance && d.plans.every((p) => p.asOf <= d.balance!.asOf)) fitPlansToBalance(d, d.balance.asOf);
+    }
+    b.flags.push('plans-fit-balance');
   }
   return b;
 }
