@@ -1,6 +1,6 @@
 import { nextColor } from '../../core/colors';
 import { fmtDay, fmtShort, fmtSpan, monthName, type ISODate } from '../../core/dates';
-import { applyPayment, settleDue } from '../../features/debts/logic/payments';
+import { applyPayment, fitPlansToBalance, settleDue } from '../../features/debts/logic/payments';
 import { debtPay, exactForFirstPlan, owed, recordHistory } from '../../features/debts/logic/amounts';
 import { planEnds } from '../../features/debts/logic/gem';
 import { recordPayslip } from './documents';
@@ -190,6 +190,9 @@ export function applyStatement(b: Budget, debtId: string, s: Pick<Extract<Propos
     debt.plans.push({ ...structuredClone(np), asOf, purchaseDate: np.purchaseDate > asOf ? asOf : np.purchaseDate });
     exactForFirstPlan(b, debt);
   }
+  // The balance is the statement's own. Plans it shows finished ($0) go; plans that still add up to
+  // more than it hadn't caught up, so the difference comes off them (those it didn't list first).
+  fitPlansToBalance(debt, asOf, [...s.plans.map((u) => u.planId), ...s.newPlans.map((np) => np.id)]);
   const hist = (debt.history ?? []).filter((h) => h.asOf !== asOf);
   hist.push({ amount: owed(debt), asOf });
   debt.history = hist.sort((x, y) => x.asOf.localeCompare(y.asOf)).slice(-500);
@@ -279,6 +282,12 @@ export function preview(before: Budget, p: Proposal, today: ISODate): Preview {
       const z = now.plans.find((x) => x.id === u.planId);
       const name = a?.name ?? z?.name ?? 'A plan';
       lines.push(`${name}: ${a ? `${cash(a.remaining)} → ` : ''}${cash(z?.remaining ?? 0)} left${z && (z.type === 'interest-free' || z.type === 'equal') ? `, interest-free until ${fmtShort(planEnds(z))}` : ''}${z ? '' : ' (now paid off)'}`);
+    }
+    for (const a of was?.plans ?? []) {
+      if (p.plans.some((u) => u.planId === a.id)) continue;
+      const z = now.plans.find((x) => x.id === a.id);
+      if (z?.remaining === a.remaining) continue;
+      lines.push(`${a.name}: ${cash(a.remaining)} → ${cash(z?.remaining ?? 0)} left${z ? '' : ' (now paid off)'}, to match what’s owed`);
     }
     for (const np of p.newPlans) {
       const z = now.plans.find((x) => x.id === np.id);

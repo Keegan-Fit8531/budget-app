@@ -211,32 +211,14 @@ export function DebtsPage() {
             {adv && (
               <div className="stack gap-8">
                 <AllocationRow advice={adv} onApply={() => applyRecommended([adv])} />
-                <p className="small muted"><b>Why {cash(adv.recommended)}</b> for the {fmtShort(nextPeriod.start)} pay: {adv.reason}</p>
+                <p className="small muted"><b>Why {cash(adv.recommended)}:</b> {adv.reason}</p>
               </div>
             )}
 
             <BalanceEditor debt={d} used={used} onAddPlan={() => setPlanModal({ debt: d, prefill: unplanned(d) })} />
 
-            {gem && (
-              <div className="tip stack gap-8">
-                <div className="row top gap-8">
-                  <Icon name="bulb" />
-                  <span>
-                    <b>{cash(gem.recommended)}</b> a pay clears interest-free purchases before they end.
-                    Gem’s own minimum is only {cash(gem.minimum)}
-                    {gem.instalmentsDue > 0 ? ` (including ${cash(gem.instalmentsDue)} for equal-payment plans)` : ''}.
-                    Gem applies each payment itself — you can’t pick which plan it goes to.
-                  </span>
-                </div>
-                <div className="trio">
-                  <div className="stat" style={{ background: 'var(--card)' }}><span className="small muted">No interest</span><b>{cash(gem.recommended)}</b><span className="xs muted">a pay</span></div>
-                  <div className="stat" style={{ background: 'var(--card)' }}><span className="small muted">Minimum</span><b>{cash(gem.minimum)}</b><span className="xs muted">this month</span></div>
-                  <div className="stat" style={{ background: 'var(--card)' }}><span className="small muted">You pay</span><b className={gem.perPay < gem.recommended ? 'neg' : ''}>{cash(gem.perPay)}</b><span className="xs muted">a pay</span></div>
-                </div>
-                {gem.perPay < gem.recommended && (
-                  <span className="small error">At {cash(gem.perPay)} a pay, some interest-free plans won’t clear in time.</span>
-                )}
-              </div>
+            {gem && gem.perPay < gem.recommended && (
+              <p className="small error">At {cash(gem.perPay)} a pay, some interest-free plans won’t clear in time.</p>
             )}
 
             {d.plans.length === 0 && <p className="small muted">No payment plans yet. Add purchases to schedule payments.</p>}
@@ -384,11 +366,13 @@ function BankPayments({ debt: d }: { debt: Debt }) {
           <div key={`${p.date}-${i}`} className="list-row small">
             <span style={{ flex: '0 0 56px' }} className="muted">{fmtShort(p.date)}</span>
             <span className="grow min0">From {name(p.from)}
-              <span className="xs muted block">{p.counted === p.amount ? 'Taken off what’s owed' : p.counted > 0 ? `${cash(p.amount - p.counted)} was a planned payment; ${cash(p.counted)} extra taken off` : 'Already counted: a planned payment, or in a balance checked since'}</span>
+              {p.counted > 0 && <span className="xs muted block">{p.counted === p.amount ? 'Taken off what’s owed' : `${cash(p.amount - p.counted)} planned, ${cash(p.counted)} extra taken off`}</span>}
             </span>
             <b className="num">{cash(p.amount)}</b>
           </div>
         ))}
+        {/* One note for every payment that was already counted, rather than the same line on each. */}
+        {list.slice(0, 12).some((p) => p.counted === 0) && <p className="xs muted" style={{ marginTop: 6 }}>The rest were planned payments, already counted.</p>}
       </div>
     </Disclosure>
   );

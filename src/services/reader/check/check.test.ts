@@ -91,6 +91,20 @@ describe('reading documents: statements', () => {
     expect(gem.paid).toEqual([]);
   });
 
+  it('the balance is the statement’s; plans still adding up to more come down to match, unlisted ones first', () => {
+    const b = debtBudget();
+    const r = upload(b, gemStatement('2026-11-16', [{ remaining: '880.00', ends: '2027-03-20' }], '1500.00'), '2026-11-16');
+    expect(debt(b, 'gem').balance).toEqual({ amount: 150000, asOf: '2026-11-16' });
+    expect(debt(b, 'gem').plans.map((p) => [p.id, p.remaining])).toEqual([['g1', 62000], ['g2', 88000]]);
+    expect(preview(debtBudget(), r.proposal!, '2026-11-16').lines.join(' ')).toMatch(/Jul 2026: \$1,200(\.00)? → \$620(\.00)? left, to match/);
+  });
+
+  it('a plan the statement shows finished ($0) is taken off', () => {
+    const b = debtBudget();
+    upload(b, gemStatement('2026-11-16', [{ remaining: '0.00', ends: '2027-01-20' }, { remaining: '900.00', ends: '2027-03-20' }], '900.00'), '2026-11-16');
+    expect(debt(b, 'gem').plans.map((p) => [p.id, p.remaining])).toEqual([['g2', 90000]]);
+  });
+
   it('warns when Gem’s balance is updated without its plans', () => {
     const r = checkDoc(debtBudget(), gemStatement('2026-11-10', []), '2026-11-16');
     expect(r.issues.map((i) => i.text).join(' ')).toMatch(/other purchases/);

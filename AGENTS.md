@@ -53,6 +53,7 @@ before dev/build), `.github/workflows/pages.yml` (deploys `main` to GitHub Pages
 | Planner page, Optimise the leftover | `features/planner/` |
 | Accounts page, Deposits pop-up, balances, account history | `features/accounts/` |
 | Debts: schedules, Gem Visa rules, payments, advice | `features/debts/logic/` (UI in `features/debts/`) |
+| A statement or typed balance vs the plans (plans too high, finished plans) | `features/debts/logic/payments.ts` → `fitPlansToBalance`, called from `services/reader/apply.ts` → `applyStatement` |
 | A debt's payment held in a bank account until statement day (Gem in Misc bills: `Debt.holdAccountId`) | `features/debts/logic/README.md` → **Held debts** (how the money flows, file by file) |
 | Savings goals, goal costs, gifts, KiwiSaver | `features/savings/` |
 | Insights, spending categories, monthly review | `features/insights/` |
@@ -82,7 +83,8 @@ questions are answered there):
    Steady buffer, and the last 14 days of transactions with what each counted as. It loads the budget the
    way the app does (`state/upgrade.ts`). The first line says when that copy was saved: if it's older than
    the owner's screenshot, the browser has changes the repo hasn't got yet. A bank-synced balance already has
-   pending transactions taken out (they're marked `[pending]`), so don't take them off again. For "is X counted?"
+   pending transactions taken out (they're marked `[pending]`), so don't take them off again. For a debt, `inspect -- gem` shows its payday account, not its plans: print `debt.plans` with a
+   `scripts/_try.ts` (step 4). For "is X counted?"
    questions, add up the tracker rows yourself: "To come" includes a held debt's payment (Gem) until the bank
    shows it gone.
 3. `npm run dev`, then `npm run screenshot -- '#/accounts' --today 2026-11-22` to see the page itself, in New

@@ -1,7 +1,7 @@
 import { fmtDay, ordinal } from '../../../core/dates';
 import { type Period } from '../../../engine/periods';
 import type { Budget, Cents, Debt } from '../../../core/types';
-import { debtPerPay, plannedOwed, owed, unplanned } from './amounts';
+import { debtPerPay, owed, unplanned } from './amounts';
 import { type PerPay, debtSchedules, fmt } from './schedule';
 import { gemPlan } from './gem';
 
@@ -60,10 +60,9 @@ export function debtAdvice(b: Budget, debt: Debt, period: Period): DebtAdvice {
 
   if (debt.rules === 'gem') {
     const g = gemPlan(debt, s);
-    const plansHigh = plannedOwed(debt) > owed(debt) + 100;
     return {
       ...base, recommended: g.recommended, minimum: g.minimum, apply: { mode: 'exact' },
-      reason: `Clears every interest-free purchase before it ends (minimum is only ${fmt(g.minimum)}).${debt.statementDay ? ` Send on/after the ${ordinal(debt.statementDay)}.` : ''}${plansHigh ? ' Plan amounts still owed look higher than the card balance — update them to sharpen this figure.' : ''}`,
+      reason: `Clears each plan before its interest-free time ends. Gem’s minimum is ${fmt(g.minimum)}.${debt.statementDay ? ` Pay on or after the ${ordinal(debt.statementDay)}.` : ''}`,
     };
   }
 

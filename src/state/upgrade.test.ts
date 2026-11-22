@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { budget } from '../testing/fixtures';
+import { budget, debtBudget, debt } from '../testing/fixtures';
 import { tidy } from './upgrade';
 
 describe('tidy (loading an older save)', () => {
@@ -23,5 +23,12 @@ describe('tidy (loading an older save)', () => {
     delete b.items[0].envelopeUnder;
     tidy(b);
     expect(b.items[0].envelopeUnder).toBeUndefined();
+  });
+
+  it('once, brings plans down to a newer balance that’s lower than they add up to', () => {
+    const b = debtBudget();
+    debt(b, 'gem').balance = { amount: 150000, asOf: '2026-11-16' };
+    tidy(b);
+    expect(debt(b, 'gem').plans.reduce((t, p) => t + p.remaining, 0)).toBe(150000);
   });
 });

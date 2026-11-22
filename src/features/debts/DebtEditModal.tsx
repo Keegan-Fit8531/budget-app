@@ -6,6 +6,7 @@ import { debtPerPay, owed, plannedOwed, recordHistory, unplanned } from './logic
 import { cash, centsToInput, parseMoney } from '../../core/money';
 import { useBudget } from '../../state/store';
 import type { Debt } from '../../core/types';
+import { fitPlansToBalance } from './logic/payments';
 import { PlanModal } from './PlanModal';
 import { PaymentModal } from './PaymentModal';
 import { DebtModal } from './DebtModal';
@@ -43,7 +44,7 @@ export function BalanceEditor({ debt: d, used, onAddPlan, editing: startEditing,
     if (d.limit && c > d.limit * 1.2) return setErr('That\u2019s well over the credit limit. Check the amount, or update the limit with Edit.');
     update((b) => {
       const x = (b.debts ?? []).find((y) => y.id === d.id);
-      if (x) { x.balance = { amount: c, asOf: today }; x.checked = { ...x.balance }; recordHistory(x, today); }
+      if (x) { x.balance = { amount: c, asOf: today }; x.checked = { ...x.balance }; fitPlansToBalance(x, today); recordHistory(x, today); }
       return b;
     });
     setEditing(false);
@@ -93,7 +94,7 @@ export function BalanceEditor({ debt: d, used, onAddPlan, editing: startEditing,
         </div>
       )}
       {d.balance && planned > o && (
-        <p className="small error">Your plans add up to {cash(planned)}, more than the {cash(o)} balance. Update the plans' amounts still owed.</p>
+        <p className="small error">Plans add up to {cash(planned)}, more than the {cash(o)} owed: update the balance.</p>
       )}
     </div>
   );
