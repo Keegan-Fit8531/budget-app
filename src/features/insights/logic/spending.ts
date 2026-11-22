@@ -17,6 +17,9 @@ export const CATEGORY_LABEL: Record<SpendCategory, string> = {
   government: 'Government and council', transfers: 'Transfers and payments', other: 'Other',
 };
 
+/** Fuel stations by brand (New Zealand). Also how Gas envelopes find fills (`engine/envelopeMatch.ts`). */
+export const FUEL_SHOPS = /z energy|\bmobil\b|\bbp\b|gull|caltex|waitomo|\bnpd\b|\bu-?go\b|gasoline alley|fuel/i;
+
 /** Shop name patterns, in order (the first that matches wins), with a tidy name for the shop. */
 const RULES: [RegExp, SpendCategory, string?][] = [
   [/payment received|thank you|\btfr\b|transfer|internet banking|online banking|automatic payment|\bA\/P\b|direct credit|salary|wages/i, 'transfers'],
@@ -31,10 +34,12 @@ const RULES: [RegExp, SpendCategory, string?][] = [
   [/nando/i, 'takeaways', 'Nando’s'], [/hell pizza/i, 'takeaways', 'Hell Pizza'], [/st pierre/i, 'takeaways', 'St Pierre’s'],
   [/sushi|kebab|noodle|fish ?(&|and|n) ?chips|takeaway|\bpies?\b|carl'?s jr|wendy|taco|popeyes|dumpling/i, 'takeaways'],
   [/caf[eé]|coffee|espresso|restaurant|buffet|bistro|eatery|\bbar\b|brew|pub\b|grill|kitchen|diner|bakery|bubble tea/i, 'eating-out'],
+  // A supermarket's fuel station ("Pak N Save Fuel") is fuel, not groceries.
+  [/(pak\W*n\W*sav\w*|new world|woolworths|countdown)\W+fuel/i, 'transport', 'Fuel'],
   [/countdown|woolworths/i, 'groceries', 'Woolworths'], [/pak\W*n\W*sav/i, 'groceries', 'Pak’nSave'], [/new world/i, 'groceries', 'New World'],
   [/freshchoice/i, 'groceries', 'FreshChoice'], [/four square/i, 'groceries', 'Four Square'], [/supervalue|super value/i, 'groceries', 'SuperValue'],
   [/supermark|mini ?mart|dairy|butcher|\bmeat\b|fruit|veg|grocer/i, 'groceries'],
-  [/z energy|\bmobil\b|\bbp\b|gull|caltex|waitomo|\bnpd\b|fuel/i, 'transport', 'Fuel'],
+  [FUEL_SHOPS, 'transport', 'Fuel'],
   [/at public transport|at hop|uber\s*\*?\s*trip|\bola\b|taxi|parking|car ?park|inpark|wilson|vtnz|\baa\b|supercheap|repco|tyre|bridgestone|panel ?beat|\blime\b|\bbeam\b/i, 'transport'],
   [/amazon prime|netflix|spotify|disney|neon|youtube|apple\.com|google|icloud|spark|one ?nz|vodafone|2degrees|skinny|mercury|genesis|contact energy|electric|insurance/i, 'bills'],
   [/chemist|pharm|doctor|medical|dental|dentist|hair|barber|physio|optometr|gym|fitness|beauty|nail/i, 'health'],

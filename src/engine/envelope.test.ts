@@ -193,6 +193,54 @@ describe('transfers that paid for an envelope', () => {
   });
 });
 
+describe('several transfers after several purchases', () => {
+  // $50, $150 and $80 moved to Everyday after a $53.94 shop, a $111.67 shop and an $80.49 fill at U-Go.
+  function setup() {
+    const b = foodGasBudget();
+    const moves = [5000, 15000, 8000].map((n, i) => ({ date: '2026-11-22', description: `To: 06-0115-0324910-00 Debit Transfer ${i}`, amount: -n }));
+    b.pendingTransactions = {
+      food: moves,
+      day: [
+        { date: '2026-11-21', description: 'Freshchoice', amount: -5394 },
+        { date: '2026-11-22', description: 'Pak N Save S', amount: -11167 },
+        { date: '2026-11-22', description: 'U-Go Epsom', amount: -8049 },
+      ],
+    };
+    return { b, moves };
+  }
+  const status = (b: ReturnType<typeof foodGasBudget>, id: string) => envelopeStatus(b, b.items.find((i) => i.id === id)!, '2026-11-22');
+
+  it('knows U-Go is fuel', () => {
+    expect(matchesEnvelope({ name: 'Car gas' }, { description: 'U-Go Epsom', amount: -8049 })).toBe(true);
+    expect(matchesEnvelope({ name: 'Food shop' }, { description: 'Pak N Save Fuel', amount: -6000 })).toBe(false);
+  });
+
+  it('gives each transfer its own purchase, so the fill counts as gas and the shops as food', () => {
+    const { b, moves } = setup();
+    expect(guessTransfer(b, 'food', moves[2])).toMatchObject({ itemIds: ['car'], sure: true });
+    expect(guessTransfer(b, 'food', moves[2])!.seen[0].txn.description).toBe('U-Go Epsom');
+    expect(guessTransfer(b, 'food', moves[1])).toMatchObject({ itemIds: ['shop'], sure: true });
+    // The whole $150 counts, though the shop was $111.67: the rest left the account too.
+    expect(status(b, 'shop').spent).toBe(20000);
+    expect(status(b, 'car').spent).toBe(8000);
+    expect(unsortedTransfers(b, 'food', '2026-11-22')).toEqual([]);
+  });
+
+  it('asks when the nearest purchase is not close and another envelope also fits', () => {
+    const { b, moves } = setup();
+    b.pendingTransactions!.food = [moves[2]];
+    b.pendingTransactions!.day[2].amount = -9500; // the fill is $15 off; the $53.94 shop is $26 off
+    expect(guessTransfer(b, 'food', moves[2])).toMatchObject({ itemIds: ['car', 'shop'], sure: false });
+  });
+
+  it('lets your answer for one transfer decide which purchase the others can take', () => {
+    const { b, moves } = setup();
+    b.envelopeTransfers = { [transferKey('food', moves[2])]: '' }; // the $80 was just moving money
+    // The fill is free for the $50 now, but the $53.94 shop is within $5 of it and the fill isn't.
+    expect(guessTransfer(b, 'food', moves[0])).toMatchObject({ itemIds: ['shop', 'car'], sure: true });
+  });
+});
+
 describe('two envelopes that share shops (Car gas and Scooter gas)', () => {
   function setup() {
     const b = budget();
