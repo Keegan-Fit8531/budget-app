@@ -2,6 +2,7 @@ import { addDays, type ISODate } from '../../core/dates';
 import { debtPay } from '../../features/debts/logic/amounts';
 import { debtSchedules } from '../../features/debts/logic/schedule';
 import { applyPayment } from '../../features/debts/logic/payments';
+import { checkKey } from '../../engine/billMatch';
 import type { Budget, Cents, Debt, Txn } from '../../core/types';
 
 // ---------------------------------------------------------------------------------------------
@@ -104,7 +105,8 @@ export function recordCardPayments(b: Budget, accountId: string, txns: Txn[], to
     const taken = new Set((debt.bankPayments ?? []).flatMap((p) => p.planned ?? []));
     const from = addDays(t.date, -BEFORE), to = addDays(t.date, AFTER);
     const near = [
-      ...(debt.paid ?? []).filter((x) => x.date >= from && x.date <= to).map((x) => ({ key: `${x.date}|${x.amount}|${x.planId ?? x.name}`, date: x.date, amount: x.amount })),
+      // Not ones you said are still to send (an extra payment from another account cleared them early).
+      ...(debt.paid ?? []).filter((x) => x.date >= from && x.date <= to && !b.billChecks?.[checkKey('unpaid', debt.id, x.date)]).map((x) => ({ key: `${x.date}|${x.amount}|${x.planId ?? x.name}`, date: x.date, amount: x.amount })),
       ...debtSchedules(debt, b.settings, debtPay(b, debt)).flatMap((sch) => sch.payments
         .filter((p) => p.date >= today && p.date >= from && p.date <= to)
         .map((p) => ({ key: `${p.date}|${p.amount}|${sch.synthetic ? sch.plan.name : sch.plan.id}`, date: p.date, amount: p.amount }))),
