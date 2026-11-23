@@ -36,6 +36,22 @@ describe('bill check', () => {
     expect(billChecks(changed, '2026-11-22').some((c) => c.kind === 'day')).toBe(false);
   });
 
+  it('a new bill set to start on a day the bank already showed it on another: move it', () => {
+    // Set to start on 10 Dec, but it came out on the 20th, on the Weekly allowance card, in October and November.
+    const canv = (d: string) => out(d, 1500, 'Paypal *Canv Card number: 4835');
+    const b = bills([{ name: 'Canva', amount: 1500, start: '2026-12-10' }],
+      { weekly: [canv('2026-10-20'), canv('2026-11-20')], bills: [toWeekly('2026-11-21', 1500)] });
+    const day = billChecks(b, '2026-11-22').find((c) => c.kind === 'day')!;
+    expect(day.title).toBe('Canva comes out on the 20th');
+    expect(day.detail).toContain('next one would be 20 Dec, so the next pay covers it');
+    const changed = structuredClone(b);
+    day.apply!.run(changed);
+    expect(changed.items[0].start).toBe('2026-12-20');
+    expect(billChecks(changed, '2026-11-22').some((c) => c.kind === 'day')).toBe(false);
+    // Already on its day (or not seen): nothing to ask.
+    expect(billChecks(bills([{ name: 'Canva', amount: 1500, start: '2026-12-20' }], { weekly: [canv('2026-11-20')] }), '2026-11-22').some((c) => c.kind === 'day')).toBe(false);
+  });
+
   it('a bill whose amount changed: suggest the new amount, and not again once you say no', () => {
     const b = bills([{ name: 'Mobile', amount: 20474, start: '2026-01-05' }],
       { bills: [out('2026-10-05', 20671, 'Spark Pay Mo'), out('2026-11-05', 20671, 'Spark Pay Mo')] });

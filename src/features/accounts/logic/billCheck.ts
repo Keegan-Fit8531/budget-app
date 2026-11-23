@@ -7,6 +7,7 @@ import { bankFed, businessDay, checkKey, matchBills, outflowId, sameAmount, type
 import type { BillRow } from '../../../engine/balances/billTracker';
 import type { Budget, Cents, Item } from '../../../core/types';
 import { setHeld } from '../../debts/logic/held';
+import { realStart } from './newBill';
 
 // The bill check: after a bank sync, what the bank shows about your bills that the plan should know.
 // Bills that come out on a different day (Skinny on the 19th, not the 17th) or for a different amount,
@@ -84,6 +85,21 @@ export function billChecks(b: Budget, today: ISODate = todayISO()): BillCheck[] 
       if (!['weekly', 'fortnightly', 'monthly'].includes(item.frequency)) continue;
       const ms = history.filter((m) => m.outflow.itemId === item.id);
       const seen = paidMatches(ms).slice(-4).map((m) => ({ date: m.txn!.date, amount: -m.txn!.amount, where: where(m) }));
+
+      const early = realStart(b, item, today);
+      if (early) {
+        const key = checkKey('day', item.id, early.start), then = dayWord(item, early.start);
+        const p = periodContaining(item.start, b.settings), q = periodContaining(early.start, b.settings);
+        const pays = p.start === q.start ? '' : q.start > p.start ? ', so the next pay covers it' : `, so the pay from ${fmtShort(q.start)} covers it`;
+        if (!answered(key)) out.push({
+          key, kind: 'day', accountId: acc.id, itemId: item.id,
+          seen: early.seen.map(({ txn, accountId }) => ({ date: txn.date, amount: -txn.amount, where: accountId === acc.id ? acc.name : `${name(accountId)} card` })),
+          title: `${item.name} comes out on ${then}`,
+          detail: `It's set to start on ${fmtShort(item.start)}, but the bank already showed it on ${fmtShort(early.seen[early.seen.length - 1].txn.date)}. The next one would be ${fmtShort(early.start)}${pays}.`,
+          apply: { label: `Change to ${then}`, run: (d) => { const it = d.items.find((i) => i.id === item.id); if (it) it.start = early.start; } },
+          skip: `Keep ${fmtShort(item.start)}`,
+        });
+      }
 
       const shift = usualShift(ms);
       if (shift) {
