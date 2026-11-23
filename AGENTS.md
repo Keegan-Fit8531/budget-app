@@ -34,7 +34,8 @@ src/
 
 Outside `src/`: `public/` (icons, web manifest, `sw.js` service worker; no README there, because everything in
 `public/` is published with the site), `scripts/` (dev tools: `uses`, `inspect`, `screenshot`, `live`; its own README),
-`.github/workflows/pages.yml` (deploys `main` to GitHub Pages).
+`.github/workflows/` (`checks.yml` tests every PR; `pages.yml` tests, then deploys `main` to GitHub Pages),
+`.claude/settings.json` (runs `scripts/stop-checks.sh` when a Claude Code agent finishes).
 
 ## Where to look
 
@@ -114,7 +115,8 @@ A rule that matters gets a test; a rule only written here drifts. When you find 
 
 ## Before you finish a change
 
-1. `npm test`, `npx tsc -b` and `npm run lint` pass (lint warnings are OK, errors aren't).
+1. `npm test`, `npx tsc -b` and `npm run lint` pass (lint warnings are OK, errors aren't). In Claude Code a Stop hook runs
+   them when you finish and hands back any failure; GitHub runs them on every PR and before every deploy.
 2. Every folder you touched has its README updated: new, renamed, moved or deleted files, and changed purposes.
 3. Fix the notes in the same change, not a follow-up PR (see **Keeping the notes short**). Tell the owner in a line what you changed in them and why.
 
@@ -175,7 +177,7 @@ moved, merge it in (`git merge origin/main`) and look at the files you both touc
 ## Making a change live
 
 The owner asks for changes "live" (or "push live"): push the session branch, open a PR into `main` and merge it.
-PRs have no CI, so run the checks in **Before you finish a change** first. Merging runs `.github/workflows/pages.yml`,
-which publishes to GitHub Pages in 1–2 minutes (a second merge close behind cancels the first run, which is fine).
+Wait for the PR's Checks to pass (`checks.yml`): don't merge a red ✗. Merging runs `.github/workflows/pages.yml`, which
+runs the checks again and publishes to GitHub Pages in 2–3 minutes (a second merge close behind cancels the first run, which is fine).
 Check it with `npm run live -- <text> --wait` in the background (`scripts/README.md` says what text to pick), then
 tell the owner to refresh. The app keeps an offline copy (`public/sw.js`), so a phone can take a reopen to update.

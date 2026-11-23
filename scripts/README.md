@@ -10,6 +10,7 @@ code or test fixtures (make up the numbers there, as `src/testing/fixtures.ts` d
 - `inspect.ts`: `npm run inspect -- [account] [--today YYYY-MM-DD] [--file path]` prints the real budget (`../budget-data/budget.json` by default) the way the app sees it, loaded as the app loads it (`src/state/upgrade.ts`), using `src/testing/inspect.ts`. Read-only. Runs with `vite-node`.
 - `screenshot.mjs`: `npm run screenshot -- '#/accounts' [--today …] [--file …] [--width 400] [--dark] [--out file.png]` pictures a page of the running dev server (`npm run dev` first) holding the real budget, in NZ time, and prints where it saved it (outside the repo). Options below.
 - `live.mjs`: `npm run live -- <text> [--wait]` says whether some text is in the published app's code or stylesheet; `--wait` checks every 10s for up to 8 minutes.
+- `stop-checks.sh`: the Claude Code Stop hook (`.claude/settings.json`): when an agent finishes, runs tests, type-check and lint in parallel (about 10s) and hands failures back to fix. Skips when nothing changed since its last pass (remembered in `.git/claude-checks-passed`); after 3 blocks in a row it lets the agent stop and report.
 - `copy-ocr.mjs`: copies the text-recognition engine (Tesseract.js and its English data) from `node_modules` into `public/ocr/` (git-ignored) for the on-device reader (`src/services/reader/documents.ts`). Runs before `npm run dev` and `npm run build` (`npm run ocr`).
 
 ## Reading the real budget

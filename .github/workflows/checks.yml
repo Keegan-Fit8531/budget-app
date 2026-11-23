@@ -1,0 +1,28 @@
+name: Checks
+
+# The checks in AGENTS.md → "Before you finish a change", on every pull request, so a change that breaks
+# a test shows a red ✗ on the PR whoever made it. pages.yml runs the same checks before it deploys.
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: checks-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npx tsc -b
+      - run: npm run lint
