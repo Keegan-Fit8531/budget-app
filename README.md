@@ -28,8 +28,8 @@ The code is grouped by what it does, and every folder in `src/` has a `README.md
 
 [`AGENTS.md`](AGENTS.md) is the guide for AI assistants (Claude Code reads it through `CLAUDE.md`, Cursor reads it
 directly): the folder map, where to look for each kind of change, the rules the code relies on, and the
-rule that every change updates its folder's README. A test (`src/testing/readmes.test.ts`) fails if a
-README is missing or doesn't mention a file in its folder.
+rule that every change updates its folder's README. A test (`src/testing/notes.test.ts`) fails if a
+README is missing, doesn't mention a file in its folder, or the notes grow past their size limits.
 
 ## Design
 

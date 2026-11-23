@@ -3,7 +3,7 @@
 The app shell: which page is showing, the navigation around it, and the Add button. No budget maths here.
 
 ## Files
-- `App.tsx`: routing by URL hash: `#/planner` (default), `#/accounts`, `#/debts`, `#/savings`, `#/insights`, `#/settings`. `#/accounts/deposits/<accountId>` opens the Deposits pop-up on Accounts (older `#/deposits/…` links still work). Draws the sidebar (computer) and the bottom and top bars (phone) from the `MAIN` and `SETUP` lists, wraps each page in its own `ErrorBoundary`, and provides the viewed pay (`state/period.tsx`). Also mounts the jobs that run while the app is open: `BankAutoSync` (`services/bank/BankCard.tsx`), `ReviewAutoRun` and `ShopSortAutoRun` (`features/insights/MonthlyInsights.tsx`).
+- `App.tsx`: routing by URL hash: `#/planner` (default), `#/accounts`, `#/debts`, `#/savings`, `#/insights`, `#/settings`; `#/accounts/deposits/<accountId>` opens Deposits (older `#/deposits/…` links still work). Draws the sidebar and phone bars from `MAIN` and `SETUP`, wraps each page in an `ErrorBoundary`, provides the viewed pay (`state/period.tsx`), and mounts the jobs that run while open: `BankAutoSync`, `ReviewAutoRun`, `ShopSortAutoRun`.
 - `AddMenu.tsx`: the Add button's pop-up: add a cost (`shared/ItemModal.tsx`), a debt or a payment (`features/debts/DebtModal.tsx`, `PaymentModal.tsx`), a savings goal (`features/savings/GoalModal.tsx`), or upload documents (starts a read with `services/reader/job.ts` and shows `services/reader/ui/UploadFlow.tsx`).
 
 ## Watch out for

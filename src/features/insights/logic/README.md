@@ -3,7 +3,7 @@
 Plain functions behind Insights (no React).
 
 ## Files
-- `spending.ts`: spending categories: `categorize` (a shop's category from its description, by built-in rules), `categorizeTxn` (uses the bank connection's tidy merchant name when there is one), `shopMap` (Gemini's guesses, then your own choices on top), `summarize` (purchases between two dates by category; not payments, refunds or transfers), `otherShops` (still in Other and not guessed yet), `cleanDescription`, `CATEGORY_LABEL`, `FUEL_SHOPS` (fuel brands; Gas envelopes use it too, so a new fuel brand goes here once: U-Go was missing, and its fills counted as food).
+- `spending.ts`: spending categories: `categorize` (a shop's category from its description, by built-in rules), `categorizeTxn` (uses the bank connection's tidy merchant name when there is one), `shopMap` (Gemini's guesses, then your own choices on top), `summarize` (purchases between two dates by category; not payments, refunds or transfers), `otherShops` (still in Other and not guessed yet), `cleanDescription`, `CATEGORY_LABEL`, `FUEL_SHOPS` (fuel brands; Gas envelopes use it too, so a new fuel brand goes here once; a fuel station counted as food means its brand is missing).
 - `spending.test.ts`: shop names that keep their capitals.
 - `review.ts`: the monthly cycle review: `lastCycle`, `cycleTransactions`, `cycleSoFar`, `reviewDue`, `cycleNumbers` (what was spent and on what, against the cycle before), `reviewInput` (the text sent to Gemini), `REVIEW_INSTRUCTIONS` / `REVIEW_SCHEMA`, `parseReview`, `makeReview`, `saveReview` (keeps `KEEP_REVIEWS`), `reviewFrom`. `MonthlyReview` is stored in `budget.reviews`.
 - `review.test.ts`: cycles, numbers and parsing a review.
