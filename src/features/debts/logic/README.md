@@ -12,8 +12,8 @@ Plain functions for debts (no React). The engine uses these too: debt payments a
 - `advice.ts`: the recommended payment per debt for a pay, each by the lowest that keeps every plan on track (`debtAdvice`, `DebtAdvice`, `offRecommended`).
 - `held.ts`: a held debt's payment this pay (`heldNow`: paid and still to send from the hold account's tracker), `endHeld` ("No more this month": `heldPay` is what was paid, plus a `rest` key so the bill check stops asking) and `resumeHeld` (Undo); `setHeld` (set or take off one statement's `heldPay`, also used by the bill check).
 - `activity.ts`: what a card shows of its activity: `planProgress` (paid of total, months left), `monthsUntil`, `paymentRows` (each payment Pending or Received, matched to the card's own credit of the same amount within a week), `paydayHistory` (what payday sent it, pays already sent).
-- `cardPlans.ts`: Gem's 6-month plans from the card's own transactions (bank connection): purchases moved onto a plan ("PLAN TRANSFER OUT/IN" pair) in one statement month are one plan, "Purchases 21 Oct – 20 Nov 2026" (`syncCardPlans`, `mergeCyclePlans`, `cycleName`, `cardPlanPurchases`; months made are remembered in `Debt.cardPlans`). Only its own `card-` plans are merged or grown. A plan for a purchase still pending is put back to its full amount.
-- `cardPlans.test.ts`: one plan per statement month, a special deal left alone, a paid-off month not made again, older per-purchase plans merged.
+- `cardPlans.ts`: Gem's 6-month plans from the card's own transactions (bank connection): purchases moved onto a plan ("PLAN TRANSFER OUT/IN" pair) in one statement month, by the transfer's date, are one plan named as Gem names it, "Purchases from Oct 2026 – Nov 2026" (`syncCardPlans`, `mergeCyclePlans`, `cycleName`, `cardPlanPurchases`; months made are remembered in `Debt.cardPlans`). Our `card-` plans hold exactly the month's purchases; one set from a screenshot ("Purchases from …") is used instead. `pendingPlans`: a plan for a purchase still pending is whole again and never brought down (also used when reading a card screenshot).
+- `cardPlans.test.ts`: one plan per statement month (by transfer date), a special deal left alone, a paid-off month not made again, older per-purchase plans merged, what's over the balance coming off our guesses, a card screenshot with a purchase pending.
 - `activity.test.ts`: plan progress, pending and received payments, a statement's amount to avoid interest.
 - `held.test.ts`: "No more this month" and its Undo.
 - `debts.test.ts`: schedules, payments gone out, recording a payment, Gem held until statement day, extra paid for one pay.
@@ -28,7 +28,12 @@ A debt with `holdAccountId` keeps its payday money in a bank account until state
 
 ## Watch out for
 - These files import each other (schedule ↔ gem ↔ amounts). Add a function to the file whose job it matches.
-- What the bank doesn't show about Gem: every $250+ purchase in a statement month (21st–20th) goes on one 6-month plan, all ending the same day; a special deal (36 or 60 months, bought in store) posts as a plain purchase ("IN STORE PURCHASE") with no plan transfer, so its length is only known from you or a screenshot. Don't guess plans from pending purchases.
+- What the bank doesn't show about Gem (checked against the owner's "My plans" screen):
+  - Every $250+ purchase moved onto a plan in a statement month (21st–20th, by the transfer's date: bought on the 19th and moved on the 22nd is next month's) is one 6-month plan, all ending the same day.
+  - A special deal (12, 36 or 60 months) posts as a plain purchase ("IN STORE PURCHASE" or the shop) with no plan transfer, so its length is only known from the owner or a screenshot. Don't guess plans from pending purchases.
+  - How much is left on each plan isn't sent at all. The plans add up to the card's balance, so a missing plan shows up as too much left on another one.
+- Card plan logic: compare it plan by plan with a screenshot of the card's own app before shipping (ask the owner). The bank data alone misled twice here.
+- When the plans add up to more than the balance, what's over comes off our guesses (`card-` plans) first, never off a pending purchase's plan. Taking it in Gem's payment order instead moved money between plans on every sync.
 - Gem's split can't be directed at one plan; `gem.ts` reproduces Latitude's order. Keep it in line with the clause quoted at the top of that file.
 - Amounts are cents; `fmt` is only for the sentences shown to you.
 
