@@ -18,6 +18,7 @@ the device and never sent anywhere.
 - `merchant` and `category` come only from the bank connection, not from CSV exports.
 - Where CSV imports and the bank connection overlap, the same payment can be stored twice with different text ("VT SPARK PAY MO" and "Spark Pay Mo Card number …"). Matching code should use each transaction once (see `engine/billMatch.ts`).
 - Pending rows (`budget.pendingTransactions`) can post days later under a different date; the synced balance already includes them.
+- The balance can move before the transactions behind it arrive (an account at $0 whose transactions still add up to $200): the bank sends some transfers out a day or two late, in neither list. Don't fix the app for it; test the case on a copy with the missing rows added (`scripts/README.md`).
 
 ## Watch out for
 - A new kind of account (a card just linked): look at what it really sent in `../budget-data` (its transactions and `pending`) before building on it: Gem's moves purchases onto plans ("PLAN TRANSFER OUT/IN" pairs), and its balance leaves pending purchases out.

@@ -91,7 +91,7 @@ describe('folder rules (AGENTS.md)', () => {
       if (n > was) return [`${f}: grew from ${was} to ${n} ${counted(f)}. Split it before adding to it (joining lines doesn't help), and update OVER_AIM in this test`];
       return [];
     });
-    expect(bad).toEqual([]);
+    expect(bad, bad.join('; ')).toEqual([]);
   });
 
   it('OVER_AIM lists each big file at its size now, so the list only gets shorter', () => {
@@ -103,7 +103,7 @@ describe('folder rules (AGENTS.md)', () => {
       if (n < was) return [`${f} is ${n} lines now: lower its number in OVER_AIM to ${n}`];
       return [];
     });
-    expect(stale).toEqual([]);
+    expect(stale, stale.join('; ')).toEqual([]);
   });
 
   it('core/, engine/ and every logic/ folder are plain functions: no React, no components', () => {
