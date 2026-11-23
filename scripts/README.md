@@ -34,7 +34,7 @@ code or test fixtures (make up the numbers there, as `src/testing/fixtures.ts` d
 - For what it can't do (drag, type, check a pop-up stays open), write a throwaway Playwright script in your scratchpad set up the same way (budget in `localStorage`, `timezoneId: 'Pacific/Auckland'`, `page.clock.setFixedTime`). Load Playwright with `createRequire(import.meta.url)('playwright')`: a plain `import` fails outside the repo.
 
 ## Checking a deploy with live
-- Built JSX text is split up, and comments are dropped: search a CSS class or a string from a `.ts` file, exactly as the code has it (`/plan transfer/i`, not "PLAN TRANSFER" from a comment), or `--wait` runs 8 minutes for nothing.
+- Built JSX text is split up, and comments are dropped: search a CSS class, a string prop (`sub="…"`), a `localStorage` key (`paydays.plancheck.seen`) or a string from a `.ts` file, exactly as the code has it (`/plan transfer/i`, not "PLAN TRANSFER" from a comment), or `--wait` runs 8 minutes for nothing.
 - It also finds text the old build had, so pick something new to this change, and check the file it names (`assets/index-….js`) differs from before the merge: the same name means the deploy hasn't finished.
 
 ## Trying a change on the real budget
