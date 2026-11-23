@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
 // ---------------------------------------------------------------------------------------------
@@ -11,15 +12,27 @@ const MAX_LINES = 500;
 /** What a file should stay under. A new file over it fails; one already over may shrink but never grow. */
 const AIM_LINES = 400;
 /**
- * The files already over AIM_LINES, at their size now. Split one before adding to it. When one shrinks,
- * lower its number here (or remove it once it's under AIM_LINES): this list only ever gets shorter.
+ * A file's size is its lines, or its non-space characters in lines of the code's average density, whichever
+ * is more. So joining lines, dropping blank lines or squeezing out spaces never gets a file under a limit:
+ * only moving code out does. (The averages across this code: 45 characters a line, 63 in stylesheets.)
+ */
+const CHARS_PER_LINE = 45;
+const CSS_CHARS_PER_LINE = 63;
+/**
+ * The files already over AIM_LINES, at their size now (counted as above). Split one before adding to it.
+ * When one shrinks, lower its number here (or remove it once it's under AIM_LINES): this list only gets shorter.
  */
 const OVER_AIM: Record<string, number> = {
+  '/src/services/reader/check/check.test.ts': 447,
   '/src/features/accounts/MonthTracker.tsx': 418,
-  '/src/services/reader/check/check.test.ts': 406,
+  '/src/ui/styles/components.css': 417,
+  '/src/services/reader/apply.ts': 413,
 };
 
-const sources = import.meta.glob<string>(['/src/**/*.{ts,tsx,css}', '!/src/personal/**', '!/src/vite-env.d.ts'], { query: '?raw', import: 'default', eager: true });
+const code = import.meta.glob<string>(['/src/**/*.{ts,tsx}', '!/src/personal/**', '!/src/vite-env.d.ts'], { query: '?raw', import: 'default', eager: true });
+// Vitest hands back CSS as an empty string, so stylesheets are read from disk to be measured too.
+const styles = Object.fromEntries(Object.keys(import.meta.glob('/src/**/*.css')).map((f) => [f, readFileSync(`.${f}`, 'utf8')]));
+const sources: Record<string, string> = { ...code, ...styles };
 const paths = new Set(Object.keys(sources));
 
 /** Resolve a relative import from `file` to a path under /src (without extension), like Vite does. */
@@ -46,15 +59,28 @@ const isTsx = (file: string, spec: string) => spec.startsWith('.') && (spec.ends
 const layerOf = (file: string, spec: string) => (spec.startsWith('.') ? resolve(file, spec).split('/')[2] : undefined);
 
 const pure = (f: string) => f.startsWith('/src/core/') || f.startsWith('/src/engine/') || /\/logic\//.test(f);
-/** Lines as an editor counts them (a final newline doesn't start another line). */
-const lineCount = (text: string) => text.split('\n').length - (text.endsWith('\n') ? 1 : 0);
-const sizes = Object.entries(sources).map(([f, text]) => [f, lineCount(text)] as const);
+/** A file's size in lines: its real lines, or its non-space characters in average lines, whichever is more. */
+function sizeInLines(text: string, perLine = CHARS_PER_LINE): number {
+  const lines = text.split('\n').length - (text.endsWith('\n') ? 1 : 0);
+  return Math.max(lines, Math.ceil(text.replace(/\s/g, '').length / perLine));
+}
+const perLine = (f: string) => (f.endsWith('.css') ? CSS_CHARS_PER_LINE : CHARS_PER_LINE);
+const sizes = Object.entries(sources).map(([f, text]) => [f, sizeInLines(text, perLine(f))] as const);
+const counted = (f: string) => `lines (its lines, or its non-space characters at ${perLine(f)} a line, whichever is more)`;
 
 describe('folder rules (AGENTS.md)', () => {
+  it('squashing code onto fewer lines, or squeezing out spaces, makes a file no smaller', () => {
+    const line = 'const total = items.reduce((sum, item) => sum + item.amount, 0);\n';
+    const code = line.repeat(300);
+    const squashed = line.trimEnd().repeat(300).replace(/ /g, '');
+    expect(sizeInLines(squashed)).toBe(sizeInLines(code));
+    expect(sizeInLines('\n'.repeat(10))).toBe(10);
+  });
+
   it(`no file is longer than ${MAX_LINES} lines`, () => {
     const long = sizes
       .filter(([, n]) => n > MAX_LINES)
-      .map(([f, n]) => `${f}: ${n} lines (split it by its sections and update the folder README)`);
+      .map(([f, n]) => `${f}: ${n} ${counted(f)} (split it by its sections and update the folder README)`);
     expect(long).toEqual([]);
   });
 
@@ -62,8 +88,8 @@ describe('folder rules (AGENTS.md)', () => {
     const bad = sizes.flatMap(([f, n]) => {
       if (n <= AIM_LINES) return [];
       const was = OVER_AIM[f];
-      if (was === undefined) return [`${f}: ${n} lines, over ${AIM_LINES}. Split it by its sections (calculations into logic/) and update the folder README`];
-      if (n > was) return [`${f}: grew from ${was} to ${n} lines. Split it before adding to it, and update OVER_AIM in this test`];
+      if (was === undefined) return [`${f}: ${n} ${counted(f)}, over ${AIM_LINES}. Split it by its sections (calculations into logic/) and update the folder README`];
+      if (n > was) return [`${f}: grew from ${was} to ${n} ${counted(f)}. Split it before adding to it (joining lines doesn't help), and update OVER_AIM in this test`];
       return [];
     });
     expect(bad).toEqual([]);

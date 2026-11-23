@@ -95,6 +95,7 @@ uses made-up amounts (`testing/fixtures.ts` → `foodGasBudget()` is shaped like
   explanations go behind Details, which sits above what it opens (`ui/README.md`).
 - **Privacy**: the Gemini key, GitHub token and bank passphrase stay in the browser's storage only. `src/personal/` (git-ignored) holds the owner's own data and is never committed.
 - **Keep files small**: under 400 lines; split by section into files named for their job. A file over 400 may not grow (split it first), and over 500 fails.
+  Size counts characters too, so joining lines doesn't make room.
 - **Agents copy the code around them.** Leave a file in the shape you'd want copied: if a page does maths inline, move it to `logic/` as you go.
 
 `src/testing/structure.test.ts` checks the folder rules (file size, no React in `core/`/`engine/`/`logic/`, a generic `ui/`, `core/` only borrowing types).

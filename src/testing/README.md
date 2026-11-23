@@ -11,5 +11,7 @@ Shared test helpers, and the tests that keep the notes honest and short. A featu
 ## Watch out for
 - Tests never talk to real services: Gemini, GitHub and the bank are always faked, and all data is made up.
 - Pass a fixed `today` to the functions you test, so a test gives the same answer every day.
+- File size counts lines, or non-space characters at the code's average a line (45; 63 in CSS), whichever is more: joining lines never makes room, splitting does.
+- CSS imported with `?raw` comes back empty under Vitest, so `structure.test.ts` reads stylesheets from disk.
 
 Keep this README current: update it in the same change when you add, remove, rename or repurpose a file here (see AGENTS.md).
