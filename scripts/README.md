@@ -17,6 +17,7 @@ code or test fixtures (make up the numbers there, as `src/testing/fixtures.ts` d
 - Pull `main` of `../budget-data` first (`git -C ../budget-data checkout main && git -C ../budget-data pull`): the app saves there, and a session branch is older.
   `inspect`'s first line says when that copy was saved: older than the owner's screenshot means the browser has changes the repo hasn't got.
 - Give `--today` as the NZ date: this container's clock is UTC, a day behind NZ until 1pm.
+- A bill "to come" that's already gone was often paid on the EFTPOS card under a cut-off name ("Paypal *Canv"): look in `inspect -- weekly` for it and its make-up transfer.
 - Every save is a commit, so compare saves to see what an upload or tap changed: `git -C ../budget-data show <commit>:budget.json | jq '.debts[] | select(.id=="gem")'`.
   One field across the last saves: `for c in $(git -C ../budget-data log --format=%h -20); do git -C ../budget-data show $c:budget.json | jq -c .billChecks; done`.
 - A bank-synced account's balance already has its pending transactions (`[pending]`) taken out: don't take them off again. A card is the other way round: the bank leaves pending purchases out, and the app adds `Debt.pending` back.
