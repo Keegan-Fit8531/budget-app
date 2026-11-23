@@ -41,9 +41,9 @@ export function cardPlanPurchases(debt: Debt): CardPlanPurchase[] {
 }
 
 /** "TAILOR SHOP AUCKLAND NZ" → "Tailor Shop Auckland NZ" (short capitals stay as they are). */
-const tidy = (d: string) => {
+export const tidy = (d: string) => {
   const name = cleanDescription(d);
-  return name !== name.toUpperCase() ? name : name.split(' ').map((w) => (w.length <= 3 ? w : w[0] + w.slice(1).toLowerCase())).join(' ');
+  return name !== name.toUpperCase() ? name : name.split(' ').map((w) => (/^[^AEIOU]{2,3}$|^(AKL|ATM)$/.test(w) ? w : w[0] + w.slice(1).toLowerCase())).join(' ');
 };
 
 /** A 6-month plan made here from the card's plan transfers (`card-` ids): one per statement month. Its amount is the card's purchases; plans you or a statement set are never merged or changed. */

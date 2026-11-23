@@ -212,6 +212,11 @@ export interface Debt {
   /** Statement months whose plan was made from the card's own transactions (the day it ends), so one paid off isn't made again. */
   cardPlans?: string[];
   /**
+   * Your answers to Plan check (purchase date|amount → what it is): the plan length in months (0: not on a
+   * plan, or paid off), and the plan as it was before, so Undo can put it back (null: there wasn't one).
+   */
+  planAnswers?: Record<string, { months: number; was: DebtPlan | null; on: ISODate }>;
+  /**
    * Planned payments already counted as paid (they're automatic), oldest first. Kept so the pay a payment
    * came out of still shows it once it has gone: without this a pay's total would shrink, and its leftover
    * grow, as each of its payments went out.
