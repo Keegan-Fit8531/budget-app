@@ -24,6 +24,10 @@ jobs:
           node-version: 20
           cache: npm
       - run: npm ci
+      # The same checks as checks.yml: a change that breaks a test is never published.
+      - run: npm test
+      - run: npx tsc -b
+      - run: npm run lint
       - run: npm run build
       - uses: actions/upload-pages-artifact@v3
         with:
