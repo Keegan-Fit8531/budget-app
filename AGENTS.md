@@ -87,9 +87,11 @@ questions are answered there):
    the tracker (each bill paid or to come, and the bank transaction that paid it), what Bill check asks, envelopes and what counted against them (each transfer with the purchase it was matched to), transfers the card asks about, next pays and any
    Steady buffer, and the last 14 days of transactions with what each counted as. It loads the budget the
    way the app does (`state/upgrade.ts`). The first line says when that copy was saved: if it's older than
-   the owner's screenshot, the browser has changes the repo hasn't got yet. A bank-synced balance already has
-   pending transactions taken out (they're marked `[pending]`), so don't take them off again. For a debt, `inspect -- gem` shows its payday account, not its plans: print `debt.plans` with a
-   `scripts/_try.ts` (step 4). For "is X counted?"
+   the owner's screenshot, the browser has changes the repo hasn't got yet. A bank-synced account balance already has
+   pending transactions taken out (they're marked `[pending]`), so don't take them off again; a card's is the other way
+   round (the bank leaves pending purchases out, the app adds `Debt.pending` back). For a debt, `inspect -- gem` shows
+   its payday account, not its plans: query it in `../budget-data` with `jq '.debts[]|select(.id=="gem")|{balance,plans,pending,t:.transactions[-20:]}' budget.json`
+   (as saved), or as the app loads it with a `scripts/_try.ts` (step 5). For "is X counted?"
    questions, add up the tracker rows yourself: "To come" includes a held debt's payment (Gem) until the bank
    shows it gone.
 3. `npm run dev`, then `npm run screenshot -- '#/accounts' --today 2026-11-22` to see the page itself, in New
@@ -183,6 +185,7 @@ Merging to `main` runs `.github/workflows/pages.yml`, which publishes to GitHub 
 merges close together cancel the first run, which is fine: the second builds everything. To check it's live,
 run `npm run live -- <a CSS class you added, or a string from a .ts file> --wait` (in the background: it takes 1–2
 minutes). Text in JSX is split up when built, so search a class name or a `logic/` string, not a sentence from a page.
+Search it exactly as the code has it (`/plan transfer/i` is in the build; "PLAN TRANSFER" from a comment isn't: comments are dropped), or `--wait` runs 8 minutes for nothing.
 Then tell the owner to refresh. The app keeps an offline copy (`public/sw.js`), so on a phone it can take a
 reopen to show the new version.
 
