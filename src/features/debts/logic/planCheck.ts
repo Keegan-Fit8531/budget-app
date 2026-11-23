@@ -1,9 +1,8 @@
 import { addDays, diffDays, fmtShort, type ISODate } from '../../../core/dates';
 import { cash } from '../../../core/money';
 import type { Budget, Cents, Debt, DebtPlan } from '../../../core/types';
-import { tidy } from './cardPlans';
+import { refitPlans, tidy } from './cardPlans';
 import { gemPlanEnds, gemPlanType } from './gem';
-import { monthsUntil } from './activity';
 
 // ---------------------------------------------------------------------------------------------
 // Plan check: big Gem purchases the bank can't say the plan of. A $250+ purchase Gem moves onto a 6-month
@@ -58,28 +57,22 @@ export function planQuestions(b: Budget, today: ISODate): PlanQuestion[] {
   return out.sort((x, y) => y.date.localeCompare(x.date));
 }
 
-/** What's likely left on a plan of `months` bought on `date`: all of it for 6 months or a recent purchase, else the months still to go. */
-export function estimateLeft(q: Pick<PlanQuestion, 'date' | 'amount' | 'pending'>, months: number, today: ISODate): Cents {
-  if (months <= 0) return 0;
-  const ends = gemPlanEnds(q.date, months);
-  if (ends <= today) return 0;
-  if (months <= 6 || q.pending || diffDays(q.date, today) < 31) return q.amount;
-  return Math.round((q.amount * Math.min(months, monthsUntil(today, ends))) / months);
-}
-
 /**
- * Save an answer: the purchase's plan becomes `months` long (Gem: 6 interest-free, 12+ equal payments)
- * with `left` still to pay, or (0) it has no plan here. The plan as it was is kept for Undo.
+ * Save an answer: the purchase's plan becomes `months` long (Gem: 6 interest-free, 12+ equal payments), or
+ * (0) it has no plan here. What's left on it isn't asked: it's worked out from the card's balance with the
+ * other plans (`cardPlans.ts` → `refitPlans`), so a plan Gem has had paid off comes out paid off. The plan
+ * as it was is kept for Undo.
  */
-export function answerPlan(b: Budget, q: PlanQuestion, months: number, left: Cents, today: ISODate): void {
+export function answerPlan(b: Budget, q: PlanQuestion, months: number, today: ISODate): void {
   const debt = (b.debts ?? []).find((d) => d.id === q.debtId);
   if (!debt) return;
   const plan = planFor(debt, q.date, q.amount);
   debt.planAnswers = { ...(debt.planAnswers ?? {}), [q.key]: { months, was: plan ? structuredClone(plan) : null, on: today } };
-  if (months <= 0 || left <= 0) { if (plan) debt.plans = debt.plans.filter((p) => p !== plan); return; }
-  const set = { type: gemPlanType(months), months, ends: gemPlanEnds(q.date, months), remaining: Math.min(left, q.amount), asOf: today };
-  if (plan) Object.assign(plan, set);
-  else debt.plans.push({ id: `ask-${q.date}-${q.amount}`, name: q.name, original: q.amount, purchaseDate: q.date, ...set });
+  const ends = gemPlanEnds(q.date, months);
+  if (months <= 0 || ends <= today) debt.plans = debt.plans.filter((p) => p !== plan);
+  else if (plan) Object.assign(plan, { type: gemPlanType(months), months, ends, asOf: today });
+  else debt.plans.push({ id: `ask-${q.date}-${q.amount}`, name: q.name, type: gemPlanType(months), months, original: q.amount, remaining: q.amount, asOf: today, purchaseDate: q.date, ends });
+  refitPlans(debt, today);
 }
 
 export interface PlanAnswer { key: string; debtId: string; title: string }
@@ -88,13 +81,14 @@ export interface PlanAnswer { key: string; debtId: string; title: string }
 export function planAnswers(b: Budget): PlanAnswer[] {
   return (b.debts ?? []).flatMap((d) => Object.entries(d.planAnswers ?? {}).map(([key, a]) => {
     const [date, amount] = key.split('|');
-    const what = a.months ? `${a.months}-month plan` : 'not on a plan';
+    const plan = planFor(d, date, Number(amount));
+    const what = !a.months ? 'not on a plan' : `${a.months} months, ${plan ? `${cash(plan.remaining)} left` : 'paid off'}`;
     return { key, debtId: d.id, on: a.on, title: `${cash(Number(amount))} on ${fmtShort(date)} ${date.slice(0, 4)}: ${what}` };
   })).sort((x, y) => y.on.localeCompare(x.on)).map(({ key, debtId, title }) => ({ key, debtId, title }));
 }
 
 /** Undo an answer: the plan goes back to how it was (or goes, if the answer made it), and it's asked again. */
-export function undoPlanAnswer(b: Budget, debtId: string, key: string): void {
+export function undoPlanAnswer(b: Budget, debtId: string, key: string, today: ISODate): void {
   const debt = (b.debts ?? []).find((d) => d.id === debtId);
   const a = debt?.planAnswers?.[key];
   if (!debt || !a) return;
@@ -103,4 +97,5 @@ export function undoPlanAnswer(b: Budget, debtId: string, key: string): void {
   debt.plans = debt.plans.filter((p) => p !== now);
   if (a.was) debt.plans.push(structuredClone(a.was));
   debt.planAnswers = Object.fromEntries(Object.entries(debt.planAnswers ?? {}).filter(([k]) => k !== key));
+  refitPlans(debt, today);
 }

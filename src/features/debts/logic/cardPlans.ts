@@ -2,6 +2,7 @@ import { addDays, addMonths, diffDays, gemCycleEndOnOrAfter, monthName, type ISO
 import type { Cents, Debt, DebtPlan } from '../../../core/types';
 import { cleanDescription } from '../../insights/logic/spending';
 import { gemPlanEnds } from './gem';
+import { fitPlansToBalance } from './payments';
 
 // ---------------------------------------------------------------------------------------------
 // Plans read from a card's own transactions (Gem Visa through the bank connection). Gem moves a
@@ -137,13 +138,38 @@ export function syncCardPlans(debt: Debt, today: ISODate): { guessed: Set<string
     const plan: DebtPlan = ours ?? { id: `card-${ends}`, name: '', type: 'interest-free', months: GEM_PLAN_MONTHS, original: 0, remaining: 0, asOf: today, purchaseDate: c.first, ends };
     if (!ours) debt.plans.push(plan);
     made.add(ends);
-    // Ours is the card's purchases exactly: a purchase joining it adds to what's left, one that belonged to another month comes off.
-    const diff = c.total - plan.original;
-    Object.assign(plan, { name: cycleName(c.moved), purchaseDate: c.first });
-    if (diff !== 0) Object.assign(plan, { original: c.total, remaining: Math.max(0, plan.remaining + diff), asOf: today });
+    // Ours is the card's purchases in that month, exactly.
+    Object.assign(plan, { name: cycleName(c.moved), purchaseDate: c.first, original: c.total });
   }
-  // A plan for a purchase still pending (a special deal you set up from a screenshot) has had nothing paid off it yet.
-  const pending = pendingPlans(debt, today);
   debt.cardPlans = [...made].sort().slice(-60);
-  return { guessed: new Set(debt.plans.filter(isCyclePlan).map((p) => p.id)), pending };
+  return resetGuesses(debt, today);
+}
+
+/** A plan whose amount left is worked out here, not given: our 6-month plans (`card-`), and plans from Plan check answers (`ask-`). */
+export const isGuess = (p: DebtPlan): boolean => p.id.startsWith('card-') || p.id.startsWith('ask-');
+
+/**
+ * Every plan whose amount left is worked out here goes back to its full amount (ended ones go), ready to
+ * be fitted to the card's balance again: what's left on each is then the same every time, worked out
+ * from the balance in Gem's order, never a figure brought down a little more on each sync. Returns those
+ * plans, and the plans for purchases still pending.
+ */
+function resetGuesses(debt: Debt, today: ISODate): { guessed: Set<string>; pending: Set<string> } {
+  // A plan for a purchase still pending (a special deal) has had nothing paid off it yet.
+  const pending = pendingPlans(debt, today);
+  debt.plans = debt.plans.filter((p) => !isGuess(p) || !p.ends || p.ends > today);
+  for (const p of debt.plans) if (isGuess(p) && p.remaining !== p.original) { p.remaining = p.original; p.asOf = today; }
+  return { guessed: new Set(debt.plans.filter(isGuess).map((p) => p.id)), pending };
+}
+
+/**
+ * Work out what's left on each plan from the card's balance: plans worked out here start full, and what
+ * all the plans add up to over the balance comes off them in Gem's order (instalments due, then the
+ * interest-free plans that end soonest), before plans you or a statement set, and never off a pending
+ * purchase's plan. Used after a Plan check answer; a bank sync does the same through `applyStatement`.
+ */
+export function refitPlans(debt: Debt, today: ISODate): void {
+  if (debt.rules !== 'gem') return;
+  const { guessed, pending } = resetGuesses(debt, today);
+  fitPlansToBalance(debt, today, debt.plans.filter((p) => !guessed.has(p.id) && !pending.has(p.id)).map((p) => p.id), pending);
 }
