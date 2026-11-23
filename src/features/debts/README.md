@@ -6,6 +6,7 @@ repaid from salary) and people you owe. Each debt has payment plans; payday send
 ## Files
 - `DebtsPage.tsx`: the page: the total owed and the chart, then each debt's card (what's owed, what this pay sends against what's recommended, its plans, payments, transactions, payday history). `AllocationRow` shows one debt's recommended payment.
 - `DebtPlans.tsx`: a card's Payment plans: all of them paid of their total, then each plan's paid of total, months left of its length, and next payment (`logic/activity.ts` → `planProgress`).
+- `PlanCheck.tsx`: Plan check, the Debts pop-up for big card purchases the bank can't say the plan of (a special deal, an older 6-month plan): pick its length and what's left, or "No plan or paid off"; answers can be undone. Opens by itself after a sync when there's a new one (`usePlanCheck`), like Bill check on Accounts; `PlanCheckButton` in the page header. Logic: `logic/planCheck.ts`.
 - `DebtActivity.tsx`: `DebtPayments` (payments to the card: from which account, Pending until the card shows it, then Received), `DebtPaydayHistory` (what payday sent for it each pay), `StatementDueLine` (the latest statement's amount to avoid interest and minimum, beside the recommendation).
 - `DebtChart.tsx`: what's owed over the coming pays, by debt.
 - `DebtModal.tsx`: add or edit a debt (name, kind, card rules, payday account, hold account, statement day, limit, rate). Also opened from the Add button.

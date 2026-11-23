@@ -9,6 +9,7 @@ import { moveAmong } from '../../core/order';
 import { bankSync, readBankConfig } from '../../services/bank/bank';
 import { DebtPayday } from './DebtPayday';
 import { DebtPlans } from './DebtPlans';
+import { PlanCheckButton, PlanCheckModal, usePlanCheck } from './PlanCheck';
 import { DebtPayments, DebtPaydayHistory, StatementDueLine } from './DebtActivity';
 import { TransactionList } from '../../shared/Transactions';
 import { fmtDay, fmtShort, monthName, todayISO, type ISODate } from '../../core/dates';
@@ -53,6 +54,8 @@ export function DebtsPage() {
   const [open, setOpen] = useState<string[]>([]);
   const toggle = (id: string) => setOpen((o) => (o.includes(id) ? o.filter((x) => x !== id) : [...o, id]));
   const [editDebt, setEditDebt] = useState<{ debt: Debt; tab?: DebtTab } | null>(null);
+  // Big card purchases the bank can't say the plan of: asked about in a pop-up that opens by itself.
+  const check = usePlanCheck();
 
   // Recommended payments are for the next payday.
   // Recommendations are for the pay being viewed (or the next one to come, if that pay has already started).
@@ -105,6 +108,7 @@ export function DebtsPage() {
     <>
       <DayPicker dv={dv} title="Debts">
         <div className="page-actions">
+          <PlanCheckButton count={check.questions.length} onClick={() => check.setOpen(true)} />
           {debts.length > 1 && <ReorderToggle on={reorder} onChange={setReorder} />}
           <button className="btn primary" onClick={() => setDebtModal({})}><Icon name="plus" /> Add debt</button>
         </div>
@@ -251,6 +255,7 @@ export function DebtsPage() {
         });
         setEditDebt(null);
       }} /> : null; })()}
+      {check.open && <PlanCheckModal questions={check.questions} onClose={() => check.setOpen(false)} />}
       {payModal && <PaymentModal debt={payModal} onClose={() => setPayModal(null)} />}
       {planModal && <PlanModal debt={planModal.debt} plan={planModal.plan} prefill={planModal.prefill} onClose={() => setPlanModal(null)} />}
       {debtModal && <DebtModal debt={debtModal.debt} onClose={() => setDebtModal(null)} onDelete={(d) => {

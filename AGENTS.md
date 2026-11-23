@@ -46,7 +46,7 @@ before dev/build), `.github/workflows/pages.yml` (deploys `main` to GitHub Pages
 | Pay periods, paydays, weekend rules, a moved payday | `engine/periods.ts` |
 | When a cost falls (weekly, monthly, skip near payday) | `engine/occurrences.ts` |
 | Money put aside (WOF, tyres) or envelopes (Gas a month, Food a week) | `engine/setAside.ts`, `engine/envelope.ts`; what counts against one (purchases, transfers that paid for one): `engine/envelopeMatch.ts`; a shop counted as the wrong kind (a fuel station as food): the shop rules in `features/insights/logic/spending.ts` (`FUEL_SHOPS`); Accounts card: `features/accounts/EnvelopeCards.tsx` |
-| A card linked to the bank (Gem Visa through Akahu): linking it, its pending purchases (owed too), plans read from its transactions, payments Pending vs Received, plan progress, payday history, a statement's amount to avoid interest | `services/bank/bank.ts` → `newCardLinks`, `applyBank`; `features/debts/logic/cardPlans.ts`, `activity.ts`; card: `features/debts/DebtPlans.tsx`, `DebtActivity.tsx`; what the bank server sends: `services/bank/README.md` |
+| A card linked to the bank (Gem Visa through Akahu): linking it, its pending purchases (owed too), plans read from its transactions, payments Pending vs Received, plan progress, payday history, a statement's amount to avoid interest; Plan check (asks the plan of a big purchase the bank can't say) | `services/bank/bank.ts` → `newCardLinks`, `applyBank`; `features/debts/logic/cardPlans.ts`, `activity.ts`, `planCheck.ts` (pop-up: `features/debts/PlanCheck.tsx`); card: `features/debts/DebtPlans.tsx`, `DebtActivity.tsx`; what the bank server sends: `services/bank/README.md` |
 | Which bank transaction paid a bill (card on another account, made-up transfers), bills not seen, a held debt (Gem) paid from another account; the Accounts bill check pop-up | `engine/billMatch.ts`; suggestions: `features/accounts/logic/billCheck.ts`; pop-up: `features/accounts/BillCheck.tsx` |
 | What payday sends each account (fixed / exact / steady); "allocated this pay" (what it sent this pay: `depositFor`) | `engine/balances/` (README lists which file does what) |
 | A pay's plan: totals, leftover, what each account needs | `engine/plan.ts` → `planFor()` |
@@ -171,6 +171,7 @@ npm run screenshot -- '#/accounts' --today 2026-11-22   # a page with the real b
 npm run live -- parts-tip --wait   # after merging: waits until the published app has that text
 ```
 
+Edit code with the Edit and Write tools, not a Python or sed heredoc in Bash: a heredoc holding JS (`delete x[k]`, `${…}`) can be refused by Claude Code's removal check, though it deletes nothing.
 Run one test file with `npx vitest run src/engine/periods.test.ts`. To check a new test catches the bug, run it with the fix set aside: `git stash push <file>`, run, `git stash pop`. Test budgets and helpers are in `src/testing/fixtures.ts`.
 
 ## Other sessions change `main` too
