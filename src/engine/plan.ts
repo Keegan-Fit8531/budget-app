@@ -153,6 +153,31 @@ export function planFor(b: Budget, period: Period, today: ISODate = todayISO()):
   return { period, pay, payIsActual: actual !== undefined, payEstimateFrom: prevKey, totalSplit, leftover, accounts, dues: allDues };
 }
 
+/**
+ * What payday sends to accounts in all, in the view's terms (`sentOf`: this pay's `funded`, or an average).
+ * Leaves out the pay account, and a debt held in another account (Gem in Misc bills), whose money is
+ * already in that account's send. The same rule as `PeriodPlan.totalSplit`.
+ */
+export function sendsTotal(b: Budget, accounts: AccountPlan[], sentOf: (a: AccountPlan) => Cents): Cents {
+  return accounts.filter((a) => a.account.id !== b.settings.payAccountId && !isHoldDisplayAccount(b, a.account.id))
+    .reduce((t, a) => t + sentOf(a), 0);
+}
+
+/**
+ * Each account's part of a pay as charts and lists show it (not the pay account; nothing below $0). A held
+ * debt (Gem in Misc bills) shows as its own amount, taken out of the account holding it, so it's counted once.
+ */
+export function splitShown(b: Budget, accounts: AccountPlan[], sentOf: (a: AccountPlan) => Cents): Map<string, Cents> {
+  const rows = accounts.filter((a) => a.account.id !== b.settings.payAccountId);
+  const holdOut = new Map<string, Cents>();
+  for (const a of rows) {
+    if (!isHoldDisplayAccount(b, a.account.id)) continue;
+    const holds = new Set((b.debts ?? []).filter((d) => d.accountId === a.account.id && d.holdAccountId).map((d) => d.holdAccountId!));
+    for (const h of holds) holdOut.set(h, (holdOut.get(h) ?? 0) + Math.max(0, sentOf(a)));
+  }
+  return new Map(rows.map((a) => [a.account.id, Math.max(0, sentOf(a) - (holdOut.get(a.account.id) ?? 0))]));
+}
+
 /** Steady per-pay amount for an account: its items' long-run monthly average. */
 export function averageNeed(b: Budget, accountId: string): Cents {
   const mine = b.items.filter((i) => i.accountId === accountId && i.frequency !== 'once');

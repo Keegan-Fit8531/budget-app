@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { budget, debtBudget, debt } from '../testing/fixtures';
 import { tidy } from './upgrade';
 
@@ -30,5 +30,21 @@ describe('tidy (loading an older save)', () => {
     debt(b, 'gem').balance = { amount: 150000, asOf: '2026-11-16' };
     tidy(b);
     expect(debt(b, 'gem').plans.reduce((t, p) => t + p.remaining, 0)).toBe(150000);
+  });
+
+  it('once, moves a card\'s early payment saved under later paydays to the day it was paid (not Gem\'s)', () => {
+    vi.setSystemTime(new Date('2026-11-24T00:00:00Z'));
+    const b = debtBudget();
+    const q = debt(b, 'qcard'), gem = debt(b, 'gem');
+    q.bankPayments = [{ date: '2026-11-20', amount: 30000, from: 'weekly', counted: 30000 }];
+    q.paid = [{ date: '2026-11-19', amount: 5000, name: 'A' }, { date: '2026-12-18', amount: 5000, name: 'B' }, { date: '2027-01-19', amount: 4000, name: 'C' }];
+    gem.paid = [{ date: '2026-12-21', amount: 5000, name: 'TV' }];
+    tidy(b);
+    expect(q.paid.map((x) => [x.name, x.date])).toEqual([['A', '2026-11-19'], ['B', '2026-11-20'], ['C', '2026-11-20']]);
+    expect(gem.paid[0].date).toBe('2026-12-21');
+    q.paid.push({ date: '2027-02-19', amount: 1000, name: 'D' });
+    tidy(b);
+    expect(q.paid[3].date).toBe('2027-02-19');
+    vi.useRealTimers();
   });
 });

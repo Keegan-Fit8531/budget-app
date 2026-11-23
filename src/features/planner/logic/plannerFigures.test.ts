@@ -3,7 +3,7 @@ import type { Account, Budget } from '../../../core/types';
 import { periodContaining } from '../../../engine/periods';
 import { planFor, type AccountPlan, type PeriodPlan } from '../../../engine/plan';
 import type { BalanceResult } from '../../../engine/rebalance';
-import { budget } from '../../../testing/fixtures';
+import { budget, heldGemBudget } from '../../../testing/fixtures';
 import { chartSlices, paydayCards, payNotes, plannerFigures, viewScale } from './plannerFigures';
 
 // Before the pay of 19 Nov starts, so nothing about it is frozen yet.
@@ -109,6 +109,17 @@ describe('plannerFigures', () => {
     // Under $1 over: nothing worth handing out.
     b.payActuals[payOf(b).start] = 500000 - f.leftover + 50;
     expect(plannerFigures(b, payOf(b), 'period', today, null).canOptimise).toBe(false);
+  });
+
+  it('Month avg: a debt held in another account (Gem in Misc bills) isn\'t taken off the leftover twice', () => {
+    const b = heldGemBudget();
+    b.payActuals[payOf(b).start] = 500000;
+    const f = plannerFigures(b, payOf(b), 'month', today, null);
+    const gem = f.planned!.get('gem')!.sent;
+    expect(gem).toBeGreaterThan(0);
+    // What's budgeted is what the ring shows: Gem once, under Debt.
+    expect(Math.abs(f.totalBudgeted - f.slices.reduce((t, s) => t + s.value, 0))).toBeLessThan(10);
+    expect(Math.abs(f.leftover + f.totalBudgeted - f.v(f.plan.pay))).toBeLessThan(10);
   });
 
   it('without a payslip or an earlier pay, nothing is known yet', () => {

@@ -3,8 +3,8 @@
 Plain functions behind the Planner (no React).
 
 ## Files
-- `plannerFigures.ts`: everything the Planner shows for one pay and view: `plannerFigures` (totals, leftover, what needs balancing, whether Optimise is offered), `viewScale` (amounts per week, fortnight, month or year), `payNotes` ("What's different this pay"), `paydayCards`, `chartSlices` (a held debt counts under Debt and comes off its hold account, so it's counted once).
-- `plannerFigures.test.ts`: the view scale, notes and their reasons, which cards show, the chart, and when to balance or optimise.
+- `plannerFigures.ts`: everything the Planner shows for one pay and view: `plannerFigures` (totals, leftover, what needs balancing, whether Optimise is offered), `viewScale` (amounts per week, fortnight, month or year), `payNotes` ("What's different this pay"), `paydayCards`, `chartSlices` (by group; a held debt counted once, via `engine/plan.ts` → `splitShown`).
+- `plannerFigures.test.ts`: the view scale, notes and their reasons, which cards show, the chart, Month avg with a held debt, and when to balance or optimise.
 - `allocate.ts`: Optimise. `allocationTargets` (where leftover money can go: goals, the weekly allowance, debts, spending), `applyAllocation`, `undoAllocation` (puts back only what Optimise changed), `existingExtras` (extra already added for this pay only), `allowancePerWeek`.
 - `allocate.test.ts`: optimising the leftover, then changing it.
 - `weeks.ts`: the weeks view: `calendarWeeks` (Mon–Sun weeks spanning a pay) and `weeklyCoverage` (weekly costs switched on for it).

@@ -3,7 +3,7 @@ import { cash } from '../../../core/money';
 import type { Budget, Cents } from '../../../core/types';
 import { convert, type View } from '../../../engine/frequency';
 import type { Period } from '../../../engine/periods';
-import { averageSplit, planFor, plannedAverage, type AccountPlan, type PeriodPlan } from '../../../engine/plan';
+import { averageSplit, planFor, plannedAverage, sendsTotal, splitShown, type AccountPlan, type PeriodPlan } from '../../../engine/plan';
 import { autoPays, balancePay, type BalanceResult } from '../../../engine/rebalance';
 import { owed } from '../../debts/logic/amounts';
 import { isHoldDisplayAccount } from '../../debts/logic/funding';
@@ -89,26 +89,13 @@ export function paydayCards(b: Budget, plan: PeriodPlan): AccountPlan[] {
 export interface Slice { label: string; color: string; value: Cents }
 
 /**
- * "Where this pay goes", by group, in the view's terms (`sentOf`). A hold-display debt counts under its
- * own group (Debt) and is taken out of its hold account, so the same money isn't counted twice.
+ * "Where this pay goes", by group, in the view's terms (`sentOf`). A held debt counts once, under its
+ * own group (Debt): see `splitShown`.
  */
 export function chartSlices(b: Budget, plan: PeriodPlan, sentOf: (a: AccountPlan) => Cents): Slice[] {
-  const payId = b.settings.payAccountId;
-  const holdOut = new Map<string, number>();
-  for (const a of plan.accounts) {
-    if (a.account.id === payId || !isHoldDisplayAccount(b, a.account.id)) continue;
-    const amt = sentOf(a);
-    if (amt <= 0) continue;
-    for (const d of b.debts ?? []) {
-      if (d.accountId !== a.account.id || !d.holdAccountId) continue;
-      holdOut.set(d.holdAccountId, (holdOut.get(d.holdAccountId) ?? 0) + amt);
-    }
-  }
-  const chartOf = (a: AccountPlan) => {
-    if (isHoldDisplayAccount(b, a.account.id)) return sentOf(a);
-    return Math.max(0, sentOf(a) - (holdOut.get(a.account.id) ?? 0));
-  };
-  const accounts = plan.accounts.filter((a) => a.account.id !== payId);
+  const shown = splitShown(b, plan.accounts, sentOf);
+  const chartOf = (a: AccountPlan) => shown.get(a.account.id) ?? 0;
+  const accounts = plan.accounts.filter((a) => a.account.id !== b.settings.payAccountId);
   const grouped = new Set(b.groups.map((g) => g.id));
   return [
     ...b.groups.map((g) => ({ label: g.name, color: g.color, value: accounts.filter((a) => a.account.groupId === g.id).reduce((t, a) => t + chartOf(a), 0) })),
@@ -178,7 +165,7 @@ export function plannerFigures(b: Budget, period: Period, mode: PlannerMode, tod
   const usualTotal = plan.accounts.filter((a) => a.account.id !== payId).reduce((t, a) => t + usualOf(a.account.id), 0);
 
   const planned = longRun ? new Map(plan.accounts.map((a) => [a.account.id, plannedAverage(b, a.account.id, today)])) : null;
-  const plannedTotal = planned ? plan.accounts.filter((a) => a.account.id !== payId).reduce((t, a) => t + (planned.get(a.account.id)?.sent ?? 0), 0) : 0;
+  const plannedTotal = planned ? sendsTotal(b, plan.accounts, (a) => planned.get(a.account.id)?.sent ?? 0) : 0;
   const totalBudgeted = split ? v(plan.totalSplit) : longRun ? v(plannedTotal) : plan.totalSplit;
   const leftover = split ? v(plan.leftover) : longRun ? v(plan.pay - plannedTotal) : plan.leftover;
 

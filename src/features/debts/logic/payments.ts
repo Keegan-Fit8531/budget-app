@@ -22,7 +22,8 @@ export function applyPayment(debt: Debt, amount: Cents, s: Settings, date: ISODa
   if (debt.rules === 'gem') return gemApply(debt, amount, s, date);
   // Paid on a payday: that's the payday's own payment, so the next one planned is the payday after
   // (dated the day after, the same way a payslip's loan deduction is, so it isn't counted twice).
-  const asOf = periodContaining(date, s).start === date ? addDays(date, 1) : date;
+  const pay = periodContaining(date, s);
+  const asOf = pay.start === date ? addDays(date, 1) : date;
   const due = debtSchedules(debt, s)
     .flatMap((sch) => sch.payments.map((p) => ({ plan: sch.plan, date: p.date, amount: p.amount, synthetic: !!sch.synthetic })))
     .sort((a, b) => a.date.localeCompare(b.date) || a.plan.name.localeCompare(b.plan.name));
@@ -45,9 +46,12 @@ export function applyPayment(debt: Debt, amount: Cents, s: Settings, date: ISODa
     }
     applied.push({ planId: p.id, planName: p.name, date: d.date, amount: take, cleared: take === d.amount });
     if (take > 0) {
+      // Paid early, for a later pay: it came out of this pay, on the day it was paid. (Under the later
+      // payday, that pay would count it as well as what it still has to pay.)
+      const on = d.date > pay.end ? date : d.date;
       log.push(d.synthetic
-        ? { date: d.date, amount: take, name: p.name, synthetic: true }
-        : { date: d.date, amount: take, name: p.name, planId: p.id });
+        ? { date: on, amount: take, name: p.name, synthetic: true }
+        : { date: on, amount: take, name: p.name, planId: p.id });
     }
   }
   if (debt.balance) debt.balance = { amount: Math.max(0, debt.balance.amount - amount), asOf: later(debt.balance.asOf, asOf) };
@@ -87,6 +91,22 @@ export function fitPlansToBalance(debt: Debt, date: ISODate, trusted: Iterable<s
 }
 
 export const later = (a: ISODate, b: ISODate): ISODate => (a > b ? a : b);
+
+/**
+ * Saved payments counted as paid under a payday after this pay (an early payment, logged under the later
+ * payday's date) move to the day of the latest payment seen on or before today, or today. Not Gem (its
+ * statement payments are this pay's). Returns how many moved.
+ */
+export function redateEarlyPaid(debt: Debt, s: Settings, today: ISODate): number {
+  if (debt.rules === 'gem' || !debt.paid?.length) return 0;
+  const end = periodContaining(today, s).end;
+  const seen = (debt.bankPayments ?? []).map((p) => p.date).filter((d) => d <= today).sort();
+  const on = seen.length ? seen[seen.length - 1] : today;
+  let moved = 0;
+  for (const x of debt.paid) if (x.date > end) { x.date = on; moved++; }
+  if (moved) debt.paid.sort((a, b) => a.date.localeCompare(b.date));
+  return moved;
+}
 
 /**
  * Note a payment made on `date` in the debt's history. Usually that's just today's amount owed. A payment

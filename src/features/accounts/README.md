@@ -19,7 +19,7 @@ heading; and the Deposits pop-up (`#/accounts/deposits/<id>`) that sets what pay
 - Misc bills' "Spare … above the max" is what's left after bills *and* the set-asides' max (Haircut $60): the set-aside is full. `npm run inspect -- misc` prints both.
 - To check a bar part, tap it in a screenshot: `--click '.acct:has-text("Misc bills") .parts-bar button[aria-label^="Haircut"]' --only '.acct:has-text("Misc bills")'`.
 - The tracker's key leaves out Paid and Spare (the tiles show them) and must fit one line on a 390px phone.
-- Keep the card short on a phone: figures and one line per item, plus what needs doing (a transfer to place, money to move, short). Notes that explain go inside the Details `Collapse`, not above it. Check with `npm run screenshot -- '#/accounts' --width 400 --dark --click 'text=Later' --only '.acct:has-text("Food and gas")'`.
+- Keep the card short on a phone: figures and one line per item, plus what needs doing (a transfer to place, money to move, short). Notes that explain go inside the Details `Collapse`, not above it. Check with `npm run screenshot -- '#/accounts' --width 400 --dark --click 'text="Later"' --only '.acct:has-text("Food and gas")'`.
 - Balances you enter are kept with their date (`budget.balances`) and in the history; every projection carries on from the latest one.
 - What payday sends comes from `engine/balances/deposits.ts` → `depositFor`. The labels for each payday mode are in `logic/paydayModes.ts`.
 
