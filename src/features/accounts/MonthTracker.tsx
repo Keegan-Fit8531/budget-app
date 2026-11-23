@@ -8,7 +8,8 @@ import { debtAdvice } from '../debts/logic/advice';
 import { accountEnvelopes, envelopeHeld } from '../../engine/envelope';
 import { EnvelopeDetails, EnvelopeSummary } from './EnvelopeCards';
 import { MovesSummary, OtherMoves, ToMoveNotes, paidHow } from './BankSeen';
-import { asideMaxSaved, asideSplit, hasSetAsides, isHeldInAccount, setAsidePerPay } from '../../engine/setAside';
+import { asideMaxSaved, asideSplit, hasSetAsides, isHeldInAccount } from '../../engine/setAside';
+import { AsideSpendsDetail, AsideSummary, asideColor } from './AsideCards';
 import { type Period } from '../../engine/periods';
 import { asideNames } from '../../engine/rebalance';
 import { sameColor, tone } from '../../core/colors';
@@ -17,10 +18,6 @@ import type { Account, Budget } from '../../core/types';
 import { Icon } from '../../ui/Icon';
 import { PartsBar, type Part } from '../../ui/PartsBar';
 import { Collapse, Disclosure, FlatDetails, ShortList } from '../../ui/components';
-
-/** A colour per put-aside cost on the bar (Haircut, WOF, maintenance), so neighbours differ. */
-const ASIDE_COLORS = ['var(--pal-orchid)', 'var(--pal-plum)', 'var(--pal-indigo)', 'var(--pal-rose)'];
-const asideColor = (i: number) => ASIDE_COLORS[i % ASIDE_COLORS.length];
 
 /** Takes `amount` off the last parts (what's not covered when the account is short), so the bar ends at the balance. */
 function trimEnd(parts: Part[], amount: number) {
@@ -158,39 +155,8 @@ export function MonthTracker({ budget, account, today = todayISO(), open, toggle
         </div>
       )}
 
-      {/* Money put aside (a car fund): nothing comes out on a date, so what matters is what's built up and what's next. */}
-      {t.balanceKnown && aside && !paysBills && (
-        <div className="stack gap-8">
-          {t.balanceSource === 'entered' && t.balance > 0 && (
-            <PartsBar label={`${account.name}: tap a part to see it`} parts={[
-              ...asideSplit(budget, account.id, t.balance).map((x, i) => ({
-                label: x.item.name, value: x.amount, color: asideColor(i),
-                note: x.item.maxSaved ? (x.amount >= x.item.maxSaved ? 'full' : `max ${cash(x.item.maxSaved)}`) : `${cash(setAsidePerPay(x.item))} a month`,
-              })),
-              { label: 'Spare above the max', value: maxAside !== undefined ? Math.max(0, t.balance - maxAside) : 0, color: 'var(--good)' },
-            ]} />
-          )}
-          <div className="trio">
-            <div className="stat">
-              <span className="small muted">Put aside</span>
-              <b>{t.balanceSource === 'entered'
-                ? cash(maxAside !== undefined ? Math.min(Math.max(0, t.balance), maxAside) : Math.max(0, t.balance))
-                : '—'}</b>
-              <span className="xs muted">{namesShort !== names && maxAside !== undefined ? `max ${cash(maxAside)}` : `for ${namesShort}`}</span>
-            </div>
-            <div className="stat">
-              <span className="small muted">Next pay adds</span>
-              <b>+{cash(t.next.deposit)}</b>
-              <span className="xs muted">on {fmtShort(t.next.period.start)}</span>
-            </div>
-          </div>
-          {maxAside !== undefined && t.balanceSource === 'entered' && t.balance > maxAside && (
-            <p className="small muted">
-              {cash(t.balance - maxAside)} spare above the {cash(maxAside)} max.
-            </p>
-          )}
-        </div>
-      )}
+      {/* Money put aside (a car fund): nothing comes out on a date, so what matters is what's built up and what it's paid for. */}
+      {aside && !paysBills && <AsideSummary budget={budget} account={account} t={t} names={names} namesShort={namesShort} maxAside={maxAside} today={today} />}
 
       {t.balanceKnown && !(aside && !paysBills) && envOnly && (short || leftAmount > 0) && (
         <div className="env-line">
@@ -296,6 +262,7 @@ export function MonthTracker({ budget, account, today = todayISO(), open, toggle
             </Disclosure>
           )}
 
+          {aside && !paysBills && <AsideSpendsDetail budget={budget} account={account} today={today} />}
           <OtherMoves t={t} account={account} />
 
           {t.next.rows.length > 0 && (

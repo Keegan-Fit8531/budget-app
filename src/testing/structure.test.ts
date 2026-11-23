@@ -24,7 +24,6 @@ const CSS_CHARS_PER_LINE = 63;
  */
 const OVER_AIM: Record<string, number> = {
   '/src/services/reader/check/check.test.ts': 447,
-  '/src/features/accounts/MonthTracker.tsx': 418,
   '/src/ui/styles/components.css': 417,
   '/src/services/reader/apply.ts': 413,
 };

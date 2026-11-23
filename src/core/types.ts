@@ -309,6 +309,11 @@ export interface Budget {
    */
   envelopeTransfers?: Record<string, string>;
   /**
+   * What money out of a put-aside account paid for (Car maintenance → $200 to Weekly allowance for the rego):
+   * `transferKey` → the put-aside cost's id, or '' for "not from the put-aside money". `features/accounts/logic/asideSpends.ts`.
+   */
+  asideSpends?: Record<string, string>;
+  /**
    * Your answers to the bill check (Accounts, after a bank sync), by `engine/billMatch.ts` → `checkKey`,
    * with the day you answered: `move|item|date` (paid on another account's card, but no need to move
    * money back), `paid|item|date` (paid, though the bank doesn't show it), `day|item|19` / `amount|item|cents`
