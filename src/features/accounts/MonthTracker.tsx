@@ -5,7 +5,7 @@ import { billTracker } from '../../engine/balances/billTracker';
 import { nextBufferUse, payProjection } from '../../engine/balances/projection';
 import { fmtDay, fmtShort, monthName, ordinal, todayISO } from '../../core/dates';
 import { debtAdvice } from '../debts/logic/advice';
-import { accountEnvelopes, envelopeHeld } from '../../engine/envelope';
+import { accountEnvelopes, envelopeHeld, transferKey } from '../../engine/envelope';
 import { EnvelopeDetails, EnvelopeSummary } from './EnvelopeCards';
 import { MovesSummary, OtherMoves, ToMoveNotes, paidHow } from './BankSeen';
 import { asideMaxSaved, asideSplit, hasSetAsides, isHeldInAccount } from '../../engine/setAside';
@@ -156,7 +156,7 @@ export function MonthTracker({ budget, account, today = todayISO(), open, toggle
       )}
 
       {/* Money put aside (a car fund): nothing comes out on a date, so what matters is what's built up and what it's paid for. */}
-      {aside && !paysBills && <AsideSummary budget={budget} account={account} t={t} names={names} namesShort={namesShort} maxAside={maxAside} today={today} />}
+      {aside && !paysBills && <AsideSummary budget={budget} account={account} t={t} maxAside={maxAside} today={today} />}
 
       {t.balanceKnown && !(aside && !paysBills) && envOnly && (short || leftAmount > 0) && (
         <div className="env-line">
@@ -201,7 +201,6 @@ export function MonthTracker({ budget, account, today = todayISO(), open, toggle
       {toggle}
       <Collapse open={open} stacked><FlatDetails.Provider value>
         <div className="stack gap-12">
-          {t.balanceKnown && aside && !paysBills && asideNote}
           {t.balanceKnown && !(aside && !paysBills) && <>
             {!short && gasHeld > 0 && spareAmt > 0 && bufferShown === undefined && (
               <p className="small muted">{cash(gasHeld)} still budgeted for {envNames} (assumed spent). Anything left when each one resets is yours.</p>
@@ -263,7 +262,8 @@ export function MonthTracker({ budget, account, today = todayISO(), open, toggle
           )}
 
           {aside && !paysBills && <AsideSpendsDetail budget={budget} account={account} today={today} />}
-          <OtherMoves t={t} account={account} />
+          {/* Money out you said the put-aside money paid for is listed above it, not here. */}
+          <OtherMoves t={{ ...t, moves: t.moves.filter((m) => !budget.asideSpends?.[transferKey(account.id, m.txn)]) }} account={account} />
 
           {t.next.rows.length > 0 && (
             <Disclosure title={`Next pay, ${fmtShort(t.next.period.start)}`}

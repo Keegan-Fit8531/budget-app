@@ -7,7 +7,7 @@ import { debtAdvice } from '../features/debts/logic/advice';
 import { fundingAccountId } from '../features/debts/logic/funding';
 import { todayISO } from '../core/dates';
 import {
-  asideMaxSaved, asideSpareNow, envelopeOn, hasEnvelopes, hasSetAsides, isEnvelope, isHeldInAccount, isSetAside, setAsideOn,
+  asideLabel, asideMaxSaved, asideSpareNow, envelopeOn, hasEnvelopes, hasSetAsides, isEnvelope, isHeldInAccount, isSetAside, setAsideOn,
 } from './setAside';
 import { periodContaining, shiftPeriod, upcomingPayPeriod, type Period } from './periods';
 import { planFor } from './plan';
@@ -283,7 +283,7 @@ export function balancedMode(b: Budget, accountId: string): 'smooth' | 'not-fixe
 
 /** "Motor maintenance and WOF": what an account puts aside, for messages. */
 export function asideNames(b: Budget, accountId: string): string {
-  const names = [...new Set(b.items.filter((i) => i.accountId === accountId && isSetAside(i)).map((i) => i.name))];
+  const names = [...new Set(b.items.filter((i) => i.accountId === accountId && isSetAside(i)).map((i) => asideLabel(i.name)))];
   return names.length <= 1 ? names[0] ?? 'later costs' : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
 }
 

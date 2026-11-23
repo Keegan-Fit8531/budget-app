@@ -10,6 +10,9 @@ import { itemDates } from './occurrences';
 /** A cost that's put aside each pay and kept in its account until needed (a WOF, tyres), not paid out on a date. */
 export const isSetAside = (item: Pick<Item, 'setAside'>): boolean => item.setAside === true;
 
+/** A put-aside cost's name for sentences and labels, without a "set-aside" on the end ("WOF / rego set-aside" → "WOF / rego"). */
+export const asideLabel = (name: string): string => name.replace(/[\s-]*set[\s-]?aside$/i, '') || name;
+
 /** Envelope (Gas $200/month, Food $200/week): funded on payday, spent from synced purchases, resets each span. */
 export const isEnvelope = (item: Pick<Item, 'envelope'>): boolean => item.envelope !== undefined;
 
