@@ -150,6 +150,21 @@ describe('recording a debt payment', () => {
     expect(planSchedule(debt, debt.plans[0], s).payments[0]).toMatchObject({ date: '2026-11-19', amount: 20000 });
   });
 
+  it('a payment that clears later paydays early counts as paid the day it was made, not on those paydays', () => {
+    const b = budget();
+    b.accounts.push({ id: 'd', name: 'Loan', kind: 'external', color: '#000', groupId: 'debt' });
+    b.debts = [{
+      id: 'd', name: 'Loan', kind: 'loan', accountId: 'd',
+      plans: [{ id: 'p', name: 'Car', type: 'balance', original: 100000, remaining: 100000, asOf: '2026-11-01', purchaseDate: '2026-11-01', payment: 20000 }],
+    }];
+    // On the 19 Nov payday, $600 goes in: that payday's $200, and the next two paid early.
+    applyPayment(b.debts[0], 60000, b.settings, '2026-11-19');
+    expect(b.debts[0].paid!.map((x) => [x.date, x.amount])).toEqual([['2026-11-19', 20000], ['2026-11-19', 20000], ['2026-11-19', 20000]]);
+    // The December pay has only what's still to pay (the rest goes on), not the early payment as well.
+    const dec = periodContaining('2026-12-20', b.settings);
+    expect(debtPaymentsIn(b, 'd', dec.start, dec.end).map((x) => x.amount)).toEqual([20000]);
+  });
+
   it("a payment recorded late, dated before a payday that has since gone out, doesn't bring that payday back", () => {
     const s = budget().settings;
     const debt: Debt = {

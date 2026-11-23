@@ -124,3 +124,17 @@ export function billsBudget(items: Partial<Item>[], txns: { bills?: Txn[]; weekl
   b.balances = { bills: { amount: balance, asOf } };
   return b;
 }
+
+/** Misc bills (exact) has a $100 monthly bill and holds Gem Visa's payment ($1,200 over 12 months), as the real budget does. */
+export function heldGemBudget(): Budget {
+  const b = billsBudget([{ amount: 10000, start: '2026-01-25' }], {});
+  b.split.find((l) => l.accountId === 'bills')!.mode = 'exact';
+  b.accounts.push({ id: 'gem', name: 'Gem Visa', kind: 'external', color: '#000', groupId: 'debt' });
+  b.split.push({ accountId: 'gem', amount: 0, mode: 'exact' });
+  b.debts = [{
+    id: 'gem', name: 'Gem Visa', kind: 'card', rules: 'gem', accountId: 'gem', holdAccountId: 'bills', statementDay: 21,
+    plans: [{ id: 'p1', name: 'TV', type: 'interest-free', original: 120000, remaining: 120000, asOf: '2026-11-01', purchaseDate: '2026-11-01', months: 12 }],
+    balance: { amount: 120000, asOf: '2026-11-01' },
+  }];
+  return b;
+}

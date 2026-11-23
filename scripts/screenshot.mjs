@@ -3,7 +3,7 @@
 //   npm run screenshot -- '#/accounts'                           whole page
 //   npm run screenshot -- '#/accounts' --today 2026-11-22        as if it were that day
 //   npm run screenshot -- '#/planner' --file other.json --width 400
-//   npm run screenshot -- '#/accounts' --width 400 --click 'text=Later' \
+//   npm run screenshot -- '#/accounts' --width 400 --click 'text="Later"' \
 //     --click '.acct:has-text("Food and gas") >> text=Details' --only '.acct:has-text("Food and gas")'
 //   --click <selector> (repeatable, in order) taps something first: a pop-up's Later, a card's Details.
 //   --hover <selector> points the mouse at it (a bar part's tip); --tap <selector> taps it with a finger, on a
@@ -27,7 +27,7 @@ const opt = (name, fallback) => {
 const file = resolve(opt('--file', '../budget-data/budget.json'));
 const today = opt('--today');
 const width = Number(opt('--width', '900'));
-// Every --click, --hover and --tap, in the order given (Playwright selectors: 'text=Later', '.acct:has-text("Rent") >> text=Details').
+// Every --click, --hover and --tap, in the order given (Playwright selectors: 'text="Later"' (quoted: exact text), '.acct:has-text("Rent") >> text=Details').
 const steps = [];
 for (let i = 0; i < args.length; i++) {
   if (['--click', '--hover', '--tap'].includes(args[i])) { steps.push({ how: args[i].slice(2), sel: args[i + 1] }); args.splice(i, 2); i--; }

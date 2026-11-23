@@ -7,14 +7,14 @@ code or test fixtures (make up the numbers there, as `src/testing/fixtures.ts` d
 
 ## Files
 - `uses.mjs`: `npm run uses -- <name>` lists every file and line in `src/` that uses a function, type or field; `npm run uses -- engine/envelope.ts` does it for each thing a file exports. A whole-word search, so a field with the same name shows up too. Tests are listed apart.
-- `inspect.ts`: `npm run inspect -- [account] [--today YYYY-MM-DD] [--file path]` prints the real budget (`../budget-data/budget.json` by default) the way the app sees it, loaded as the app loads it (`src/state/upgrade.ts`), using `src/testing/inspect.ts`. Read-only. Runs with `vite-node`.
+- `inspect.ts`: `npm run inspect -- [account] [--today YYYY-MM-DD] [--file path]` prints the real budget (`../budget-data/budget.json` by default) as the app loads and sees it (`src/state/upgrade.ts`, `src/testing/inspect.ts`). Read-only.
 - `screenshot.mjs`: `npm run screenshot -- '#/accounts' [--today …] [--file …] [--width 400] [--dark] [--out file.png]` pictures a page of the running dev server (`npm run dev` first) holding the real budget, in NZ time, and prints where it saved it (outside the repo). Options below.
 - `live.mjs`: `npm run live -- <text> [--wait]` says whether some text is in the published app's code or stylesheet; `--wait` checks every 10s for up to 8 minutes.
 - `stop-checks.sh`: the Claude Code Stop hook (`.claude/settings.json`): when an agent finishes, runs tests, type-check and lint in parallel (about 10s) and hands failures back to fix. Skips when nothing changed since its last pass (remembered in `.git/claude-checks-passed`); after 3 blocks in a row it lets the agent stop and report.
 - `copy-ocr.mjs`: copies the text-recognition engine (Tesseract.js and its English data) from `node_modules` into `public/ocr/` (git-ignored) for the on-device reader (`src/services/reader/documents.ts`). Runs before `npm run dev` and `npm run build` (`npm run ocr`).
 
 ## Reading the real budget
-- Pull `main` of `../budget-data` first (`git -C ../budget-data checkout main && git -C ../budget-data pull`): the app saves there, and a session branch is older.
+- Match `../budget-data` to GitHub first (`git -C ../budget-data fetch origin main && git -C ../budget-data checkout -B main origin/main`): the app saves to `main`. Not `pull`: that history can be rewritten, and a pull then stops ("divergent branches").
   `inspect`'s first line says when that copy was saved: older than the owner's screenshot means the browser has changes the repo hasn't got.
 - Give `--today` as the NZ date: this container's clock is UTC, a day behind NZ until 1pm.
 - A bill "to come" that's already gone was often paid on the EFTPOS card under a cut-off name ("Paypal *Canv"): look in `inspect -- weekly` for it and its make-up transfer.
@@ -27,7 +27,7 @@ code or test fixtures (make up the numbers there, as `src/testing/fixtures.ts` d
 
 ## Screenshot options
 - Look as the owner does, on a phone in dark mode: `--width 400 --dark`.
-- `--click <selector>` taps things first. On Accounts the Bill check pop-up, and on Debts the Plan check one, opens by itself and covers the page: add `--click 'text=Later'`.
+- `--click <selector>` taps things first. On Accounts (Bill check) and Debts (Plan check) a pop-up covers the page: add `--click 'text="Later"'` (quoted, exact: `text=Later` hits "for later costs" under it).
   It can open after a bank sync, later than the clicks: if it's still there, or "Nothing to click" is printed, run it again.
 - Open a card with `--click '.acct:has-text("Rent") >> text=Details'`, and picture only it with `--only '.acct:has-text("Rent")'` (Debts cards are `.acct` too).
   To see a pop-up itself, leave out the click and use `--only '.modal'`; tap an answer with `--click '.check-row:has-text("…") >> text=12 months'`.

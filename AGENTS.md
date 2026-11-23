@@ -72,7 +72,7 @@ Each row names the folder or file to start in; its README has the detail.
 Tests use made-up budgets. Most "why does it show X?" questions are answered by the owner's real one, in
 `../budget-data` (its README says what each account is for). `scripts/README.md` has the how-to and the gotchas:
 
-- `git -C ../budget-data checkout main && git -C ../budget-data pull` first: the app saves to `main`.
+- `git -C ../budget-data fetch origin main && git -C ../budget-data checkout -B main origin/main` first: the app saves to `main`.
 - `npm run inspect -- <account> --today <NZ date>`: an account as the app sees it. The container's clock is UTC, a day behind NZ until 1pm.
 - `npm run dev`, then `npm run screenshot -- '#/accounts' --today <NZ date> --width 400 --dark`: the page as the owner sees it on their phone.
 - For a card's plans, the card's own app is the truth: ask the owner for a screenshot and compare plan by plan.

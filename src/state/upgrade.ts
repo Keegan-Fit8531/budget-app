@@ -1,7 +1,7 @@
 import { freezeLockedPays } from '../engine/balances/freeze';
 import { autoBalance } from '../engine/rebalance';
 import { debtPay } from '../features/debts/logic/amounts';
-import { fitPlansToBalance, settleDue } from '../features/debts/logic/payments';
+import { fitPlansToBalance, redateEarlyPaid, settleDue } from '../features/debts/logic/payments';
 import { syncGemToRecommended } from '../features/debts/logic/funding';
 import { todayISO } from '../core/dates';
 import type { Budget } from '../core/types';
@@ -51,6 +51,12 @@ export function tidy(b: Budget): Budget {
       if (d.balance && d.plans.every((p) => p.asOf <= d.balance!.asOf)) fitPlansToBalance(d, d.balance.asOf);
     }
     b.flags.push('plans-fit-balance');
+  }
+  // An early card payment was counted as paid under the later paydays it cleared, so those pays counted it
+  // twice: move those to the day it was paid, once.
+  if (!b.flags.includes('early-paid-redated')) {
+    for (const d of b.debts) redateEarlyPaid(d, b.settings, todayISO());
+    b.flags.push('early-paid-redated');
   }
   return b;
 }

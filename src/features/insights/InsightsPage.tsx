@@ -6,7 +6,7 @@ import { Icon } from '../../ui/Icon';
 import { SpendingCard } from './SpendingCard';
 import { MonthlyInsights } from './MonthlyInsights';
 import { convert, type View } from '../../engine/frequency';
-import { planFor, plannedAverage } from '../../engine/plan';
+import { planFor, plannedAverage, sendsTotal, splitShown, type AccountPlan } from '../../engine/plan';
 import { PayNav, useViewPeriod, ViewModes } from '../../state/period';
 import { cash } from '../../core/money';
 import { DEBT_RATIO_GUIDE } from '../../engine/rebalance';
@@ -31,9 +31,11 @@ export function InsightsPage() {
     : mode === 'period' ? c : convert(c, 'monthly', mode as View));
   const pay = scale(plan.pay);
   const live = accounts.filter((a) => !a.archived);
-  const sent = new Map(live.filter((a) => a.id !== settings.payAccountId).map((a) => [a.id,
-    scale(perPeriod ? plan.accounts.find((x) => x.account.id === a.id)?.funded ?? 0 : plannedAverage(budget, a.id).sent)]));
-  const leftover = pay - [...sent.values()].reduce((t, x) => t + x, 0);
+  const each = new Map(plan.accounts.map((x) => [x.account.id, scale(perPeriod ? x.funded : plannedAverage(budget, x.account.id).sent)]));
+  const sentOf = (x: AccountPlan) => each.get(x.account.id) ?? 0;
+  // A debt held in another account (Gem in Misc bills) is counted once, as the Planner does.
+  const sent = splitShown(budget, plan.accounts, sentOf);
+  const leftover = pay - sendsTotal(budget, plan.accounts, sentOf);
   const per = mode === 'period' ? 'this pay' : mode === 'week' ? 'a week' : mode === 'fortnight' ? 'a fortnight' : mode === 'month' ? 'a month' : 'a year';
   const perAccount = live.map((a) => ({
     account: a,
