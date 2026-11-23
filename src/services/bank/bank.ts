@@ -183,8 +183,9 @@ export function applyBank(b: Budget, data: BankData, links: Record<string, strin
         // Banks show what's owed on a card as a negative balance, leaving out purchases still pending
         // (Gem: a big purchase can stay pending for days). Those are owed too.
         const owedNow = Math.max(0, Math.abs(cents) - (debt.pending ?? []).reduce((t, x) => t + x.amount, 0));
-        // Plans the card shows (purchases moved onto one, a big purchase still pending) that aren't plans here yet.
-        // Their full amounts are a guess, so what they add up to over the balance comes off them first.
+        // Plans the card shows (purchases moved onto one, a big purchase still pending), one per statement month.
+        // A plan made or grown here is the card's purchases at full price, a guess at what's left on it, so what
+        // the plans add up to over the balance comes off those first.
         const added = new Set(syncCardPlans(debt, today).map((p) => p.id));
         const kept = debt.plans.filter((p) => !added.has(p.id)).map((p) => ({ planId: p.id, remaining: p.remaining }));
         applyStatement(b, id, { balance: owedNow, date: today, plans: kept, newPlans: [] }, today);
