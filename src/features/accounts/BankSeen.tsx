@@ -65,7 +65,7 @@ export function OtherMoves({ t, account }: { t: BillTracker; account: Account })
   if (!t.moves.length) return null;
   const net = t.moves.reduce((s, m) => s + m.txn.amount, 0);
   return (
-    <Disclosure title="Other money in and out" meta={`${net >= 0 ? '+' : '−'}${cash(Math.abs(net))}`}>
+    <Disclosure title="Other money in and out" meta={net === 0 ? 'evens out' : `${net > 0 ? '+' : '−'}${cash(Math.abs(net))}`}>
       <ShortList>
         {t.moves.map(({ txn, other }, i) => (
           <div className="list-row small" key={`${txn.date}-${txn.amount}-${i}`}>
@@ -75,7 +75,7 @@ export function OtherMoves({ t, account }: { t: BillTracker; account: Account })
           </div>
         ))}
       </ShortList>
-      <p className="xs muted">Not payday’s deposit and not a bill: money moved in or out of {account.name} by you.</p>
+      <p className="xs muted">Money you moved in or out of {account.name} yourself (not payday’s deposit or a bill).</p>
     </Disclosure>
   );
 }

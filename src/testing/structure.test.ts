@@ -24,7 +24,6 @@ const CSS_CHARS_PER_LINE = 63;
  */
 const OVER_AIM: Record<string, number> = {
   '/src/services/reader/check/check.test.ts': 447,
-  '/src/features/accounts/MonthTracker.tsx': 418,
   '/src/ui/styles/components.css': 417,
   '/src/services/reader/apply.ts': 413,
 };
@@ -92,7 +91,7 @@ describe('folder rules (AGENTS.md)', () => {
       if (n > was) return [`${f}: grew from ${was} to ${n} ${counted(f)}. Split it before adding to it (joining lines doesn't help), and update OVER_AIM in this test`];
       return [];
     });
-    expect(bad).toEqual([]);
+    expect(bad, bad.join('; ')).toEqual([]);
   });
 
   it('OVER_AIM lists each big file at its size now, so the list only gets shorter', () => {
@@ -104,7 +103,7 @@ describe('folder rules (AGENTS.md)', () => {
       if (n < was) return [`${f} is ${n} lines now: lower its number in OVER_AIM to ${n}`];
       return [];
     });
-    expect(stale).toEqual([]);
+    expect(stale, stale.join('; ')).toEqual([]);
   });
 
   it('core/, engine/ and every logic/ folder are plain functions: no React, no components', () => {

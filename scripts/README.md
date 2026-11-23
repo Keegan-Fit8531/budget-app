@@ -8,19 +8,19 @@ code or test fixtures (make up the numbers there, as `src/testing/fixtures.ts` d
 ## Files
 - `uses.mjs`: `npm run uses -- <name>` lists every file and line in `src/` that uses a function, type or field; `npm run uses -- engine/envelope.ts` does it for each thing a file exports. A whole-word search, so a field with the same name shows up too. Tests are listed apart.
 - `inspect.ts`: `npm run inspect -- [account] [--today YYYY-MM-DD] [--file path]` prints the real budget (`../budget-data/budget.json` by default) as the app loads and sees it (`src/state/upgrade.ts`, `src/testing/inspect.ts`). Read-only.
-- `screenshot.mjs`: `npm run screenshot -- '#/accounts' [--today …] [--file …] [--width 400] [--dark] [--out file.png]` pictures a page of the running dev server (`npm run dev` first) holding the real budget, in NZ time, and prints where it saved it (outside the repo). Options below.
+- `screenshot.mjs`: `npm run screenshot -- '#/accounts' [--today …] [--file …] [--width 400] [--dark] [--out file.png]` pictures a page of the running dev server (`npm run dev` first) holding the real budget, in NZ time, and prints where it saved it. Options below.
 - `live.mjs`: `npm run live -- <text> [--wait]` says whether some text is in the published app's code or stylesheet; `--wait` checks every 10s for up to 8 minutes.
 - `stop-checks.sh`: the Claude Code Stop hook (`.claude/settings.json`): when an agent finishes, runs tests, type-check and lint in parallel (about 10s) and hands failures back to fix. Skips when nothing changed since its last pass (remembered in `.git/claude-checks-passed`); after 3 blocks in a row it lets the agent stop and report.
 - `copy-ocr.mjs`: copies the text-recognition engine (Tesseract.js and its English data) from `node_modules` into `public/ocr/` (git-ignored) for the on-device reader (`src/services/reader/documents.ts`). Runs before `npm run dev` and `npm run build` (`npm run ocr`).
 
 ## Reading the real budget
-- Match `../budget-data` to GitHub first (`git -C ../budget-data fetch origin main && git -C ../budget-data checkout -B main origin/main`): the app saves to `main`. Not `pull`: that history can be rewritten, and a pull then stops ("divergent branches").
+- Match `../budget-data` to GitHub first (`git -C ../budget-data fetch origin main && git -C ../budget-data checkout -B main origin/main`): the app saves to `main`. Not `pull`: the history can be rewritten, so a pull stops ("divergent branches").
   `inspect`'s first line says when that copy was saved: older than the owner's screenshot means the browser has changes the repo hasn't got.
 - Give `--today` as the NZ date: this container's clock is UTC, a day behind NZ until 1pm.
 - A bill "to come" that's already gone was often paid on the EFTPOS card under a cut-off name ("Paypal *Canv"): look in `inspect -- weekly` for it and its make-up transfer.
 - Every save is a commit, so compare saves to see what an upload or tap changed: `git -C ../budget-data show <commit>:budget.json | jq '.debts[] | select(.id=="gem")'`.
   One field across the last saves: `for c in $(git -C ../budget-data log --format=%h -20); do git -C ../budget-data show $c:budget.json | jq -c .billChecks; done`.
-- A bank-synced account's balance already has its pending transactions (`[pending]`) taken out: don't take them off again. A card is the other way round: the bank leaves pending purchases out, and the app adds `Debt.pending` back.
+- A synced balance already has pending transactions out (don't take them off again), and can be ahead of its transactions (`services/bank/README.md`). A card is the other way round: the bank leaves pending purchases out, and the app adds `Debt.pending` back.
 - The tracker's "To come" includes a held debt's payment (Gem) until the bank shows it gone.
 - `inspect -- gem` shows a debt's payday account, not its plans: query them with `jq '.debts[]|select(.id=="gem")|{balance,plans,pending,t:.transactions[-20:]}' ../budget-data/budget.json`, or as the app loads it with `_try.ts` (below).
 - To see a state the real budget isn't in yet (a card newly linked, a pending payment), make a changed copy in your scratchpad with `jq` and pass it with `--file`.
