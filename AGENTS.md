@@ -97,10 +97,10 @@ questions are answered there):
 3. `npm run dev`, then `npm run screenshot -- '#/accounts' --today 2026-11-22` to see the page itself, in New
    Zealand time. (A browser left on UTC is on yesterday's date until 1pm in NZ, which changes what's shown.)
    The owner uses a phone in dark mode, so for a layout change look as they do: `--width 400 --dark`. On
-   Accounts the Bill check pop-up opens by itself and covers the page: add `--click 'text=Later'` (it can open after
+   Accounts the Bill check pop-up, and on Debts the Plan check one, opens by itself and covers the page: add `--click 'text=Later'` (it can open after
    a bank sync, later than the clicks: if it's still there, or "Nothing to click" is printed, run it again). Open a card
    with `--click '.acct:has-text("Rent") >> text=Details'`, and picture just it with `--only '.acct:has-text("Rent")'` (Debts cards are `.acct` too: `'#/debts'`, `.acct:has-text("Gem Visa")`)
-   (see `scripts/README.md`). To see the Bill check pop-up itself, leave out the click and use `--only '.modal'`. Look before and after your change.
+   (see `scripts/README.md`). To see either pop-up itself, leave out the click and use `--only '.modal'` (tap an answer with `--click '.check-row:has-text("…") >> text=12 months'`). Look before and after your change.
    For a card's plans, the card's own app is the truth, not the bank data: ask the owner for a screenshot (Gem's
    "My plans") and compare plan by plan before shipping.
 4. To see a state the real budget isn't in yet (a card newly linked, a pending payment), make a changed copy in your
