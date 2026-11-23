@@ -63,14 +63,16 @@ export function applyPayment(debt: Debt, amount: Cents, s: Settings, date: ISODa
  * the card applies a payment, plans not in `trusted` (figures just read) first; plans left at $0 are
  * taken off. No payment is recorded. Returns what came off.
  */
-export function fitPlansToBalance(debt: Debt, date: ISODate, trusted: Iterable<string> = []): Cents {
+export function fitPlansToBalance(debt: Debt, date: ISODate, trusted: Iterable<string> = [], keep: Iterable<string> = []): Cents {
   debt.plans = debt.plans.filter((p) => p.remaining > 0);
   if (!debt.balance) return 0;
   const sure = new Set(trusted);
   const start = plannedOwed(debt) - debt.balance.amount;
   let excess = start;
   // Afterpay-style plans are their instalments: those come from their own screenshot, not a balance.
-  const plans = debt.plans.filter((p) => !p.instalments?.length);
+  // Plans in `keep` are never brought down (a purchase still pending: nothing can have been paid off it).
+  const fixed = new Set(keep);
+  const plans = debt.plans.filter((p) => !p.instalments?.length && !fixed.has(p.id));
   for (const group of [plans.filter((p) => !sure.has(p.id)), plans.filter((p) => sure.has(p.id))]) {
     if (excess <= 0 || !group.length) continue;
     if (debt.rules === 'gem') { excess -= gemTakeOff(debt, new Set(group.map((p) => p.id)), excess, date); continue; }

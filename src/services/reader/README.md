@@ -32,6 +32,7 @@ rundown and pressed Confirm.
 ## Watch out for
 - Savings goals, deposits and account balances aren't edited by `apply.ts` directly: they move when the next 12 pays re-balance.
 - A card statement's minimum, amount to avoid interest and due date are kept on the debt (`Debt.statementDue`, set in `apply.ts`); an app screenshot's aren't.
+- A card app screenshot's balance dated today leaves out purchases still pending, like the bank's: `apply.ts` adds the debt's `pending` back and leaves their plans whole (`cardPlans.ts` → `pendingPlans`).
 - A statement's balance is used as it is. `applyStatement` then takes off plans shown finished ($0) and brings plans that still add up to more than the balance down to it (`fitPlansToBalance`: plans the statement didn't list first), so you never have to fix the plans by hand.
 - Reading a document twice must not double anything (transactions are de-duplicated in `check/transactions.ts` → `newTransactions`).
 - Google retires models: change `DEFAULT_MODEL` in `config.ts` only.

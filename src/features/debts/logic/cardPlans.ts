@@ -1,4 +1,4 @@
-import { addDays, addMonths, diffDays, fmtShort, gemCycleEndOnOrAfter, type ISODate } from '../../../core/dates';
+import { addDays, addMonths, diffDays, gemCycleEndOnOrAfter, monthName, type ISODate } from '../../../core/dates';
 import type { Cents, Debt, DebtPlan } from '../../../core/types';
 import { cleanDescription } from '../../insights/logic/spending';
 import { gemPlanEnds } from './gem';
@@ -6,7 +6,7 @@ import { gemPlanEnds } from './gem';
 // ---------------------------------------------------------------------------------------------
 // Plans read from a card's own transactions (Gem Visa through the bank connection). Gem moves a
 // purchase of $250 or more onto a 6-month interest-free plan a few days after it posts, and shows that as
-// a pair on the same day: "PLAN TRANSFER OUT" (+$x) and "PLAN TRANSFER IN" (−$x). Every such purchase in a statement month (21st to 20th) goes on the same plan,
+// a pair on the same day: "PLAN TRANSFER OUT" (+$x) and "PLAN TRANSFER IN" (−$x). Every purchase moved in a statement month (21st to 20th), by the transfer's date, not the purchase's, goes on the same plan,
 // all ending the same day: the bank shows only the purchases, so the plan is put together here. What's
 // left on it follows the card's balance (`payments.ts` → `fitPlansToBalance`); a statement or "My plans"
 // screenshot sets it exactly. A special deal (36 or 60 months, bought in store) posts without a
@@ -16,7 +16,8 @@ import { gemPlanEnds } from './gem';
 const GEM_PLAN_MONTHS = 6;
 const TRANSFER = /plan transfer/i;
 
-export interface CardPlanPurchase { name: string; date: ISODate; amount: Cents }
+/** A purchase moved onto a plan: bought on `date`, moved on `moved` (which decides the plan it joins). */
+export interface CardPlanPurchase { name: string; date: ISODate; moved: ISODate; amount: Cents }
 
 /** The purchases a card's transactions show going onto a 6-month plan. */
 export function cardPlanPurchases(debt: Debt): CardPlanPurchase[] {
@@ -34,7 +35,7 @@ export function cardPlanPurchases(debt: Debt): CardPlanPurchase[] {
     }
     if (at < 0) continue;
     used.add(at);
-    out.push({ name: tidy(txns[at].description), date: txns[at].date, amount: -t.amount });
+    out.push({ name: tidy(txns[at].description), date: txns[at].date, moved: t.date, amount: -t.amount });
   }
   return out;
 }
@@ -45,13 +46,17 @@ const tidy = (d: string) => {
   return name !== name.toUpperCase() ? name : name.split(' ').map((w) => (w.length <= 3 ? w : w[0] + w.slice(1).toLowerCase())).join(' ');
 };
 
-/** A 6-month plan made here from the card's plan transfers (`card-` ids): one per statement month. Plans you or a statement set are never merged or grown. */
+/** A 6-month plan made here from the card's plan transfers (`card-` ids): one per statement month. Its amount is the card's purchases; plans you or a statement set are never merged or changed. */
 const isCyclePlan = (p: DebtPlan) => p.id.startsWith('card-') && p.type === 'interest-free' && !!p.ends;
 
-/** "Purchases 21 Oct – 20 Nov 2026": the statement month (21st to 20th) a purchase made on `date` is in. */
+/** A statement month's plan as Gem names it, read from a "My plans" screenshot ("Purchases from Oct 2026 - Nov 2026"). */
+const isGemMonthPlan = (p: DebtPlan) => p.type === 'interest-free' && !!p.ends && /^purchases\b/i.test(p.name);
+
+/** "Purchases from Oct 2026 – Nov 2026", as Gem names it: the statement month (21st to 20th) a purchase moved onto a plan on `date` joins. */
 export function cycleName(date: ISODate): string {
   const end = gemCycleEndOnOrAfter(date);
-  return `Purchases ${fmtShort(addDays(addMonths(end, -1), 1))} – ${fmtShort(end)} ${end.slice(0, 4)}`;
+  const month = (d: ISODate) => `${monthName(d).slice(0, 3)} ${d.slice(0, 4)}`;
+  return `Purchases from ${month(addMonths(end, -1))} – ${month(end)}`;
 }
 
 /**
@@ -78,45 +83,67 @@ export function mergeCyclePlans(debt: Debt): void {
 }
 
 /**
- * Keep a Gem card's 6-month plans in line with its plan transfers: one plan per statement month, at least
- * as much as the purchases moved onto it. A statement month's plan is made once (a paid-off one isn't made
- * again), and grows when another purchase joins it. Returns the plans made or grown (their amounts are
- * the card's purchases, not a statement's).
+ * Plans for purchases the card still shows as pending (a special deal set up from a screenshot): nothing can
+ * have been paid off them yet, so each is put back to its full amount. Returns their ids.
  */
-export function syncCardPlans(debt: Debt, today: ISODate): DebtPlan[] {
-  if (debt.rules !== 'gem') return [];
+export function pendingPlans(debt: Debt, today: ISODate): Set<string> {
+  const ids = new Set<string>();
+  for (const t of debt.pending ?? []) {
+    const plan = debt.plans.find((p) => p.original === -t.amount && Math.abs(diffDays(p.purchaseDate, t.date)) <= 5);
+    if (!plan) continue;
+    ids.add(plan.id);
+    if (plan.remaining < plan.original) { plan.remaining = plan.original; plan.asOf = today; }
+  }
+  return ids;
+}
+
+/**
+ * Keep a Gem card's 6-month plans in line with its plan transfers: one plan per statement month, holding
+ * exactly the purchases moved onto it in that month. A month's plan is made once (a paid-off one isn't
+ * made again). One you set from a screenshot ("Purchases from …") is used instead, and only grows when a
+ * purchase joins it. Returns our plans (`guessed`: what's left on them is a guess) and plans for purchases
+ * still pending (`pending`: nothing can have been paid off them).
+ */
+export function syncCardPlans(debt: Debt, today: ISODate): { guessed: Set<string>; pending: Set<string> } {
+  const none = { guessed: new Set<string>(), pending: new Set<string>() };
+  if (debt.rules !== 'gem') return none;
   mergeCyclePlans(debt);
   const made = new Set((debt.cardPlans ?? []).filter((k) => !k.includes('|')));
-  const cycles = new Map<ISODate, { first: ISODate; total: Cents }>();
+  const cycles = new Map<ISODate, { first: ISODate; moved: ISODate; total: Cents }>();
   for (const f of cardPlanPurchases(debt)) {
-    const ends = gemPlanEnds(f.date, GEM_PLAN_MONTHS);
+    // Gem puts it on the plan for the statement month it was moved in, not the one it was bought in.
+    const ends = gemPlanEnds(f.moved, GEM_PLAN_MONTHS);
     if (ends <= today) continue;
-    const c = cycles.get(ends) ?? { first: f.date, total: 0 };
-    c.first = f.date < c.first ? f.date : c.first;
+    const c = cycles.get(ends) ?? { first: f.date, moved: f.moved, total: 0 };
+    if (f.date < c.first) c.first = f.date;
     c.total += f.amount;
     cycles.set(ends, c);
   }
-  const changed: DebtPlan[] = [];
+  // A plan of ours whose month has no purchases now (it was put in the wrong month before) goes.
+  for (const p of debt.plans.filter((x) => isCyclePlan(x) && x.ends! > today && !cycles.has(x.ends!))) {
+    debt.plans = debt.plans.filter((x) => x !== p);
+  }
   for (const [ends, c] of cycles) {
-    let plan = debt.plans.find((p) => isCyclePlan(p) && p.ends === ends);
-    if (!plan) {
-      if (made.has(ends)) continue;
-      plan = { id: `card-${ends}`, name: cycleName(c.first), type: 'interest-free', months: GEM_PLAN_MONTHS, original: 0, remaining: 0, asOf: today, purchaseDate: c.first, ends };
-      debt.plans.push(plan);
+    const ours = debt.plans.find((p) => isCyclePlan(p) && p.ends === ends);
+    const theirs = ours ? undefined : debt.plans.find((p) => isGemMonthPlan(p) && p.ends === ends);
+    if (theirs) {
+      // Set from a screenshot or statement: only a purchase that's joined it since adds to it.
+      made.add(ends);
+      const grow = c.total - theirs.original;
+      if (grow > 0) Object.assign(theirs, { original: c.total, remaining: theirs.remaining + grow, asOf: today });
+      continue;
     }
+    if (!ours && made.has(ends)) continue;
+    const plan: DebtPlan = ours ?? { id: `card-${ends}`, name: '', type: 'interest-free', months: GEM_PLAN_MONTHS, original: 0, remaining: 0, asOf: today, purchaseDate: c.first, ends };
+    if (!ours) debt.plans.push(plan);
     made.add(ends);
-    const grow = c.total - plan.original;
-    if (grow > 0) {
-      Object.assign(plan, { original: c.total, remaining: plan.remaining + grow, asOf: today, name: cycleName(c.first) });
-      if (c.first < plan.purchaseDate) plan.purchaseDate = c.first;
-      changed.push(plan);
-    }
+    // Ours is the card's purchases exactly: a purchase joining it adds to what's left, one that belonged to another month comes off.
+    const diff = c.total - plan.original;
+    Object.assign(plan, { name: cycleName(c.moved), purchaseDate: c.first });
+    if (diff !== 0) Object.assign(plan, { original: c.total, remaining: Math.max(0, plan.remaining + diff), asOf: today });
   }
   // A plan for a purchase still pending (a special deal you set up from a screenshot) has had nothing paid off it yet.
-  for (const t of debt.pending ?? []) {
-    const plan = debt.plans.find((p) => p.original === -t.amount && Math.abs(diffDays(p.purchaseDate, t.date)) <= 5);
-    if (plan && plan.remaining < plan.original) { plan.remaining = plan.original; plan.asOf = today; }
-  }
+  const pending = pendingPlans(debt, today);
   debt.cardPlans = [...made].sort().slice(-60);
-  return changed;
+  return { guessed: new Set(debt.plans.filter(isCyclePlan).map((p) => p.id)), pending };
 }

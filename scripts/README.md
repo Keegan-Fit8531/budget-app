@@ -23,5 +23,6 @@ let b = bringUpToDate(JSON.parse(readFileSync('../budget-data/budget.json', 'utf
 b = structuredClone(b); // matching results are cached per budget object, so clone after each change
 ```
 Then call what you need (`billTracker`, `billChecks`, `recordCardPayments`…) with a fixed `today`.
+For anything a sync changes (`applyBank`), run it twice, then load the result again (`bringUpToDate(JSON.parse(JSON.stringify(b)))`): if the figures move, they'll drift on every sync. A bank reply for a linked card can be rebuilt from what's saved (`accounts: [{ id, type: 'CREDITCARD', balance: -owed, … }]`, `pending` from `debt.pending`).
 
 Keep this README current: update it in the same change when you add, remove, rename or repurpose a file here (see AGENTS.md).

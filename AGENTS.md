@@ -101,6 +101,8 @@ questions are answered there):
    a bank sync, later than the clicks: if it's still there, or "Nothing to click" is printed, run it again). Open a card
    with `--click '.acct:has-text("Rent") >> text=Details'`, and picture just it with `--only '.acct:has-text("Rent")'` (Debts cards are `.acct` too: `'#/debts'`, `.acct:has-text("Gem Visa")`)
    (see `scripts/README.md`). To see the Bill check pop-up itself, leave out the click and use `--only '.modal'`. Look before and after your change.
+   For a card's plans, the card's own app is the truth, not the bank data: ask the owner for a screenshot (Gem's
+   "My plans") and compare plan by plan before shipping.
 4. To see a state the real budget isn't in yet (a card newly linked, a pending payment), make a changed copy in your
    scratchpad with `jq` (`.bankLinks["x"]="debt:gem" | (.debts[]|select(.id=="gem")).pending=[…]`) and pass it with `--file`.
 5. To try what a change or an answer would do to the real budget without the app, see `scripts/README.md` →

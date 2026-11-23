@@ -183,12 +183,12 @@ export function applyBank(b: Budget, data: BankData, links: Record<string, strin
         // Banks show what's owed on a card as a negative balance, leaving out purchases still pending
         // (Gem: a big purchase can stay pending for days). Those are owed too.
         const owedNow = Math.max(0, Math.abs(cents) - (debt.pending ?? []).reduce((t, x) => t + x.amount, 0));
-        // Plans the card shows (purchases moved onto one, a big purchase still pending), one per statement month.
-        // A plan made or grown here is the card's purchases at full price, a guess at what's left on it, so what
-        // the plans add up to over the balance comes off those first.
-        const added = new Set(syncCardPlans(debt, today).map((p) => p.id));
-        const kept = debt.plans.filter((p) => !added.has(p.id)).map((p) => ({ planId: p.id, remaining: p.remaining }));
-        applyStatement(b, id, { balance: owedNow, date: today, plans: kept, newPlans: [] }, today);
+        // Gem's 6-month plans from its plan transfers, one per statement month. What's left on those is a guess
+        // (the bank doesn't say), so what the plans add up to over the balance comes off them first; plans you
+        // or a statement set come after, and a still-pending purchase's plan never.
+        const { guessed, pending } = syncCardPlans(debt, today);
+        const sure = debt.plans.filter((p) => !guessed.has(p.id) && !pending.has(p.id)).map((p) => ({ planId: p.id, remaining: p.remaining }));
+        applyStatement(b, id, { balance: owedNow, date: today, plans: sure, newPlans: [], keep: [...pending] }, today);
         debt.checkedOn = today;
       }
     } else if (add.length || (ending && !target.ending)) {

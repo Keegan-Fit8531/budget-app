@@ -4,6 +4,7 @@ import { applyPayment, fitPlansToBalance, settleDue } from '../../features/debts
 import { debtPay, exactForFirstPlan, owed, recordHistory } from '../../features/debts/logic/amounts';
 import { planEnds } from '../../features/debts/logic/gem';
 import { recordPayslip } from './documents';
+import { pendingPlans } from '../../features/debts/logic/cardPlans';
 import { paydayFor, periodContaining, recordPayday } from '../../engine/periods';
 import { planFor } from '../../engine/plan';
 import { cash } from '../../core/money';
@@ -38,7 +39,12 @@ function applyProposalInner(b: Budget, p: Proposal, today: ISODate): Budget {
   if (p.kind === 'balances') { applyBalances(b, p); return b; }
   if (p.kind === 'statement') {
     if (p.newDebt) addDebt(b, p.debtId, p.newDebt.name);
-    const debt = applyStatement(b, p.debtId, p, today);
+    // A card app's current balance (today's) leaves out purchases still pending, as the bank's does: those
+    // the bank connection has seen are owed too, and their plans aren't brought down.
+    const was = (b.debts ?? []).find((d) => d.id === p.debtId);
+    const pend = was && p.date >= today ? -(was.pending ?? []).reduce((t, x) => t + x.amount, 0) : 0;
+    const keep = was && pend ? [...pendingPlans(was, today)] : [];
+    const debt = applyStatement(b, p.debtId, { ...p, balance: Math.max(0, p.balance + pend), keep }, today);
     // Kept from the newest statement only.
     if (debt && p.due && p.due.date >= (debt.statementDue?.date ?? '')) debt.statementDue = { ...p.due };
     return b;
@@ -170,7 +176,7 @@ export function windBack(debt: Debt, asOf: ISODate): void {
 }
 
 /** Set what a debt owes, and each plan on the statement, as at the statement date; then count the payments since. */
-export function applyStatement(b: Budget, debtId: string, s: Pick<Extract<Proposal, { kind: 'statement' }>, 'balance' | 'date' | 'limit' | 'plans' | 'newPlans'>, today: ISODate): Debt | undefined {
+export function applyStatement(b: Budget, debtId: string, s: Pick<Extract<Proposal, { kind: 'statement' }>, 'balance' | 'date' | 'limit' | 'plans' | 'newPlans'> & { keep?: string[] }, today: ISODate): Debt | undefined {
   const debt = (b.debts ?? []).find((d) => d.id === debtId);
   if (!debt) return undefined;
   const asOf = s.date <= today ? s.date : today;
@@ -194,7 +200,7 @@ export function applyStatement(b: Budget, debtId: string, s: Pick<Extract<Propos
   }
   // The balance is the statement's own. Plans it shows finished ($0) go; plans that still add up to
   // more than it hadn't caught up, so the difference comes off them (those it didn't list first).
-  fitPlansToBalance(debt, asOf, [...s.plans.map((u) => u.planId), ...s.newPlans.map((np) => np.id)]);
+  fitPlansToBalance(debt, asOf, [...s.plans.map((u) => u.planId), ...s.newPlans.map((np) => np.id)], s.keep);
   const hist = (debt.history ?? []).filter((h) => h.asOf !== asOf);
   hist.push({ amount: owed(debt), asOf });
   debt.history = hist.sort((x, y) => x.asOf.localeCompare(y.asOf)).slice(-500);
