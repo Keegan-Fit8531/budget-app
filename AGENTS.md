@@ -94,9 +94,11 @@ uses made-up amounts (`testing/fixtures.ts` → `foodGasBudget()` is shaped like
   An account's colour is only a small mark by its name. A bar of amounts is `ui/PartsBar.tsx`. Cards are read on a phone: figures and one line per item;
   explanations go behind Details, which sits above what it opens (`ui/README.md`).
 - **Privacy**: the Gemini key, GitHub token and bank passphrase stay in the browser's storage only. `src/personal/` (git-ignored) holds the owner's own data and is never committed.
-- **Keep files small**: aim for under ~400 lines; split by section into files named for their job. Over 500 lines fails `npm test`.
+- **Keep files small**: under 400 lines; split by section into files named for their job. A file over 400 may not grow (split it first), and over 500 fails.
+- **Agents copy the code around them.** Leave a file in the shape you'd want copied: if a page does maths inline, move it to `logic/` as you go.
 
 `src/testing/structure.test.ts` checks the folder rules (file size, no React in `core/`/`engine/`/`logic/`, a generic `ui/`, `core/` only borrowing types).
+A rule that matters gets a test; a rule only written here drifts. When you find one broken, add a check rather than another sentence.
 
 ## Where new code goes
 

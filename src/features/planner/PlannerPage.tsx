@@ -1,10 +1,8 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { startRead, type ReadJob } from '../../services/reader/job';
-import { applyBalance, autoPays, balancePay, restoreOverrides, type BalanceResult } from '../../engine/rebalance';
+import { applyBalance, restoreOverrides } from '../../engine/rebalance';
 import { freezePaySplit, unfreezePaySplit } from '../../engine/balances/freeze';
-import { isHoldDisplayAccount } from '../debts/logic/funding';
-import { owed } from '../debts/logic/amounts';
 import { Donut, Legend } from '../../ui/Donut';
 import { Icon } from '../../ui/Icon';
 import { ErrorBoundary } from '../../ui/ErrorBoundary';
@@ -15,11 +13,10 @@ import { PayNotes, type AdjEdit } from './PayNotes';
 import { DueList } from './DueList';
 import { PayNav, useViewPeriod, ViewModes } from '../../state/period';
 import { clearOptimiseUndo, OptimiseModal, readOptimiseUndo, type OptimiseUndo } from './OptimiseModal';
-import { existingExtras, undoAllocation } from './logic/allocate';
+import { undoAllocation } from './logic/allocate';
 import { modesChangedIn, rememberModes, takeModes } from './logic/modeMemory';
-import { fmtShort, monthName, todayISO } from '../../core/dates';
-import { averageSplit, planFor, plannedAverage } from '../../engine/plan';
-import { convert, type View } from '../../engine/frequency';
+import { plannerFigures, type LastBalance } from './logic/plannerFigures';
+import { todayISO } from '../../core/dates';
 import { shiftPeriod, upcomingPayPeriod } from '../../engine/periods';
 import { cash, moneyParts, centsToInput, parseMoney } from '../../core/money';
 import { useBudget } from '../../state/store';
@@ -50,40 +47,26 @@ export function PlannerPage() {
     update((b) => { undoAllocation(b, optUndo); return b; });
     clearOptimiseUndo(); setOptUndo(null);
   }
-  const [balanced, setBalanced] = useState<{ periodStart: string; result: BalanceResult } | null>(null);
+  const [balanced, setBalanced] = useState<LastBalance | null>(null);
   // Account settings opened from a payday-split card (Payday send tab).
   const [editAccount, setEditAccount] = useState<{ id: string; tab: AccountTab } | null>(null);
   const slipRef = useRef<HTMLInputElement>(null);
 
-  // The first pay the budget covers: today's, or the budget start if that's later .
-  const plan = useMemo(() => planFor(budget, period), [budget, period]);
-  // The pay you're in now (the Planner opens on the next one to come).
-  const isCurrent = period.start <= today && today <= period.end;
-  const avg = mode !== 'period';
-  // Week / Fortnight: this pay, split into weeks (or fortnights) by its number of days.
-  // Month avg / Year: what's planned over the next 12 pays, averaged (or added up for the year).
-  const split = mode === 'week' || mode === 'fortnight';
-  const longRun = mode === 'month' || mode === 'year';
-  const spanDays = mode === 'week' ? 7 : 14;
-  const v = (c: Cents) => (split ? Math.round((c * spanDays) / period.days) : avg ? convert(c, 'monthly', mode as View) : c);
-
-  /** Only show what's left (or short) once the real pay is in. */
-  // Show what's left once pay is in — or, before the payslip arrives, estimated from the last pay received.
-  const estimated = !plan.payIsActual && !!plan.payEstimateFrom;
-  const known = plan.payIsActual || estimated;
-  // Payday itself still counts as "to come" (pay can land late); only the day after is "already split".
-  const paydayEnded = plan.period.start < today;
-  // Why the pay is an estimate: shown on hover over "Pay (estimate)".
-  const estimateWhy = estimated
-    ? `Using ${monthName(plan.payEstimateFrom!)}'s pay of ${cash(plan.pay)}. ${paydayEnded ? 'Payday has passed: upload the payslip to make it exact.' : `Upload the payslip when it arrives on ${fmtShort(period.start)}.`}`
-    : '';
-  // What each account usually gets a month (worked out once per change, not per card).
-  const usualSplit = useMemo(() => new Map(plan.accounts.map((a) => [a.account.id, averageSplit(budget, a.account.id)])), [budget, plan]);
-  const usualOf = (id: string) => usualSplit.get(id) ?? 0;
-  // Notes on what's unusual this pay: each account sending noticeably more or less than normal, and why
-  // (an extra week, a yearly or one-off cost falling in it, or an adjustment made for this pay only).
-  const realItems = new Set(budget.items.map((i) => i.id));
+  // Everything shown for this pay and view (logic/plannerFigures.ts); the page only draws it.
+  const fig = useMemo(() => plannerFigures(budget, period, mode, today, balanced), [budget, period, mode, today, balanced]);
+  const {
+    plan, isCurrent, avg, split, spanDays, v, estimated, known, estimateWhy, notes, usualTotal, totalBudgeted, leftover,
+    shorts, cards, slices, upcoming, pending, needsBalance, adjustments, byHand, canOptimise, extrasHere, autoHere, passedNote,
+  } = fig;
+  const parts = moneyParts(leftover);
+  const splitParts = moneyParts(totalBudgeted);
   const thisPay = budget.overrides?.[period.start] ?? {};
+  const shortAccounts = pending.shortAccounts;
+  // How amounts are shown, for each card in the payday split.
+  const view: PlannerView = { mode, avg, split, longRun: fig.longRun, known, v, leftover, planned: fig.planned, period, today };
+  const undoHere = optUndo?.periodStart === period.start ? optUndo : null;
+  const canReset = adjustments.length > 0 || modesChangedIn(period.start);
+
   /** Set (or with null, remove) an account's amount for this pay only. */
   function setThisPay(id: string, amount: Cents | null) {
     update((b) => {
@@ -106,84 +89,6 @@ export function PlannerPage() {
     if (c === null || c < 0) { setAdjEdit({ ...adjEdit, err: true }); return; }
     setThisPay(adjEdit.id, c);
   }
-  const notes = plan.accounts
-    .filter((a) => a.account.id !== budget.settings.payAccountId)
-    .map((a) => {
-      const usual = usualOf(a.account.id);
-      const why: string[] = [];
-      for (const x of a.breakdown) {
-        if (!realItems.has(x.item.id)) continue;
-        const f = x.item.frequency;
-        if (f === 'yearly' || f === 'once') why.push(`${x.item.name} (${f === 'yearly' ? 'yearly' : 'one-off'}, ${cash(x.item.amount * x.count)}) falls in this pay`);
-        else if (f === 'weekly' && x.count >= 5) why.push(`${x.count} weeks of ${x.item.name} instead of 4`);
-        else if (f === 'fortnightly' && x.count >= 3) why.push(`${x.count} lots of ${x.item.name} instead of 2`);
-      }
-      if (a.usual !== undefined && a.usual !== a.funded) {
-        why.push(budget.autoBalanced?.[period.start]?.[a.account.id]?.reason
-          ?? (balanced?.periodStart === period.start ? balanced.result.changes.find((c) => c.accountId === a.account.id)?.reason : undefined)
-          ?? `Adjusted for this pay only (normally ${cash(a.usual)}).`);
-      }
-      return { a, usual, extra: a.funded - usual, why };
-    })
-    .filter((x) => Math.abs(x.extra) > 2000 || x.why.length > 0)
-    .sort((x, y) => Math.abs(y.extra) - Math.abs(x.extra));
-  const usualTotal = plan.accounts.filter((a) => a.account.id !== budget.settings.payAccountId)
-    .reduce((t, a) => t + usualOf(a.account.id), 0);
-  // Average views (week, fortnight, month, year): what's really planned over the next 12 pays, averaged.
-  const planned = useMemo(() => (longRun
-    ? new Map(plan.accounts.map((a) => [a.account.id, plannedAverage(budget, a.account.id, today)]))
-    : null), [longRun, budget, plan, today]);
-  const plannedTotal = planned ? plan.accounts.filter((a) => a.account.id !== budget.settings.payAccountId)
-    .reduce((t, a) => t + (planned.get(a.account.id)?.sent ?? 0), 0) : 0;
-  const totalBudgeted = split ? v(plan.totalSplit) : longRun ? v(plannedTotal) : plan.totalSplit;
-  const leftover = split ? v(plan.leftover) : longRun ? v(plan.pay - plannedTotal) : plan.leftover;
-  const parts = moneyParts(leftover);
-  const splitParts = moneyParts(totalBudgeted);
-  const payAccountName = budget.accounts.find((a) => a.id === budget.settings.payAccountId)?.name ?? 'your main account';
-  const shorts = plan.accounts.filter((a) => a.diff !== null && a.diff < 0);
-
-  // The pay account (Weekly allowance) isn't part of the split — what's left there is the big number above.
-  // Hold-display debts (Gem Visa with money in Misc bills) stay on the payday split even when this
-  // pay's figure is $0 — they still show how much is being sent / stored, with the hold note.
-  const cards = plan.accounts.filter((a) => {
-    if (a.account.id === budget.settings.payAccountId) return false;
-    if (a.funded !== 0 || a.need !== 0) return true;
-    if (!isHoldDisplayAccount(budget, a.account.id)) return false;
-    return (budget.debts ?? []).some((d) => d.accountId === a.account.id && !d.payroll && owed(d) > 0);
-  });
-
-  // The chart follows the view: this pay, this pay per week / fortnight, or the average of the next 12 pays
-  // per month / added up for the year (the same amounts the cards and Total budgeted show). It's by group;
-  // each account's own amount is on its card below, and its share is on Insights.
-  // Hold-display debts (Gem in Misc bills): count under Debt, and take that slice out of the hold account
-  // so Essentials isn't double-counting the same money.
-  const sentOf = (a: (typeof plan.accounts)[number]) => Math.max(0, longRun ? v(planned?.get(a.account.id)?.sent ?? 0) : v(a.funded));
-  const holdOut = new Map<string, number>();
-  for (const a of plan.accounts) {
-    if (a.account.id === budget.settings.payAccountId || !isHoldDisplayAccount(budget, a.account.id)) continue;
-    const amt = sentOf(a);
-    if (amt <= 0) continue;
-    for (const d of budget.debts ?? []) {
-      if (d.accountId !== a.account.id || !d.holdAccountId) continue;
-      holdOut.set(d.holdAccountId, (holdOut.get(d.holdAccountId) ?? 0) + amt);
-    }
-  }
-  const chartOf = (a: (typeof plan.accounts)[number]) => {
-    if (a.account.id === budget.settings.payAccountId) return 0;
-    if (isHoldDisplayAccount(budget, a.account.id)) return sentOf(a);
-    return Math.max(0, sentOf(a) - (holdOut.get(a.account.id) ?? 0));
-  };
-  const chartAccounts = plan.accounts.filter((a) => a.account.id !== budget.settings.payAccountId);
-  const grouped = new Set(budget.groups.map((g) => g.id));
-  const slices = [
-    ...budget.groups.map((g) => ({ label: g.name, color: g.color, value: chartAccounts.filter((a) => a.account.groupId === g.id).reduce((t, a) => t + chartOf(a), 0) })),
-    { label: 'Other', color: 'var(--muted)', value: chartAccounts.filter((a) => !grouped.has(a.account.groupId)).reduce((t, a) => t + chartOf(a), 0) },
-  ].filter((x) => x.value > 0);
-
-  // How amounts are shown, for each card in the payday split.
-  const view: PlannerView = { mode, avg, split, longRun, known, v, leftover, planned, period, today };
-
-  const upcoming = plan.dues.filter((d) => !isCurrent || d.date >= today);
 
   function balanceThisPay() {
     // Builds on what's there (your own one-pay changes stay), so it also works as Re-balance.
@@ -210,29 +115,6 @@ export function PlannerPage() {
     // Reset removes this pay's one-pay changes, Optimise's included, so there's nothing left to undo.
     if (optUndo?.periodStart === period.start) { clearOptimiseUndo(); setOptUndo(null); }
   }
-  const adjustments = plan.accounts.filter((a) => a.usual !== undefined && a.usual !== a.funded);
-  // The ones you made yourself. What automatic balancing set was in place before payday, so payday sent
-  // those amounts: once the pay has been split there's nothing left to do about them.
-  const autoSet = budget.autoBalanced?.[period.start] ?? {};
-  const byHand = adjustments.filter((a) => autoSet[a.account.id]?.to !== a.funded);
-  // What balancing would still do now: if anything, the pay needs (re-)balancing.
-  const pending = useMemo(() => balancePay(budget, period), [budget, period]);
-  const shortAccounts = pending.shortAccounts;
-  const needsBalance = plan.leftover < 0 || shortAccounts.length > 0 || pending.changes.length > 0 || pending.toSteady.length > 0;
-  // Optimise hands out what's left once the pay is balanced (short accounts and the 5-week buffer come first).
-  const undoHere = optUndo?.periodStart === period.start ? optUndo : null;
-  // From $1: rounded accounts (e.g. the wedding fund to $50) often leave a few dollars to put somewhere.
-  const canOptimise = !avg && !needsBalance && plan.leftover >= 100;
-  // Extra already added to goals, debts or the allowance for this pay only: Optimise can show and change it.
-  const extrasHere = useMemo(() => !avg && !!existingExtras(budget, period), [avg, budget, period]);
-  // Automatic balancing looks after today's pay (while it is still payday) and the next 11; after that, by hand.
-  const autoHere = autoPays(budget, today).some((p) => p.start === period.start);
-  const hasModeChanges = modesChangedIn(period.start);
-  const canReset = adjustments.length > 0 || hasModeChanges;
-  // From the day after payday, a change isn't re-sent with the split — make it as a transfer instead.
-  const passedNote = paydayEnded && byHand.length > 0
-    ? `This pay was already split on ${fmtShort(period.start)}. A change made since then isn't sent by payday, so make it as a transfer now, before ${fmtShort(plan.dues.find((d) => d.date >= today)?.date ?? period.end)}: move the money from the accounts being trimmed (or from what's left in ${payAccountName}) to the ones being topped up.`
-    : undefined;
 
   function savePay() {
     const cleared = (payEdit ?? '').trim() === '';

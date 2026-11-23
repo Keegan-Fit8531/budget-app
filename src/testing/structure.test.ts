@@ -6,8 +6,18 @@ import { describe, expect, it } from 'vitest';
 // and core/ only borrows types from the rest of the app. Each failure says what to change.
 // ---------------------------------------------------------------------------------------------
 
-/** The most lines a file may have. Aim for under ~400; past this, split it by its sections. */
+/** The most lines a file may have. Past this, split it by its sections. */
 const MAX_LINES = 500;
+/** What a file should stay under. A new file over it fails; one already over may shrink but never grow. */
+const AIM_LINES = 400;
+/**
+ * The files already over AIM_LINES, at their size now. Split one before adding to it. When one shrinks,
+ * lower its number here (or remove it once it's under AIM_LINES): this list only ever gets shorter.
+ */
+const OVER_AIM: Record<string, number> = {
+  '/src/features/accounts/MonthTracker.tsx': 418,
+  '/src/services/reader/check/check.test.ts': 406,
+};
 
 const sources = import.meta.glob<string>(['/src/**/*.{ts,tsx,css}', '!/src/personal/**', '!/src/vite-env.d.ts'], { query: '?raw', import: 'default', eager: true });
 const paths = new Set(Object.keys(sources));
@@ -36,14 +46,39 @@ const isTsx = (file: string, spec: string) => spec.startsWith('.') && (spec.ends
 const layerOf = (file: string, spec: string) => (spec.startsWith('.') ? resolve(file, spec).split('/')[2] : undefined);
 
 const pure = (f: string) => f.startsWith('/src/core/') || f.startsWith('/src/engine/') || /\/logic\//.test(f);
+/** Lines as an editor counts them (a final newline doesn't start another line). */
+const lineCount = (text: string) => text.split('\n').length - (text.endsWith('\n') ? 1 : 0);
+const sizes = Object.entries(sources).map(([f, text]) => [f, lineCount(text)] as const);
 
 describe('folder rules (AGENTS.md)', () => {
   it(`no file is longer than ${MAX_LINES} lines`, () => {
-    const long = Object.entries(sources)
-      .map(([f, text]) => [f, text.split('\n').length] as const)
+    const long = sizes
       .filter(([, n]) => n > MAX_LINES)
       .map(([f, n]) => `${f}: ${n} lines (split it by its sections and update the folder README)`);
     expect(long).toEqual([]);
+  });
+
+  it(`a file over ${AIM_LINES} lines doesn't grow`, () => {
+    const bad = sizes.flatMap(([f, n]) => {
+      if (n <= AIM_LINES) return [];
+      const was = OVER_AIM[f];
+      if (was === undefined) return [`${f}: ${n} lines, over ${AIM_LINES}. Split it by its sections (calculations into logic/) and update the folder README`];
+      if (n > was) return [`${f}: grew from ${was} to ${n} lines. Split it before adding to it, and update OVER_AIM in this test`];
+      return [];
+    });
+    expect(bad).toEqual([]);
+  });
+
+  it('OVER_AIM lists each big file at its size now, so the list only gets shorter', () => {
+    const now = new Map(sizes);
+    const stale = Object.entries(OVER_AIM).flatMap(([f, was]) => {
+      const n = now.get(f);
+      if (n === undefined) return [`${f} is gone: remove it from OVER_AIM`];
+      if (n <= AIM_LINES) return [`${f} is ${n} lines now, under ${AIM_LINES}: remove it from OVER_AIM`];
+      if (n < was) return [`${f} is ${n} lines now: lower its number in OVER_AIM to ${n}`];
+      return [];
+    });
+    expect(stale).toEqual([]);
   });
 
   it('core/, engine/ and every logic/ folder are plain functions: no React, no components', () => {

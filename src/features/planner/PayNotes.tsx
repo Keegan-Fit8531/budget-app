@@ -1,17 +1,15 @@
 import { cash, centsToInput } from '../../core/money';
 import type { Cents } from '../../core/types';
-import type { AccountPlan } from '../../engine/plan';
 import { Disclosure, Dot } from '../../ui/components';
 import { Icon } from '../../ui/Icon';
+import type { PayNote } from './logic/plannerFigures';
 
 // ---------------------------------------------------------------------------------------------
 // "What's different this pay" on the Planner: each account sending noticeably more or less than
 // usual, and why (an extra week, a yearly or one-off cost, or an amount changed for this pay only),
-// with Change / Reset for an amount set for this pay only. The notes are worked out on the page.
+// with Change / Reset for an amount set for this pay only. The notes come from
+// `logic/plannerFigures.ts` → `payNotes`.
 // ---------------------------------------------------------------------------------------------
-
-/** One account that's different this pay. */
-export interface PayNote { a: AccountPlan; usual: Cents; extra: Cents; why: string[] }
 
 /** An account's amount for this pay only, being typed in. */
 export interface AdjEdit { id: string; text: string; err?: boolean }
