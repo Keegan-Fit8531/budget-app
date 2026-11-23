@@ -156,7 +156,7 @@ Keep this README current: update it in the same change when you add, remove, ren
 npm install        # a fresh session has no node_modules: tsc then fails with "Cannot find module 'react'"
 npm run dev        # http://localhost:5173
 npm test           # all tests (vitest); one file: npx vitest run src/engine/periods.test.ts
-npx tsc -b         # type-check
+npx tsc -b         # type-check (app code is ES2020: no .at())
 npm run lint
 npm run build      # production build in dist/ (pushing to main deploys it)
 npm run uses -- envelopeHeld   # every file and line that uses a name (or a file's exports)
