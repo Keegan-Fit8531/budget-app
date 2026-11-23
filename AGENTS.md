@@ -186,6 +186,8 @@ merges close together cancel the first run, which is fine: the second builds eve
 run `npm run live -- <a CSS class you added, or a string from a .ts file> --wait` (in the background: it takes 1–2
 minutes). Text in JSX is split up when built, so search a class name or a `logic/` string, not a sentence from a page.
 Search it exactly as the code has it (`/plan transfer/i` is in the build; "PLAN TRANSFER" from a comment isn't: comments are dropped), or `--wait` runs 8 minutes for nothing.
+It finds text the old build already had too, so pick something new to this change, and check the file it names
+(`assets/index-….js`) differs from before the merge: the same name means the deploy hasn't finished.
 Then tell the owner to refresh. The app keeps an offline copy (`public/sw.js`), so on a phone it can take a
 reopen to show the new version.
 
