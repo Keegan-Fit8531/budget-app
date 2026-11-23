@@ -10,6 +10,8 @@ describe('names the bank uses for a bill', () => {
   it('matches typos, cut-off names and known payees', () => {
     expect(nameMatch('Circut', { description: 'Cricut Card number: 4835' })).toBe(2);
     expect(nameMatch('Kindergarten', { description: 'Epsom Kindergardten Mia F' })).toBe(2);
+    expect(nameMatch('Canva', { description: 'Paypal *Canv Card number: 4835' })).toBe(2);
+    expect(nameMatch('Netflix', { description: 'Paypal *Canv Card number: 4835' })).toBe(0);
     expect(nameMatch('YouTube', { description: 'Google Youtu Card number' })).toBe(2);
     expect(nameMatch('Mobile', { description: 'Spark Pay Mo Card number' })).toBe(1);
     expect(nameMatch('iCloud storage', { description: 'Apple.Com/Bi Card number' })).toBe(1);

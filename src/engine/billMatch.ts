@@ -90,6 +90,9 @@ export function nameMatch(name: string, t: Pick<Txn, 'description' | 'merchant'>
   const hay = `${t.description} ${t.merchant ?? ''}`;
   const theirs = words(hay);
   if (words(name).some((w) => !GENERIC.has(w) && theirs.some((x) => near(w, x)))) return 2;
+  // PayPal cuts the shop's name short ("Paypal *Canv" for Canva).
+  const pp = /paypal \*\s*([a-z0-9]{3,})/i.exec(hay)?.[1].toLowerCase();
+  if (pp && words(name).some((w) => !GENERIC.has(w) && w.length > pp.length && w.startsWith(pp))) return 2;
   return ALIASES.some(([mine, bank]) => mine.test(name) && bank.test(hay)) ? 1 : 0;
 }
 
