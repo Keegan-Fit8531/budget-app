@@ -239,6 +239,20 @@ describe('several transfers after several purchases', () => {
     // The fill is free for the $50 now, but the $53.94 shop is within $5 of it and the fill isn't.
     expect(guessTransfer(b, 'food', moves[0])).toMatchObject({ itemIds: ['shop', 'car'], sure: true });
   });
+
+  it('takes the purchase nearer in both amount and day when two envelopes each have one within $5', () => {
+    const b = foodGasBudget();
+    const move = { date: '2026-11-23', description: 'To: 06-0115-0324910-00 Debit Transfer 9', amount: -2000 };
+    b.pendingTransactions = { food: [move], day: [
+      { date: '2026-11-20', description: 'Freshchoice', amount: -2119 },
+      { date: '2026-11-23', description: 'U-Go Epsom', amount: -2035 },
+    ] };
+    expect(guessTransfer(b, 'food', move)).toMatchObject({ itemIds: ['scoot', 'shop'], sure: true });
+    expect(envelopeStatus(b, b.items.find((i) => i.id === 'scoot')!, '2026-11-23').spent).toBe(2000);
+    // The shop on the same day as the fill: nearer in day, so it's yours to say.
+    b.pendingTransactions.day[0].date = '2026-11-23';
+    expect(guessTransfer(b, 'food', move)).toMatchObject({ sure: false });
+  });
 });
 
 describe('two envelopes that share shops (Car gas and Scooter gas)', () => {

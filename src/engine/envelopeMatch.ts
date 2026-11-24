@@ -1,4 +1,4 @@
-import { addDays, type ISODate } from '../core/dates';
+import { addDays, diffDays, type ISODate } from '../core/dates';
 import { isEnvelope } from './setAside';
 import { ownTransfer } from './transfers';
 import { categorizeTxn, FUEL_SHOPS, shopMap } from '../features/insights/logic/spending';
@@ -93,6 +93,8 @@ export interface TransferGuess {
   sure: boolean;
   /** The purchases that made the guess (nearest the amount first), and where they were. */
   seen: { txn: Txn; accountId: string }[];
+  /** Each envelope's purchase nearest the amount, in `itemIds` order (what a not-sure guess weighed up). */
+  nearest: { txn: Txn; accountId: string }[];
 }
 
 interface Purchase { txn: Txn; accountId: string; item: Item }
@@ -141,7 +143,8 @@ function claimedByOthers(b: Budget, accountId: string, t: Txn, envelopes: Item[]
 /**
  * Which envelope a transfer out of its account paid for, from the purchases near it (`purchasesNear`)
  * that another transfer didn't pay for (`claimedByOthers`). Sure when only one envelope has a purchase,
- * or when the nearest is within $5 of the amount and no other envelope's is. With several, the one whose
+ * or when the nearest is within $5 of the amount and every other envelope's within $5 is further off in
+ * both amount and day. With several, the one whose
  * purchase is nearest the amount comes first. Undefined when nothing nearby matches.
  */
 export function guessTransfer(b: Budget, accountId: string, t: Txn, mine: Shops = shopMap(b)): TransferGuess | undefined {
@@ -163,9 +166,15 @@ export function guessTransfer(b: Budget, accountId: string, t: Txn, mine: Shops 
   // Two envelopes each have a purchase nearby (a $30 and an $80 fill) and neither is near the amount, or a
   // fill could be either (two gas envelopes, no limit to tell them apart): that's for you to say.
   const clear = fits[0].seen.every((p) => pickEnvelope(envelopes, p.txn, mine).clear);
-  const close = fits[0].gap <= CLOSE && fits.slice(1).every((f) => f.gap > CLOSE);
+  // Another envelope's purchase within $5 too (a $21.19 shop beside a $20.35 fill) still loses if it's
+  // further off in both amount and day.
+  const best = fits[0].seen[0]?.txn;
+  const days = (d: ISODate) => Math.abs(diffDays(t.date, d));
+  const beaten = (p: { txn: Txn }) => Math.abs(p.txn.amount - t.amount) > fits[0].gap && days(p.txn.date) > days(best.date);
+  const close = fits[0].gap <= CLOSE
+    && fits.slice(1).every((f) => f.seen.every((p) => Math.abs(p.txn.amount - t.amount) > CLOSE || beaten(p)));
   const sure = clear && (fits.length === 1 || close);
-  return { itemIds: fits.map((f) => f.item.id), sure, seen: fits[0].seen };
+  return { itemIds: fits.map((f) => f.item.id), sure, seen: fits[0].seen, nearest: fits.map((f) => f.seen[0]) };
 }
 
 /**
