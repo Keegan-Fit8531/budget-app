@@ -31,10 +31,12 @@ export function tidy(b: Budget): Budget {
     for (const i of b.items) if (i.frequency !== 'once' && /set.?aside/i.test(`${i.name} ${i.note ?? ''}`)) i.setAside = true;
     b.flags.push('set-aside-costs');
   }
-  // Scooter gas takes the small fills (under $50) and Car gas the rest, once (change it on the cost after).
-  if (!b.flags.includes('scooter-gas-under-50')) {
-    for (const i of b.items) if (i.envelope && /scooter/i.test(i.name) && i.envelopeUnder === undefined) i.envelopeUnder = 5000;
-    b.flags.push('scooter-gas-under-50');
+  // Scooter gas takes the small fills (under $40; the car's are $80+) and Car gas the rest, once (change it
+  // on the cost after). A limit of $50 was set automatically by 'scooter-gas-under-50', so it moves too.
+  if (!b.flags.includes('scooter-gas-under-40')) {
+    const auto = b.flags.includes('scooter-gas-under-50') ? 5000 : undefined;
+    for (const i of b.items) if (i.envelope && /scooter/i.test(i.name) && i.envelopeUnder === auto) i.envelopeUnder = 4000;
+    b.flags.push('scooter-gas-under-40');
   }
   // The wedding fund's balanced amounts round to $50, once (you can change it on the account after).
   if (!b.flags.includes('wedding-round-50')) {
