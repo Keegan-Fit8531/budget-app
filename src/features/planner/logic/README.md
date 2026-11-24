@@ -8,11 +8,12 @@ Plain functions behind the Planner (no React).
 - `allocate.ts`: Optimise. `allocationTargets` (where leftover money can go: goals, the weekly allowance, debts, spending), `applyAllocation`, `undoAllocation` (puts back only what Optimise changed), `existingExtras` (extra already added for this pay only), `allowancePerWeek`.
 - `allocate.test.ts`: optimising the leftover, then changing it.
 - `weeks.ts`: the weeks view: `calendarWeeks` (Mon–Sun weeks spanning a pay) and `weeklyCoverage` (weekly costs switched on for it).
+- `thisPay.ts`: amounts for one pay only: `setThisPay` ("What's different this pay" Change / Reset) and `resetPay` (Reset to defaults), keeping a locked pay's frozen split in step. `thisPay.test.ts`: before and after payday.
 - `modeMemory.ts`: the payday modes "Balance this pay" changed (e.g. Fixed → Steady), remembered per pay in localStorage so "Reset to defaults" can put them back: `rememberModes`, `takeModes`, `modesChangedIn`.
 
 ## Watch out for
 - Optimise only runs on a balanced pay (nothing short, nothing left to re-balance) with at least $1 left.
 - One-pay amounts go in `budget.overrides` (accounts) or a debt's `DebtPay.byPeriod`; every-pay amounts change the account's usual amount.
-- Once a pay is locked (payday passed or payslip in), `planFor` freezes it in `budget.splitSent`, one-pay amounts there at the time included. Removing an override alone leaves the frozen figure in place, so `undoAllocation` takes the undone amount out of `splitSent` too (as the Planner's "this pay only" edit does). Tests here fix "today" both before and after payday, so they don't depend on the real date.
+- Once a pay is locked (payday passed or payslip in), `planFor` freezes it in `budget.splitSent`, one-pay amounts there at the time included. Removing an override alone leaves the frozen figure in place, so `undoAllocation` and `thisPay.ts` take the amount out of `splitSent` too. Tests here fix "today" both before and after payday, so they don't depend on the real date.
 
 Keep this README current: update it in the same change when you add, remove, rename or repurpose a file here (see AGENTS.md).

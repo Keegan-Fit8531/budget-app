@@ -188,11 +188,13 @@ const openModals: symbol[] = [];
 /**
  * A pop-up: the page dims and the panel rises in (from the bottom on a phone), and both go back out
  * when it closes. Closes on Escape or a tap outside. `children` can be a function given `close`, so
- * its own buttons close it with the same animation.
+ * its own buttons close it with the same animation. Every pop-up uses this (a hand-made backdrop misses
+ * Escape and closes mid-edit). `inline`: the same form shown in place, as a tab of another pop-up (no
+ * backdrop, heading or Escape).
  */
-export function Modal({ title, sub, onClose, children, width = 540, actions, className }: {
+export function Modal({ title, sub, onClose, children, width = 540, actions, className, inline }: {
   title: ReactNode; sub?: ReactNode; onClose: () => void; children: ReactNode | ((close: () => void) => ReactNode);
-  width?: number; actions?: ReactNode; className?: string;
+  width?: number; actions?: ReactNode; className?: string; inline?: boolean;
 }) {
   const [closing, setClosing] = useState(false);
   const id = useId();
@@ -202,11 +204,12 @@ export function Modal({ title, sub, onClose, children, width = 540, actions, cla
   // letting go outside makes a click on the backdrop too, which used to close the pop-up mid-edit.
   const downOnBack = useRef(false);
   const close = useCallback(() => {
-    if (reducedMotion()) { done.current(); return; }
+    if (inline || reducedMotion()) { done.current(); return; }
     setClosing(true);
     setTimeout(() => done.current(), 180);
-  }, []);
+  }, [inline]);
   useEffect(() => {
+    if (inline) return;
     const me = Symbol('modal');
     openModals.push(me);
     const key = (e: KeyboardEvent) => { if (e.key === 'Escape' && openModals[openModals.length - 1] === me) { e.stopPropagation(); close(); } };
@@ -218,22 +221,27 @@ export function Modal({ title, sub, onClose, children, width = 540, actions, cla
       openModals.splice(openModals.indexOf(me), 1);
       if (!openModals.length) document.body.style.overflow = was;
     };
-  }, [close]);
+  }, [close, inline]);
+  const panel = (
+    <div className={`modal${className ? ` ${className}` : ''}`} role={inline ? undefined : 'dialog'} aria-modal={inline ? undefined : true}
+      aria-labelledby={id} style={{ maxWidth: width }} onClick={(e) => e.stopPropagation()}>
+      <div className="modal-head">
+        <div className="grow min0">
+          <h2 id={id} className="h2">{title}</h2>
+          {sub && <span className="small muted">{sub}</span>}
+        </div>
+        {actions}
+        <button className="icon-btn plain" aria-label="Close" onClick={close}><Icon name="x" /></button>
+      </div>
+      {typeof children === 'function' ? children(close) : children}
+    </div>
+  );
+  if (inline) return <div className="modal-back inline">{panel}</div>;
   return createPortal(
     <div className={`modal-back${closing ? ' closing' : ''}`}
       onPointerDown={(e) => { downOnBack.current = e.target === e.currentTarget; }}
       onClick={(e) => { if (downOnBack.current && e.target === e.currentTarget) close(); downOnBack.current = false; }}>
-      <div className={`modal${className ? ` ${className}` : ''}`} role="dialog" aria-modal="true" aria-labelledby={id} style={{ maxWidth: width }} onClick={(e) => e.stopPropagation()}>
-        <div className="modal-head">
-          <div className="grow min0">
-            <h2 id={id} className="h2">{title}</h2>
-            {sub && <span className="small muted">{sub}</span>}
-          </div>
-          {actions}
-          <button className="icon-btn plain" aria-label="Close" onClick={close}><Icon name="x" /></button>
-        </div>
-        {typeof children === 'function' ? children(close) : children}
-      </div>
+      {panel}
     </div>,
     document.body,
   );

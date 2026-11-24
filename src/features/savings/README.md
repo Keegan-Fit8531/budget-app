@@ -6,7 +6,7 @@ and the money people put in (the wedding fund); and KiwiSaver, a goal payday sen
 ## Files
 - `SavingsPage.tsx`: the page: each goal's card (`GoalCard`: pie, saved, one status line, then tabs for costs, money in and out, and payday) and moves to or from the goal's fund seen in your bank (`BankMoves`). KiwiSaver goals get `KiwiSaver.tsx` instead.
 - `GoalModal.tsx`: add or edit a goal (name, target, date, account). Also opened from the Add button.
-- `SavingsChart.tsx`: the projected balance pay by pay against the goal's target and date.
+- `SavingsChart.tsx`: the projected balance pay by pay against the goal's target and date (`goals`: the ones to chart, not KiwiSaver).
 - `GoalCosts.tsx`: costs paid from a goal (what's due when, and whether the fund covers it), one `CostRow` each.
 - `CostModal.tsx`: add or edit a goal cost. `SpendModal.tsx`: spend from the goal on a cost (comes off the saved balance).
 - `CostCategories.tsx`: rename, add and remove the cost categories (`CostCategoriesEditor`, and `CostCategoriesModal`; also on Settings).

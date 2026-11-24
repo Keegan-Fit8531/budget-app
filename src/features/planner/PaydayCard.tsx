@@ -9,7 +9,7 @@ import { firstBudgetPay, shiftPeriod, type Period } from '../../engine/periods';
 import { isAuto, type AccountPlan } from '../../engine/plan';
 import { envelopeBudget, envelopeSpan, isEnvelope, isHeldInAccount, isSetAside } from '../../engine/setAside';
 import type { ViewMode } from '../../state/period';
-import { AccIcon } from '../../ui/components';
+import { AccIcon, Modal } from '../../ui/components';
 import { Icon } from '../../ui/Icon';
 import type { AccountTab } from '../accounts/AccountEdit';
 
@@ -106,7 +106,7 @@ export function PaydayCard({ budget, a, view, why, isOpen, onOpen, onClose, onEd
     : bufferShown !== undefined && bufferFor
       ? `${cash(bufferShown)} kept for the ${fmtShort(bufferFor.period.start)} pay (${cash(bufferFor.need)} needed, ${cash(bufferFor.deposit)} sent)${gasHeld ? `, after ${cash(gasHeld)} reserved for month budgets` : ''}.`
       : gasHeld > 0 ? `Ends about ${cash(ends)} after reserving ${cash(gasHeld)} for this month’s envelopes`
-      : steadyMode ? `Estimated balance at the end of this pay (level amount evenings out 4- and 5-week pays)`
+      : steadyMode ? `Estimated balance at the end of this pay (a level amount evens out 4- and 5-week pays)`
       : 'Estimated balance at the end of this pay period';
   const pill = (
     <>
@@ -170,99 +170,87 @@ export function PaydayCard({ budget, a, view, why, isOpen, onOpen, onClose, onEd
       </div>
     </button>
     {isOpen && (
-      <div className="modal-back" onClick={onClose}>
-        <div className="modal" role="dialog" aria-modal="true" aria-labelledby="acc-title" onClick={(e) => e.stopPropagation()}>
+      <Modal title={<span className="row nowrap min0">{icon}<span className="clip">{a.account.name}</span></span>}
+        sub={`${monthName(period.start)} pay · ${fmtShort(period.start)} – ${fmtShort(period.end)}`} onClose={onClose}>
+        <div className="stat">
           <div className="between nowrap">
-            <span className="row min0">
-              {icon}
-              <span className="min0">
-                <h2 id="acc-title" className="h2">{a.account.name}</h2>
-                <span className="small muted">{monthName(period.start)} pay · {fmtShort(period.start)} – {fmtShort(period.end)}</span>
-              </span>
+            <span className="small muted">{isPay ? 'Left here after the plan' : longRun ? 'Sent on average' : 'Payday sends'}</span>
+            {pill}
+          </div>
+          <b className={`fig ${amountClass}`}>{amount}</b>
+          <span className="small muted">{detail}</span>
+          {holdNote && debt && (
+            <span className="small">
+              Held in <b>{holdAcc!.name}</b> until the {ordinal(debt.statementDay!)}
+              {debt.statementDay ? ` — send to ${a.account.name} on or after that day, not on payday` : ''}.
             </span>
-            <button className="icon-btn plain" aria-label="Close" autoFocus onClick={onClose}><Icon name="x" /></button>
-          </div>
-
-          <div className="stat">
-            <div className="between nowrap">
-              <span className="small muted">{isPay ? 'Left here after the plan' : longRun ? 'Sent on average' : 'Payday sends'}</span>
-              {pill}
-            </div>
-            <b className={`fig ${amountClass}`}>{amount}</b>
-            <span className="small muted">{detail}</span>
-            {holdNote && debt && (
-              <span className="small">
-                Held in <b>{holdAcc!.name}</b> until the {ordinal(debt.statementDay!)}
-                {debt.statementDay ? ` — send to ${a.account.name} on or after that day, not on payday` : ''}.
-              </span>
-            )}
-            {adjusted && <span className="small">Adjusted this pay · usually {cash(a.usual!)}</span>}
-            {carry !== 0 && (
-              <span className={`small ${carry < 0 ? 'neg' : 'pos'}`}>
-                {carry < 0 ? `Includes ${cash(-carry, { whole: true })} the ${monthName(shiftPeriod(period, -1, budget.settings).start)} pay left short` : `${cash(carry, { whole: true })} left from ${monthName(shiftPeriod(period, -1, budget.settings).start)} counted`}
-              </span>
-            )}
-          </div>
-
-          {why.length > 0 && (
-            <div className="tip small stack gap-4">
-              <b>Different this pay</b>
-              {why.map((w) => <span key={w}>{w}</span>)}
-            </div>
           )}
-
-          {rows.length > 0 && (
-            <div>
-              <div className="between" style={{ marginBottom: 6 }}>
-                <h3 className="h3">{rows.length} cost{rows.length === 1 ? '' : 's'} this pay{split ? `, per ${mode}` : ''}</h3>
-                <b className="num">{cash(v(a.need))}</b>
-              </div>
-              <div className="cost-rows">
-                {rows.map((r) => {
-                  const each = r.amount / r.dates.length;
-                  const same = r.dates.length > 1 && Number.isInteger(each);
-                  return (
-                    <span key={`${r.aside || r.envelope}|${r.name}`} className="cost-row">
-                      <span className="min0">
-                        <span className="cost-name">{r.name}</span>
-                        <span className="cost-meta muted">
-                          {r.envelope
-                            ? `${r.span === 'week' ? 'Week' : r.span === 'fortnight' ? 'Fortnight' : 'Month'} envelope${r.envelopeBudget ? ` ${cash(r.envelopeBudget)}` : ''} · resets each ${r.span ?? 'month'} · leftover is yours`
-                            : r.aside
-                            ? `Put aside on payday, stays in the account${r.maxSaved ? ` · max ${cash(r.maxSaved)}` : ''}`
-                            : same ? `${r.dates.length} × ${cash(each, { whole: each % 100 === 0 })}` : r.dates.length === 1 ? fmtShort(r.dates[0]) : `${r.dates.length} payments`}
-                          {/* Week / Fortnight: say what the whole pay is, since the amount on the right is per week */}
-                          {split ? `${same ? ' =' : ' ·'} ${cash(r.amount)} this pay` : ''}
-                          {r.note ? ` · ${r.note}` : ''}
-                        </span>
-                      </span>
-                      <b className="num">{cash(v(r.amount))}{split && <small className="muted" style={{ fontWeight: 500 }}> /{mode === 'week' ? 'wk' : 'fn'}</small>}</b>
-                    </span>
-                  );
-                })}
-              </div>
-            </div>
+          {adjusted && <span className="small">Adjusted this pay · usually {cash(a.usual!)}</span>}
+          {carry !== 0 && (
+            <span className={`small ${carry < 0 ? 'neg' : 'pos'}`}>
+              {carry < 0 ? `Includes ${cash(-carry, { whole: true })} the ${monthName(shiftPeriod(period, -1, budget.settings).start)} pay left short` : `${cash(carry, { whole: true })} left from ${monthName(shiftPeriod(period, -1, budget.settings).start)} counted`}
+            </span>
           )}
-          {rows.length === 0 && !isPay && !longRun && <p className="small muted">{a.account.kind === 'external' ? 'Sent on payday; no costs come out of it.' : 'No costs come out of this account this pay.'}</p>}
-
-          {/* Quick links to where this account is set up. */}
-          <div className="quick-links">
-            <span className="small muted">Go to</span>
-            {isDebt && <a className="btn small" href="#/debts"><Icon name="card" size={16} /> Debt and payment plans</a>}
-            {isGoal && <a className="btn small" href="#/savings"><Icon name="piggy" size={16} /> Savings goal</a>}
-            {(!isDebt && !isGoal || budget.items.some((i) => i.accountId === a.account.id)) && (
-              <button type="button" className="btn small" onClick={() => onEdit('payday')}>
-                <Icon name="edit" size={16} /> {isPay ? 'Account settings' : 'Account settings · Payday send'}
-              </button>
-            )}
-            {!isDebt && !isGoal && !isPay && a.account.kind === 'bank' && (
-              <button type="button" className="btn small" onClick={() => onEdit('balance')}>
-                <Icon name="wallet" size={16} /> {budget.balances?.[a.account.id] ? 'Update balance' : 'Enter balance'}
-              </button>
-            )}
-          </div>
         </div>
-      </div>
+
+        {why.length > 0 && (
+          <div className="tip small stack gap-4">
+            <b>Different this pay</b>
+            {why.map((w) => <span key={w}>{w}</span>)}
+          </div>
+        )}
+
+        {rows.length > 0 && (
+          <div>
+            <div className="between" style={{ marginBottom: 6 }}>
+              <h3 className="h3">{rows.length} cost{rows.length === 1 ? '' : 's'} this pay{split ? `, per ${mode}` : ''}</h3>
+              <b className="num">{cash(v(a.need))}</b>
+            </div>
+            <div className="cost-rows">
+              {rows.map((r) => {
+                const each = r.amount / r.dates.length;
+                const same = r.dates.length > 1 && Number.isInteger(each);
+                return (
+                  <span key={`${r.aside || r.envelope}|${r.name}`} className="cost-row">
+                    <span className="min0">
+                      <span className="cost-name">{r.name}</span>
+                      <span className="cost-meta muted">
+                        {r.envelope
+                          ? `${r.span === 'week' ? 'Week' : r.span === 'fortnight' ? 'Fortnight' : 'Month'} envelope${r.envelopeBudget ? ` ${cash(r.envelopeBudget)}` : ''} · resets each ${r.span ?? 'month'} · leftover is yours`
+                          : r.aside
+                          ? `Put aside on payday, stays in the account${r.maxSaved ? ` · max ${cash(r.maxSaved)}` : ''}`
+                          : same ? `${r.dates.length} × ${cash(each, { whole: each % 100 === 0 })}` : r.dates.length === 1 ? fmtShort(r.dates[0]) : `${r.dates.length} payments`}
+                        {/* Week / Fortnight: say what the whole pay is, since the amount on the right is per week */}
+                        {split ? `${same ? ' =' : ' ·'} ${cash(r.amount)} this pay` : ''}
+                        {r.note ? ` · ${r.note}` : ''}
+                      </span>
+                    </span>
+                    <b className="num">{cash(v(r.amount))}{split && <small className="muted" style={{ fontWeight: 500 }}> /{mode === 'week' ? 'wk' : 'fn'}</small>}</b>
+                  </span>
+                );
+              })}
+            </div>
+          </div>
+        )}
+        {rows.length === 0 && !isPay && !longRun && <p className="small muted">{a.account.kind === 'external' ? 'Sent on payday; no costs come out of it.' : 'No costs come out of this account this pay.'}</p>}
+
+        {/* Quick links to where this account is set up. */}
+        <div className="quick-links">
+          <span className="small muted">Go to</span>
+          {isDebt && <a className="btn small" href="#/debts"><Icon name="card" size={16} /> Debt and payment plans</a>}
+          {isGoal && <a className="btn small" href="#/savings"><Icon name="piggy" size={16} /> Savings goal</a>}
+          {(!isDebt && !isGoal || budget.items.some((i) => i.accountId === a.account.id)) && (
+            <button type="button" className="btn small" onClick={() => onEdit('payday')}>
+              <Icon name="edit" size={16} /> {isPay ? 'Account settings' : 'Account settings · Payday send'}
+            </button>
+          )}
+          {!isDebt && !isGoal && !isPay && a.account.kind === 'bank' && (
+            <button type="button" className="btn small" onClick={() => onEdit('balance')}>
+              <Icon name="wallet" size={16} /> {budget.balances?.[a.account.id] ? 'Update balance' : 'Enter balance'}
+            </button>
+          )}
+        </div>
+      </Modal>
     )}
     </>
   );

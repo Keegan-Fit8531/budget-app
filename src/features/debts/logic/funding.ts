@@ -2,7 +2,7 @@ import { todayISO, type ISODate } from '../../../core/dates';
 import { periodContaining, type Period } from '../../../engine/periods';
 import type { Budget, Cents, Debt, DebtPlan } from '../../../core/types';
 import { debtSchedules } from './schedule';
-import { debtPerPay } from './amounts';
+import { debtPay, debtPerPay } from './amounts';
 import { debtAdvice } from './advice';
 
 /** Where this debt's payday money sits and its statement-day payment leaves from. */
@@ -19,9 +19,10 @@ export function isHoldDisplayAccount(b: Budget, accountId: string): boolean {
 /**
  * Debt payments that leave `accountId` within a date range: the ones still to come, and the ones
  * already counted as paid, so a pay keeps its payments (and its total) after they've gone out.
- * When a debt stores its payment in another account (`holdAccountId`), payments leave that account.
+ * When a debt stores its payment in another account (`holdAccountId`), payments leave that account,
+ * a one-pay amount on the debt's card included (Optimise's extra for one pay); `usual` leaves that out.
  */
-export function debtPaymentsIn(b: Budget, accountId: string, from: ISODate, to: ISODate): { debt: Debt; plan: DebtPlan; date: ISODate; amount: Cents }[] {
+export function debtPaymentsIn(b: Budget, accountId: string, from: ISODate, to: ISODate, opts: { usual?: boolean } = {}): { debt: Debt; plan: DebtPlan; date: ISODate; amount: Cents }[] {
   const out: { debt: Debt; plan: DebtPlan; date: ISODate; amount: Cents }[] = [];
   for (const debt of b.debts ?? []) {
     if (fundingAccountId(debt) !== accountId) continue;
@@ -31,9 +32,9 @@ export function debtPaymentsIn(b: Budget, accountId: string, from: ISODate, to: 
       const plan: DebtPlan = { id: `${debt.id}-paid-${i}`, name: x.name, type: 'balance', original: x.amount, remaining: 0, asOf: x.date, purchaseDate: x.date };
       out.push({ debt, plan, date: x.date, amount: x.amount });
     });
-    // Usual per-pay figure only: a hold account's one-pay override is its whole deposit (Misc bills),
-    // not this debt's payment. Optimise extras on the debt card are applied via debtPay in forecasts.
-    for (const sch of debtSchedules(debt, b.settings, debtPerPay(b, debt))) {
+    // Any other debt's one-pay amount is its own card's send (`depositFor`), so only its usual payments are here.
+    const perPay = debt.holdAccountId && !opts.usual ? debtPay(b, debt) : debtPerPay(b, debt);
+    for (const sch of debtSchedules(debt, b.settings, perPay)) {
       for (const p of sch.payments) if (p.date >= from && p.date <= to) out.push({ debt, plan: sch.plan, date: p.date, amount: p.amount });
     }
   }
@@ -76,11 +77,11 @@ export function accountHasPlans(b: Budget, accountId: string): boolean {
 }
 
 /** What payday shows for a debt whose money is held in another account (display amount only). */
-export function heldDebtPaymentsIn(b: Budget, accountId: string, from: ISODate, to: ISODate): { debt: Debt; plan: DebtPlan; date: ISODate; amount: Cents }[] {
+export function heldDebtPaymentsIn(b: Budget, accountId: string, from: ISODate, to: ISODate, opts: { usual?: boolean } = {}): { debt: Debt; plan: DebtPlan; date: ISODate; amount: Cents }[] {
   const out: { debt: Debt; plan: DebtPlan; date: ISODate; amount: Cents }[] = [];
   for (const debt of b.debts ?? []) {
     if (debt.accountId !== accountId || !debt.holdAccountId) continue;
-    out.push(...debtPaymentsIn(b, debt.holdAccountId, from, to).filter((x) => x.debt.id === debt.id));
+    out.push(...debtPaymentsIn(b, debt.holdAccountId, from, to, opts).filter((x) => x.debt.id === debt.id));
   }
   return out;
 }

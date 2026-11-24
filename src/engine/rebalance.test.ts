@@ -3,7 +3,7 @@ import { periodContaining, shiftPeriod } from './periods';
 import { autoBalance, balancedMode, balancePay } from './rebalance';
 import { depositFor } from './balances/deposits';
 import { estimateBalance } from './balances/estimate';
-import { budget } from '../testing/fixtures';
+import { budget, heldGemBudget } from '../testing/fixtures';
 
 describe('automatic balancing', () => {
   it('always runs, and says which payday amount it gives an account', () => {
@@ -87,6 +87,22 @@ describe('automatic balancing', () => {
     b.overrides = { [p.start]: { bills: 10000 } }; // $100 set for this pay: $32.10 short
     const c = balancePay(b, p, '2026-11-14').changes.find((x) => x.accountId === 'bills')!;
     expect(c.to).toBe(15000); // needs $132.10: $150, not $132.10
+  });
+
+  it("a short pay doesn't trim Misc bills for Gem held there unless Gem itself is sent more than recommended", () => {
+    // Misc bills sends its $100 bill plus Gem's $100; Fun's $4,900 leaves the $5,000 pay $100 short.
+    const b = heldGemBudget();
+    delete b.balances;
+    b.accounts.push({ id: 'fun', name: 'Fun', kind: 'bank', color: '#000', groupId: 'lifestyle' });
+    b.split.push({ accountId: 'fun', amount: 490000, mode: 'fixed' });
+    const p = periodContaining('2026-12-20', b.settings);
+    expect(balancePay(b, p, '2026-11-25').changes.find((c) => c.accountId === 'bills')).toBeUndefined();
+    // Gem set to $300 a pay ($200 over what's recommended), so $300 short: that $200 comes off Misc bills' send.
+    b.split.find((l) => l.accountId === 'gem')!.mode = 'fixed';
+    b.split.find((l) => l.accountId === 'gem')!.amount = 30000;
+    const c = balancePay(b, p, '2026-11-25').changes.find((x) => x.accountId === 'bills')!;
+    expect(c.from - c.to).toBe(20000);
+    expect(c.reason).toMatch(/saves no interest/);
   });
 });
 

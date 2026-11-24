@@ -3,7 +3,8 @@ import { applyAllocation, existingExtras, undoAllocation } from './allocate';
 import { planFor } from '../../../engine/plan';
 import { periodContaining } from '../../../engine/periods';
 import type { Budget } from '../../../core/types';
-import { budget } from '../../../testing/fixtures';
+import { budget, heldGemBudget } from '../../../testing/fixtures';
+import { debtPay, projectedOwed } from '../../debts/logic/amounts';
 
 describe('optimising the leftover, then changing it', () => {
   function twoGoals() {
@@ -97,5 +98,22 @@ describe('optimising the leftover, then changing it', () => {
     expect(funded(b, p, 'a')).toBe(10000);
     expect(planFor(b, p).leftover).toBe(start);
     expect(b.splitSent?.[p.start]?.b).toBe(10000); // the rest of the frozen split is left alone
+  });
+
+  it('this pay only, to Gem held in Misc bills: Misc bills sends it, and it comes off Gem in the forecast', () => {
+    const b = heldGemBudget();
+    const p = periodContaining('2026-12-20', b.settings);
+    const today = '2026-11-25';
+    const was = planFor(structuredClone(b), p, today);
+    const bills = (x: typeof was) => x.accounts.find((a) => a.account.id === 'bills')!.funded;
+    const owedBy = (when: string) => projectedOwed(b.debts![0], b.settings, when, debtPay(b, b.debts![0]));
+    const owedBefore = owedBy('2027-01-01');
+    const u = applyAllocation(b, p, [{ targetId: 'debt-gem', amount: 10000 }], 'once');
+    const now = planFor(b, p, today);
+    expect(now.leftover).toBe(was.leftover - 10000);
+    expect(bills(now)).toBe(bills(was) + 10000);
+    expect(owedBy('2027-01-01')).toBe(owedBefore - 10000);
+    undoAllocation(b, u);
+    expect(planFor(b, p, today).leftover).toBe(was.leftover);
   });
 });

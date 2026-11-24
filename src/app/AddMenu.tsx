@@ -10,6 +10,7 @@ import { ErrorBoundary } from '../ui/ErrorBoundary';
 import { GoalModal } from '../features/savings/GoalModal';
 import { Icon } from '../ui/Icon';
 import { ItemModal } from '../shared/ItemModal';
+import { Modal } from '../ui/components';
 
 // Loaded only when a document is chosen.
 const UploadQueue = lazy(() => import('../services/reader/ui/UploadFlow').then((m) => ({ default: m.UploadQueue })));
@@ -51,25 +52,19 @@ export function AddMenu({ render }: { render: (open: () => void) => React.ReactN
       {/* On the page itself, not inside the sidebar or bottom bar the button sits in. */}
       {createPortal(<>
       {adding === 'menu' && (
-        <div className="modal-back" onClick={close}>
-          <div className="modal" role="dialog" aria-modal="true" aria-labelledby="add-title" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 440 }}>
-            <div className="between">
-              <h2 id="add-title" className="h2">Add</h2>
-              <button className="icon-btn plain" aria-label="Close" onClick={close}><Icon name="x" /></button>
-            </div>
-            <div className="stack gap-8">
-              {choices.map((c) => (
-                <button key={c.id} className="add-choice" onClick={c.go}>
-                  <span className="add-choice-icon"><Icon name={c.icon} size={20} /></span>
-                  <span className="min0">
-                    <b>{c.title}</b>
-                    <span className="small muted block">{c.hint}</span>
-                  </span>
-                </button>
-              ))}
-            </div>
+        <Modal title="Add" onClose={close} width={440}>
+          <div className="stack gap-8">
+            {choices.map((c) => (
+              <button key={c.id} className="add-choice" onClick={c.go}>
+                <span className="add-choice-icon"><Icon name={c.icon} size={20} /></span>
+                <span className="min0">
+                  <b>{c.title}</b>
+                  <span className="small muted block">{c.hint}</span>
+                </span>
+              </button>
+            ))}
           </div>
-        </div>
+        </Modal>
       )}
       {adding === 'cost' && <ItemModal onClose={close} />}
       {adding === 'goal' && <GoalModal onClose={close} />}

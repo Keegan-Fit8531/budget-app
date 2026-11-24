@@ -4,19 +4,20 @@
 // ---------------------------------------------------------------------------------------------
 import { colorAt } from '../../../core/colors';
 import { addPerson, contributions, ME, peopleOf, UNASSIGNED } from './contributions';
-import { todayISO } from '../../../core/dates';
+import { todayISO, type ISODate } from '../../../core/dates';
+import { changeSaved } from './goalcosts';
 import type { Budget, GoalGift, SavingsGoal } from '../../../core/types';
 
 export const NEW_PERSON = '__new';
 export const NEW = NEW_PERSON;
 export const signed = (x?: GoalGift) => (!x || !x.received ? 0 : x.out ? -x.amount : x.amount);
 
-/** Add or change money in/out; received money goes straight into (or out of) the saved balance. */
-export function saveGift(b: Budget, goalId: string, next: GoalGift, previous?: GoalGift) {
+/** Add or change money in/out; received money goes straight into (or out of) the saved balance (`changeSaved`). */
+export function saveGift(b: Budget, goalId: string, next: GoalGift, previous?: GoalGift, today: ISODate = todayISO()) {
   const g = (b.savings ?? []).find((x) => x.id === goalId);
   if (!g) return;
   const diff = signed(next) - signed(previous);
-  if (diff) { g.balance = Math.max(0, g.balance + diff); g.asOf = todayISO(); }
+  if (diff) changeSaved(b, g, diff, today);
   if (next.person && next.person !== UNASSIGNED) addPerson(g, next.person);
   g.gifts = g.gifts ?? [];
   const i = g.gifts.findIndex((x) => x.id === next.id);

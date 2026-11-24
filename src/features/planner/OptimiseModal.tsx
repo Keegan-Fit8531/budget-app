@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Dot } from '../../ui/components';
+import { Dot, Modal } from '../../ui/components';
 import { allocationTargets, allowancePerWeek, applyAllocation, existingExtras, undoAllocation, type AllocationUndo, type AllocMode } from './logic/allocate';
 import { fmtShort, monthName, todayISO } from '../../core/dates';
 import { planFor } from '../../engine/plan';
@@ -7,7 +7,6 @@ import { type Period } from '../../engine/periods';
 import { cash, centsToInput, parseMoney } from '../../core/money';
 import { useBudget } from '../../state/store';
 import type { Budget } from '../../core/types';
-import { Icon } from '../../ui/Icon';
 
 const UNDO_KEY = 'paydays.optimise.undo';
 
@@ -116,63 +115,57 @@ export function OptimiseModal({ period, leftover: leftNow, previous: record, onC
   }
 
   return (
-    <div className="modal-back" onClick={onClose}>
-      <div className="modal" role="dialog" aria-modal="true" aria-labelledby="opt-title" onClick={(e) => e.stopPropagation()}>
-        <div className="between">
-          <h2 id="opt-title" className="h2">{previous ? `Change where ${cash(leftover)} goes` : `Put ${cash(leftover)} to work`}</h2>
-          <button className="icon-btn plain" aria-label="Close" onClick={onClose}><Icon name="x" /></button>
-        </div>
-        <p className="small muted">Left over from the {fmtShort(period.start)} pay after everything's budgeted. Choose where it goes.</p>
+    <Modal title={previous ? `Change where ${cash(leftover)} goes` : `Put ${cash(leftover)} to work`} onClose={onClose}>
+      <p className="small muted">Left over from the {fmtShort(period.start)} pay after everything's budgeted. Choose where it goes.</p>
 
-        <div className="seg" role="group" aria-label="How often" style={{ alignSelf: 'flex-start' }}>
-          <button aria-pressed={mode === 'once'} onClick={() => setMode('once')}>This pay only</button>
-          <button aria-pressed={mode === 'every'} onClick={() => setMode('every')}>Every pay from now</button>
-        </div>
-
-        <div className="stack gap-8">
-          {targets.map((t) => {
-            const on = ticked.includes(t.id);
-            const amt = cents(t.id);
-            const weekly = t.kind === 'allowance' && amt > 0 ? allowancePerWeek(budget, period, t, amt, mode) : null;
-            return (
-              <div key={t.id} className={`pick${on ? ' on' : ''}`}>
-                <label className="check-row" style={{ flex: '1 1 180px' }}>
-                  <input type="checkbox" checked={on} onChange={(e) => toggle(t.id, e.target.checked)} style={{ width: 20, height: 20, accentColor: 'var(--brand)' }} />
-                  <Dot color={t.color} />
-                  <span className="min0">
-                    <b>{t.name}</b>
-                    <span className="small muted block">
-                      {weekly ? (mode === 'once' ? `+${cash(weekly.perWeek)} a week this pay (${weekly.weeks} transfers)` : `+${cash(weekly.perWeek)} on each weekly transfer from now`) : t.detail}
-                    </span>
-                  </span>
-                </label>
-                {on && (
-                  <span className="row gap-6">
-                    <input aria-label={`Amount for ${t.name}`} inputMode="decimal" value={amounts[t.id] ?? ''} placeholder="0.00"
-                      onChange={(e) => setAmounts((a) => ({ ...a, [t.id]: e.target.value }))}
-                      className="input" style={{ width: 110, fontWeight: 600 }} />
-                    <button className="btn small ghost" onClick={() => allTo(t.id)}>All</button>
-                  </span>
-                )}
-              </div>
-            );
-          })}
-        </div>
-
-        <div className="between">
-          <button className="btn small" onClick={splitEvenly}>Split evenly between ticked</button>
-          <span className={left < 0 ? 'neg' : left === 0 ? 'pos' : ''}>
-            <b>{left < 0 ? `${cash(-left)} too much` : left === 0 ? 'All allocated' : `${cash(left)} still left`}</b>
-          </span>
-        </div>
-        {mode === 'every' && <p className="small muted">Every pay raises the normal amounts from now on (allowance: each weekly transfer goes up). Check the next pays still balance on the Planner.</p>}
-        {left > 0 && <p className="small muted">Anything not allocated stays as spending money.</p>}
-
-        <div className="row end">
-          <button className="btn" onClick={onClose}>Cancel</button>
-          <button className="btn primary" onClick={apply} disabled={left < 0} title={left < 0 ? 'Allocate no more than is left over' : undefined}>{previous ? 'Save changes' : 'Apply'}</button>
-        </div>
+      <div className="seg" role="group" aria-label="How often" style={{ alignSelf: 'flex-start' }}>
+        <button aria-pressed={mode === 'once'} onClick={() => setMode('once')}>This pay only</button>
+        <button aria-pressed={mode === 'every'} onClick={() => setMode('every')}>Every pay from now</button>
       </div>
-    </div>
+
+      <div className="stack gap-8">
+        {targets.map((t) => {
+          const on = ticked.includes(t.id);
+          const amt = cents(t.id);
+          const weekly = t.kind === 'allowance' && amt > 0 ? allowancePerWeek(budget, period, t, amt, mode) : null;
+          return (
+            <div key={t.id} className={`pick${on ? ' on' : ''}`}>
+              <label className="check-row" style={{ flex: '1 1 180px' }}>
+                <input type="checkbox" checked={on} onChange={(e) => toggle(t.id, e.target.checked)} style={{ width: 20, height: 20, accentColor: 'var(--brand)' }} />
+                <Dot color={t.color} />
+                <span className="min0">
+                  <b>{t.name}</b>
+                  <span className="small muted block">
+                    {weekly ? (mode === 'once' ? `+${cash(weekly.perWeek)} a week this pay (${weekly.weeks} transfers)` : `+${cash(weekly.perWeek)} on each weekly transfer from now`) : t.detail}
+                  </span>
+                </span>
+              </label>
+              {on && (
+                <span className="row gap-6">
+                  <input aria-label={`Amount for ${t.name}`} inputMode="decimal" value={amounts[t.id] ?? ''} placeholder="0.00"
+                    onChange={(e) => setAmounts((a) => ({ ...a, [t.id]: e.target.value }))}
+                    className="input" style={{ width: 110, fontWeight: 600 }} />
+                  <button className="btn small ghost" onClick={() => allTo(t.id)}>All</button>
+                </span>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="between">
+        <button className="btn small" onClick={splitEvenly}>Split evenly between ticked</button>
+        <span className={left < 0 ? 'neg' : left === 0 ? 'pos' : ''}>
+          <b>{left < 0 ? `${cash(-left)} too much` : left === 0 ? 'All allocated' : `${cash(left)} still left`}</b>
+        </span>
+      </div>
+      {mode === 'every' && <p className="small muted">Every pay raises the normal amounts from now on (allowance: each weekly transfer goes up). Check the next pays still balance on the Planner.</p>}
+      {left > 0 && <p className="small muted">Anything not allocated stays as spending money.</p>}
+
+      <div className="row end">
+        <button className="btn" onClick={onClose}>Cancel</button>
+        <button className="btn primary" onClick={apply} disabled={left < 0} title={left < 0 ? 'Allocate no more than is left over' : undefined}>{previous ? 'Save changes' : 'Apply'}</button>
+      </div>
+    </Modal>
   );
 }

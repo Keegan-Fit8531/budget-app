@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { colorAt } from '../../core/colors';
 import { addDays, fmtDay, fmtShort, todayISO } from '../../core/dates';
 import { periodContaining } from '../../engine/periods';
-import { costCategories, leftOn, removeSpend, spentOn, summariseCosts } from './logic/goalcosts';
+import { costCategories, leftOn, removeSpend, savedToday, spentOn, summariseCosts } from './logic/goalcosts';
 import { cash } from '../../core/money';
 import { useBudget } from '../../state/store';
 import type { ReactNode } from 'react';
@@ -11,7 +11,7 @@ import { CostCategoriesModal } from './CostCategories';
 import { Donut } from '../../ui/Donut';
 import { paidShares } from './logic/contributions';
 import { Icon } from '../../ui/Icon';
-import { Chevron, Disclosure, Dot } from '../../ui/components';
+import { Chevron, Disclosure, Dot, Modal } from '../../ui/components';
 import { CostModal } from './CostModal';
 import { SpendModal } from './SpendModal';
 
@@ -138,15 +138,17 @@ function CostRow({ goal, cost, status, due, done, open, onToggle, onEdit }: {
   goal: SavingsGoal; cost: GoalCost; status: ReactNode; due?: string; done?: boolean; open: boolean;
   onToggle: () => void; onEdit: () => void;
 }) {
-  const { update } = useBudget();
+  const { budget, update } = useBudget();
   // Undoing a spend asks whether the money goes back into the saved balance.
   const [undo, setUndo] = useState<{ id: string; amount: number; date: string } | null>(null);
   const undoSpend = (putBack: boolean) => {
     if (!undo) return;
     const id = undo.id;
-    update((b) => { const g = (b.savings ?? []).find((y) => y.id === goal.id); if (g) { removeSpend(g, cost.id, id, putBack); if (putBack) g.asOf = todayISO(); } return b; });
+    update((b) => { const g = (b.savings ?? []).find((y) => y.id === goal.id); if (g) removeSpend(b, g, cost.id, id, putBack); return b; });
     setUndo(null);
   };
+  // What's in the fund now (the saved balance and the paydays since it was updated).
+  const now = undo ? savedToday(budget, goal, todayISO()) : 0;
   const spent = spentOn(cost);
   const left = leftOn(cost);
   const spends = [...(cost.spends ?? [])].sort((a, b) => a.date.localeCompare(b.date));
@@ -186,23 +188,17 @@ function CostRow({ goal, cost, status, due, done, open, onToggle, onEdit }: {
         </div>
       )}
       {undo && (
-        <div className="modal-back" onClick={() => setUndo(null)}>
-          <div className="modal" role="dialog" aria-modal="true" aria-labelledby="undo-spend-title" onClick={(e) => e.stopPropagation()}>
-            <div className="between">
-              <h2 id="undo-spend-title" className="h2">Remove {cash(undo.amount)} spent on {fmtShort(undo.date)}?</h2>
-              <button className="icon-btn plain" aria-label="Close" onClick={() => setUndo(null)}><Icon name="x" /></button>
-            </div>
-            <p className="small muted">
-              It comes off {cost.name} either way. Choose what happens to the saved balance, now {cash(goal.balance)}.
-            </p>
-            <button className="btn primary" onClick={() => undoSpend(true)}>Put {cash(undo.amount)} back: balance becomes {cash(goal.balance + undo.amount)}</button>
-            <button className="btn" onClick={() => undoSpend(false)}>Leave the balance at {cash(goal.balance)}</button>
-            <p className="small muted">Leave it if the balance already shows the real amount (e.g. you've updated it since, or the spend was more than was saved).</p>
-            <div className="row end">
-              <button className="btn" onClick={() => setUndo(null)}>Cancel</button>
-            </div>
+        <Modal title={<>Remove {cash(undo.amount)} spent on {fmtShort(undo.date)}?</>} onClose={() => setUndo(null)}>
+          <p className="small muted">
+            It comes off {cost.name} either way. Choose what happens to the saved balance, now {cash(now)}.
+          </p>
+          <button className="btn primary" onClick={() => undoSpend(true)}>Put {cash(undo.amount)} back: balance becomes {cash(now + undo.amount)}</button>
+          <button className="btn" onClick={() => undoSpend(false)}>Leave the balance at {cash(now)}</button>
+          <p className="small muted">Leave it if the balance already shows the real amount (e.g. you've updated it since, or the spend was more than was saved).</p>
+          <div className="row end">
+            <button className="btn" onClick={() => setUndo(null)}>Cancel</button>
           </div>
-        </div>
+        </Modal>
       )}
     </div>
   );

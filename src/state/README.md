@@ -15,5 +15,7 @@ Where the budget lives while the app runs, and the little shared state pages nee
 - `update` runs `autoBalance` every time, so a change to what's saved can change what payday sends in the next 12 pays. That's intended.
 - `src/personal/migrate.ts` (git-ignored, owner's computer only) is picked up here with `import.meta.glob` and run on load.
 - A connect link (QR code from Settings → Sync) is read before anything else runs (`takePairingFromUrl`).
+- Once a pay is locked, the first change after it (each pay, once) puts that pay's split back as this morning's saved copy had it (`restoreSplitFromMorningCopy`), unless the change was to that split by hand (`engine/balances/freeze.ts` → `keepSplitChange`).
+- Editing `store.tsx`, or anything it imports (`upgrade.ts` takes in most of `engine/` and debts logic), while the dev server has a page open makes a new context there (hot reload): "useBudget must be inside BudgetProvider" until you reload. Don't edit while a browser check runs.
 
 Keep this README current: update it in the same change when you add, remove, rename or repurpose a file here (see AGENTS.md).

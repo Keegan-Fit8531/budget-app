@@ -37,15 +37,15 @@ const axisMoney = (c: number) => {
 const RANGES = [{ n: 12, label: '1 year' }, { n: 24, label: '2 years' }, { n: 36, label: '3 years' }, { n: 60, label: '5 years' }];
 
 /** Projected savings balance per pay (with what goes in each pay), against the goal's target and date. */
-export function SavingsChart({ budget }: { budget: Budget }) {
-  const goals = budget.savings ?? [];
+/** `goals`: the ones to chart (not KiwiSaver). `budget` is the store's own, so the engine's caches for it are used. */
+export function SavingsChart({ budget, goals }: { budget: Budget; goals: SavingsGoal[] }) {
   const today = todayISO();
   const [sel, setSel] = useState('all');
   const [pays, setPays] = useState(24);
   const [hovered, setHover] = useState<number | null>(null);
   const [wrapRef, width] = useWidth<HTMLDivElement>();
 
-  const chosen: SavingsGoal[] = sel === 'all' ? goals : goals.filter((g) => g.id === sel);
+  const chosen = useMemo<SavingsGoal[]>(() => (sel === 'all' ? goals : goals.filter((g) => g.id === sel)), [goals, sel]);
   const one = chosen.length === 1 ? chosen[0] : undefined;
   const color = one ? tone(budget.accounts.find((a) => a.id === one.accountId)?.color) : 'var(--brand-2)';
   const target = one?.target ?? (chosen.every((g) => g.target) && chosen.length ? chosen.reduce((t, g) => t + (g.target ?? 0), 0) : undefined);

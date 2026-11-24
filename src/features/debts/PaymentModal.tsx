@@ -8,6 +8,7 @@ import { debtSchedules } from './logic/schedule';
 import { cash, centsToInput, parseMoney } from '../../core/money';
 import { useBudget } from '../../state/store';
 import type { Debt } from '../../core/types';
+import { Modal } from '../../ui/components';
 
 /** Record money paid to a debt; it pays off whatever is due soonest first. */
 export function PaymentModal({ debt, onClose, pick, embedded }: { debt: Debt; onClose: () => void; /** A "which debt" chooser, when opened from the Add button. */ pick?: React.ReactNode; embedded?: boolean }) {
@@ -50,54 +51,48 @@ export function PaymentModal({ debt, onClose, pick, embedded }: { debt: Debt; on
   }
 
   return (
-    <div className={`modal-back${embedded ? ' inline' : ''}`} onClick={embedded ? undefined : onClose}>
-      <div className="modal" role="dialog" aria-modal="true" aria-labelledby="pay-title" onClick={(e) => e.stopPropagation()}>
-        <div className="between">
-          <h2 id="pay-title" className="h2">{debt.name}: record a payment</h2>
-          <button className="icon-btn plain" aria-label="Close" onClick={onClose}><Icon name="x" /></button>
-        </div>
-        {pick}
-        <p className="small muted">Pays off what's due soonest first, then the next due date, and so on. {cash(total)} owed.</p>
-        <div className="row wrap gap-8">
-          {quick.map((q) => (
-            <button key={q.label} className="btn small" onClick={() => { setText(centsToInput(q.amount)); setErr(''); }}>
-              {q.label}: {cash(q.amount)}
-            </button>
-          ))}
-        </div>
-        <div className="form-grid">
-          <label className="field">Amount paid
-            <input inputMode="decimal" autoFocus value={text} placeholder="0.00" onChange={(e) => { setText(e.target.value); setErr(''); }} onKeyDown={(e) => e.key === 'Enter' && save()} />
-          </label>
-          <label className="field">Date paid
-            <input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
-          </label>
-        </div>
-        {beforeStatement(debt, date) && (
-          <div className="alert small" role="status">
-            <Icon name="alert" />
-            <span>That's before the statement on the {ordinal(debt.statementDay!)}, so it all goes on the oldest plan instead of being split, and the statement will still ask for this month's payment. Pay on or after the {ordinal(debt.statementDay!)}.</span>
-          </div>
-        )}
-        {preview && (
-          <div className="tip stack gap-6">
-            <b>This pays off</b>
-            {preview.applied.map((a, i) => (
-              <div key={i} className="between small nowrap">
-                <span>{a.planName} <span className="muted">· due {fmtShort(a.date)}{a.cleared ? '' : ' (part)'}</span></span>
-                <b>{cash(a.amount)}</b>
-              </div>
-            ))}
-            {preview.leftover > 0 && <span className="small">{cash(preview.leftover)} more than is scheduled — it comes off the balance.</span>}
-            <span className="small muted">Left owing afterwards: {cash(Math.max(0, total - (amount ?? 0)))}</span>
-          </div>
-        )}
-        {err && <p className="error" role="alert">{err}</p>}
-        <div className="row end">
-          <button className="btn" onClick={onClose}>Cancel</button>
-          <button className="btn primary" onClick={save}>Record payment</button>
-        </div>
+    <Modal title={<>{debt.name}: record a payment</>} onClose={onClose} inline={embedded}>
+      {pick}
+      <p className="small muted">Pays off what's due soonest first, then the next due date, and so on. {cash(total)} owed.</p>
+      <div className="row wrap gap-8">
+        {quick.map((q) => (
+          <button key={q.label} className="btn small" onClick={() => { setText(centsToInput(q.amount)); setErr(''); }}>
+            {q.label}: {cash(q.amount)}
+          </button>
+        ))}
       </div>
-    </div>
+      <div className="form-grid">
+        <label className="field">Amount paid
+          <input inputMode="decimal" autoFocus value={text} placeholder="0.00" onChange={(e) => { setText(e.target.value); setErr(''); }} onKeyDown={(e) => e.key === 'Enter' && save()} />
+        </label>
+        <label className="field">Date paid
+          <input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+        </label>
+      </div>
+      {beforeStatement(debt, date) && (
+        <div className="alert small" role="status">
+          <Icon name="alert" />
+          <span>That's before the statement on the {ordinal(debt.statementDay!)}, so it all goes on the oldest plan instead of being split, and the statement will still ask for this month's payment. Pay on or after the {ordinal(debt.statementDay!)}.</span>
+        </div>
+      )}
+      {preview && (
+        <div className="tip stack gap-6">
+          <b>This pays off</b>
+          {preview.applied.map((a, i) => (
+            <div key={i} className="between small nowrap">
+              <span>{a.planName} <span className="muted">· due {fmtShort(a.date)}{a.cleared ? '' : ' (part)'}</span></span>
+              <b>{cash(a.amount)}</b>
+            </div>
+          ))}
+          {preview.leftover > 0 && <span className="small">{cash(preview.leftover)} more than is scheduled — it comes off the balance.</span>}
+          <span className="small muted">Left owing afterwards: {cash(Math.max(0, total - (amount ?? 0)))}</span>
+        </div>
+      )}
+      {err && <p className="error" role="alert">{err}</p>}
+      <div className="row end">
+        <button className="btn" onClick={onClose}>Cancel</button>
+        <button className="btn primary" onClick={save}>Record payment</button>
+      </div>
+    </Modal>
   );
 }

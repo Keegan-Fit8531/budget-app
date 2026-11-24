@@ -130,6 +130,13 @@ describe('folder rules (AGENTS.md)', () => {
     expect(bad).toEqual([]);
   });
 
+  it('every pop-up is ui/components → Modal: a hand-made backdrop misses Escape and closes mid-edit', () => {
+    const bad = Object.entries(code)
+      .filter(([f, text]) => f !== '/src/ui/components.tsx' && !f.endsWith('.test.ts') && /modal-back/.test(text))
+      .map(([f]) => `${f} draws its own pop-up: use <Modal> (inline for a form shown inside another pop-up)`);
+    expect(bad).toEqual([]);
+  });
+
   it('core/ only takes types from the rest of the app, never code', () => {
     const bad: string[] = [];
     for (const [f, text] of Object.entries(sources)) {
