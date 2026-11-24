@@ -28,13 +28,13 @@ describe('tidy (loading an older save)', () => {
   it('moves the automatic $50 limit to $40, but not one you set or removed yourself', () => {
     const scooter = (under?: number) => ({ id: 's', name: 'Scooter gas', amount: 5000, frequency: 'monthly' as const, start: '2026-11-01', accountId: 'x', envelope: 'month' as const, envelopeUnder: under });
     const b = budget();
-    b.flags.push('scooter-gas-under-50');
+    b.flags = ['scooter-gas-under-50'];
     b.items = [scooter(5000)];
     tidy(b);
     expect(b.items[0].envelopeUnder).toBe(4000);
     for (const under of [3000, undefined]) {
       const c = budget();
-      c.flags.push('scooter-gas-under-50');
+      c.flags = ['scooter-gas-under-50'];
       c.items = [scooter(under)];
       tidy(c);
       expect(c.items[0].envelopeUnder).toBe(under);
