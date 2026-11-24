@@ -93,6 +93,8 @@ export interface TransferGuess {
   sure: boolean;
   /** The purchases that made the guess (nearest the amount first), and where they were. */
   seen: { txn: Txn; accountId: string }[];
+  /** Each envelope's purchase nearest the amount, in `itemIds` order (what a not-sure guess weighed up). */
+  nearest: { txn: Txn; accountId: string }[];
 }
 
 interface Purchase { txn: Txn; accountId: string; item: Item }
@@ -172,7 +174,7 @@ export function guessTransfer(b: Budget, accountId: string, t: Txn, mine: Shops 
   const close = fits[0].gap <= CLOSE
     && fits.slice(1).every((f) => f.seen.every((p) => Math.abs(p.txn.amount - t.amount) > CLOSE || beaten(p)));
   const sure = clear && (fits.length === 1 || close);
-  return { itemIds: fits.map((f) => f.item.id), sure, seen: fits[0].seen };
+  return { itemIds: fits.map((f) => f.item.id), sure, seen: fits[0].seen, nearest: fits.map((f) => f.seen[0]) };
 }
 
 /**

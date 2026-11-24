@@ -84,7 +84,12 @@ export function inspectAccount(b: Budget, which: string, today: ISODate = todayI
     out.push(unsorted.length ? '  Transfers out the card asks about:' : '  No transfers out waiting for an answer.');
     for (const x of unsorted) {
       const g = guessTransfer(b, a.id, x, mine);
-      out.push(`    ${fmtShort(x.date)} ${cash(x.amount)} ${x.description}${g ? ` · could be ${g.itemIds.join(' or ')}` : ' · nothing nearby matches'}`);
+      // Each envelope by name, with the purchase that made it a candidate, so a not-sure guess explains itself.
+      const options = g?.itemIds.map((id, i) => {
+        const p = g.nearest[i];
+        return `${b.items.find((it) => it.id === id)?.name ?? id} (${p.txn.merchant || p.txn.description} ${cash(p.txn.amount)} on ${fmtShort(p.txn.date)})`;
+      });
+      out.push(`    ${fmtShort(x.date)} ${cash(x.amount)} ${x.description}${options ? ` · could be ${options.join(' or ')}` : ' · nothing nearby matches'}`);
     }
   }
 
