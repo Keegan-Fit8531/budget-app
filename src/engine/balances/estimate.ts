@@ -4,6 +4,8 @@ import type { Budget, Cents } from '../../core/types';
 import { depositFor, depositPending } from './deposits';
 import { outflows } from './outflows';
 import { leftoverBeforeBudget } from './topUps';
+import { envelopeHeld } from '../envelope';
+import { envelopeOn, isEnvelope } from '../setAside';
 
 /** Estimated balance at the end of `date`, from the last balance you entered. Undefined if unknown. */
 export function estimateBalance(b: Budget, accountId: string, date: ISODate, today: ISODate = todayISO()): Cents | undefined {
@@ -43,6 +45,8 @@ export function balanceToday(b: Budget, accountId: string, today: ISODate = toda
 export interface PeriodForecast { period: Period; deposit: Cents; out: Cents; end: Cents | undefined }
 
 /** Balance forecast for `count` pay periods starting with the one containing `today`. */
+const sub = (a: Cents | undefined, c: Cents) => (a === undefined ? undefined : a - c);
+
 export function forecastBalances(b: Budget, accountId: string, count: number, today: ISODate = todayISO()): PeriodForecast[] {
   const entry = b.balances?.[accountId];
   const pending = !!entry && depositPending(b, accountId, entry);
@@ -51,11 +55,14 @@ export function forecastBalances(b: Budget, accountId: string, count: number, to
   for (let i = 0; i < count; i++) {
     // Deposit still counts when the balance is as-of this payday but the money hasn't landed yet.
     const received = !entry || p.start > entry.asOf || (p.start === entry.asOf && pending);
+    // Envelope money counts as spent: what's unspent now in this pay, then what each later payday funds.
+    const spent = envelopeSpentBy(b, accountId, p.end, today);
+    const spentBefore = i === 0 ? 0 : envelopeSpentBy(b, accountId, addDays(p.start, -1), today);
     rows.push({
       period: p,
       deposit: received ? depositFor(b, accountId, p, today) : 0,
-      out: outflows(b, accountId, entry && entry.asOf > p.start ? addDays(entry.asOf, 1) : p.start, p.end).reduce((t, o) => t + o.amount, 0),
-      end: estimateBalance(b, accountId, p.end, today),
+      out: outflows(b, accountId, entry && entry.asOf > p.start ? addDays(entry.asOf, 1) : p.start, p.end).reduce((t, o) => t + o.amount, 0) + spent - spentBefore,
+      end: sub(estimateBalance(b, accountId, p.end, today), spent),
     });
     p = shiftPeriod(p, 1, b.settings);
   }
@@ -77,4 +84,19 @@ export function balanceOn(b: Budget, accountId: string, date: ISODate, today: IS
   if (date < first.start) return bal;
   for (let q = first; q.start <= date; q = shiftPeriod(q, 1, s)) bal += depositFor(b, accountId, q, today);
   return bal - outflows(b, accountId, first.start, date).reduce((t, o) => t + o.amount, 0);
+}
+
+/**
+ * Envelope money spent by `date` (Food shop, Car gas): what's unspent today, and what every payday after
+ * today up to `date` puts in its envelopes. Envelope spending leaves by transfers the projection can't
+ * see, so without this a future pay's balance grows by each payday's envelope money (Food and gas
+ * "Ends $2,400" in Jan when it really ends about $0). 0 for an account with no envelopes.
+ */
+export function envelopeSpentBy(b: Budget, accountId: string, date: ISODate, today: ISODate = todayISO()): Cents {
+  if (!b.items.some((i) => i.accountId === accountId && isEnvelope(i))) return 0;
+  let spent = envelopeHeld(b, accountId, today);
+  for (let p = shiftPeriod(periodContaining(today, b.settings), 1, b.settings); p.start <= date; p = shiftPeriod(p, 1, b.settings)) {
+    spent += envelopeOn(b, accountId, p.start);
+  }
+  return spent;
 }

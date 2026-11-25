@@ -6,6 +6,7 @@ import { periodContaining, shiftPeriod } from '../periods';
 import { budget, foodGasBudget } from '../../testing/fixtures';
 import { envelopeHeld } from '../envelope';
 import { exactNeed } from './outflows';
+import { forecastBalances } from './estimate';
 
 const TODAY = '2026-11-25';
 
@@ -71,4 +72,16 @@ describe('envelope money already in the account is spoken for', () => {
       expect(depositFor(b, 'food', next, today)).toBeGreaterThanOrEqual(exactNeed(b, 'food', next) + short - 25000);
     });
   }
+});
+
+describe('a future pay’s balance with envelopes', () => {
+  it('counts each payday’s envelope money as spent, so it doesn’t pile up', () => {
+    const b = foodGasBudget();
+    b.split.find((l) => l.accountId === 'food')!.mode = 'exact';
+    const rows = forecastBalances(b, 'food', 6, '2026-11-22');
+    for (let i = 1; i < rows.length; i++) {
+      expect(rows[i].end).toBe(rows[i - 1].end! + rows[i].deposit - rows[i].out);
+      expect(rows[i].end).toBe(Math.max(0, rows[0].end!)); // exact: each pay funds just its own envelopes
+    }
+  });
 });
