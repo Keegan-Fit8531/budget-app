@@ -15,7 +15,8 @@
     "uses": "node scripts/uses.mjs",
     "inspect": "vite-node scripts/inspect.ts --",
     "screenshot": "node scripts/screenshot.mjs",
-    "live": "node scripts/live.mjs"
+    "live": "node scripts/live.mjs",
+    "crawl": "node scripts/crawl.mjs"
   },
   "dependencies": {
     "@tesseract.js-data/eng": "^1.0.0",

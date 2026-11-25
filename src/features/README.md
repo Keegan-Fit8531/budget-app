@@ -15,6 +15,5 @@ folder of plain functions (no React) with their tests. Logic that several pages 
 - A page reads the budget with `useBudget()` and changes it only through `update(fn)` (`state/store.tsx`).
 - Put a calculation in the feature's `logic/` (or `engine/` if more than one page needs it), not inside a component, so it can be tested.
 - A pop-up used from more than one page goes in `shared/`.
-- Give the engine the store's own `budget` object, never a copy made while drawing (`{ ...budget, savings }`): results are cached per budget object, so a copy plans every pay again on every tap (Savings took seconds a tap).
 
 Keep this README current: update it in the same change when you add, remove, rename or repurpose a folder here (see AGENTS.md).
