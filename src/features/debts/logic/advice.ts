@@ -1,4 +1,4 @@
-import { fmtDay, ordinal } from '../../../core/dates';
+import { fmtDay, ordinal, todayISO } from '../../../core/dates';
 import { type Period } from '../../../engine/periods';
 import type { Budget, Cents, Debt } from '../../../core/types';
 import { debtPerPay, owed, unplanned } from './amounts';
@@ -60,8 +60,10 @@ export function debtAdvice(b: Budget, debt: Debt, period: Period): DebtAdvice {
 
   if (debt.rules === 'gem') {
     const g = gemPlan(debt, s);
+    // A later pay: what its statement needs to avoid interest by then, which drops as plans are paid off.
+    const recommended = period.start > todayISO() ? inPeriod(undefined) : g.recommended;
     return {
-      ...base, recommended: g.recommended, minimum: g.minimum, apply: { mode: 'exact' },
+      ...base, recommended, minimum: g.minimum, apply: { mode: 'exact' },
       reason: `Clears each plan before its interest-free time ends. Gem’s minimum is ${fmt(g.minimum)}.${debt.statementDay ? ` Pay on or after the ${ordinal(debt.statementDay)}.` : ''}`,
     };
   }

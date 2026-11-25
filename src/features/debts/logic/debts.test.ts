@@ -331,3 +331,20 @@ describe('extra paid off a debt for one pay', () => {
     expect(projectedOwed(gem, b.settings, '2027-03-31', debtPay(b, gem))).toBe(steady - 150000);
   });
 });
+
+describe('Gem’s recommended payment follows each statement', () => {
+  it('spreads each interest-free plan over its statements left, and drops to the instalments once it’s clear', () => {
+    const b = heldGemBudget();
+    b.debts![0].plans = [
+      { id: 'eq', name: 'Jeweller', type: 'equal', months: 36, original: 360000, remaining: 360000, asOf: '2026-11-25', purchaseDate: '2026-11-01', ends: '2029-11-20' },
+      { id: 'if', name: 'TV', type: 'interest-free', months: 6, original: 60000, remaining: 60000, asOf: '2026-11-25', purchaseDate: '2026-11-01', ends: '2027-03-20' },
+    ];
+    b.debts![0].balance = { amount: 420000, asOf: '2026-11-25' };
+    const pays = debtSchedules(b.debts![0], b.settings).flatMap((s) => s.payments);
+    const on = (date: string) => pays.filter((p) => p.date === date).reduce((t, p) => t + p.amount, 0);
+    // $100 instalment + $600 over the 3 statements before 20 Mar (21 Dec, Jan, Feb: $200 each).
+    expect(on('2026-12-21')).toBe(30000);
+    expect(on('2027-02-21')).toBe(30000);
+    expect(on('2027-03-21')).toBe(10000); // TV cleared: just the instalment
+  });
+});

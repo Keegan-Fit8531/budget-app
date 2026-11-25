@@ -77,6 +77,26 @@ function gemBucketsForRecommend(debt: Debt, start: ISODate): Bucket[] {
   return out;
 }
 
+/**
+ * What a statement on `date` needs so no plan is charged interest (as Latitude works it out): each equal-payment
+ * plan's instalment, other purchases in full (they're charged interest), and each interest-free plan's balance
+ * spread over the statements left before it ends. Never less than Gem's minimum (`minimum`, else 3% / $20).
+ * Whole dollars, rounded up. It drops as plans are paid off: Gem at $245 now is $82 once only instalments are left.
+ */
+function gemDue(buckets: Bucket[], date: ISODate, statements: ISODate[], minimum?: Cents): Cents {
+  let due = 0;
+  for (const b of buckets) {
+    if (b.left <= 0) continue;
+    if (b.kind === 'instalment') due += Math.min(b.left, b.monthly);
+    else if (b.kind === 'other' || b.end <= date) due += b.left;
+    else due += Math.ceil(b.left / Math.max(1, statements.filter((d) => d >= date && d < b.end).length));
+  }
+  const inst = buckets.filter((b) => b.kind === 'instalment').reduce((t, b) => t + Math.min(Math.max(0, b.left), b.monthly), 0);
+  const rest = buckets.filter((b) => b.kind !== 'instalment').reduce((t, b) => t + Math.max(0, b.left), 0);
+  const min = minimum ?? inst + (rest < 2000 ? rest : Math.max(2000, Math.round(rest * 0.03)));
+  return Math.ceil(Math.max(due, min) / 100) * 100;
+}
+
 /** Split one payment across the buckets in Gem's order. Mutates `left`; returns the amount each bucket got. */
 function gemSplit(buckets: Bucket[], amount: Cents, date: ISODate): Map<Bucket, Cents> {
   const got = new Map<Bucket, Cents>();
@@ -138,18 +158,8 @@ export function gemPlan(debt: Debt, s: Settings, perPayIn?: PerPay): GemPlanResu
     for (let i = 0; i < HORIZON; i++) { paydays.push(p.start); p = shiftPeriod(p, 1, s); }
   }
 
-  // Recommended: instalments due + enough that, paying soonest-expiry first, each plan is clear in time.
-  // Use balance-scaled leftovers so overstated plan remainings don't inflate the figure.
-  const forRec = gemBucketsForRecommend(debt, start);
-  const instRec = forRec.filter((b) => b.kind === 'instalment').reduce((t, b) => t + Math.min(b.left, b.monthly), 0);
-  let cum = forRec.filter((b) => b.kind === 'other').reduce((t, b) => t + b.left, 0);
-  let need = cum; // other purchases: clear them on the first payment
-  for (const b of forRec.filter((b) => b.kind === 'promo').sort((a, b) => a.end.localeCompare(b.end))) {
-    cum += b.left;
-    const n = paydays.filter((d) => d < b.end).length;
-    need = Math.max(need, n > 0 ? Math.ceil(cum / n) : cum);
-  }
-  const recommended = Math.ceil(Math.max(instRec + need, minimum) / 100) * 100;
+  // Recommended for this statement (balance-scaled leftovers, so overstated plans don't inflate it).
+  const recommended = gemDue(gemBucketsForRecommend(debt, start), paydays[0] ?? start, paydays, minimum);
   const amount = usualPay(perPayIn) ?? recommended;
   const more = lastOneOff(perPayIn);
 
@@ -158,7 +168,8 @@ export function gemPlan(debt: Debt, s: Settings, perPayIn?: PerPay): GemPlanResu
   const warnings = new Map<Bucket, string>();
   const used = new Set<ISODate>();
   for (const date of paydays) {
-    const pay = payFor(perPayIn, periodContaining(date, s).start, used) ?? recommended;
+    // With nothing set, each statement pays what it needs to avoid interest then: it drops as plans finish.
+    const pay = payFor(perPayIn, periodContaining(date, s).start, used) ?? (date === paydays[0] ? recommended : gemDue(buckets, date, paydays));
     if (buckets.every((b) => b.left <= 0)) break;
     if (pay <= 0) { if (more && more > date) continue; break; }
     for (const b of buckets) {
