@@ -102,7 +102,7 @@ export function runStart(b: Budget, accountId: string, today: ISODate, useBalanc
     const p = periodContaining(known.asOf, b.settings);
     const pending = depositPending(b, accountId, known) ? depositSansBalance(b, accountId, p) : 0;
     // Envelope money still unspent (Food shop's later weeks, this month's gas) will be spent before the
-    // next payday: it's spoken for, not a cushion. Counted as spare, Food and gas's next pay sent $100, not $1,100.
+    // next payday: it's spoken for, not a cushion. Counted as spare, an envelope account's next pay sent almost nothing.
     const held = envelopeHeld(b, accountId, known.asOf)
       + (capped !== undefined ? Math.min(capped, asideSpareNow(b, accountId, known.asOf) ?? 0) : 0);
     return { pay: shiftPeriod(p, 1, b.settings), bal: known.amount + pending - held, cursor: known.asOf };

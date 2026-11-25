@@ -199,8 +199,8 @@ export function plannerFigures(b: Budget, period: Period, mode: PlannerMode, tod
 }
 
 /**
- * Accounts payday leaves short this pay ("Gem Visa needs $182 more"). A debt the bank already shows paid
- * enough this pay isn't short: payday sent $133 to Gem, but $700 went to it from ANZ accounts (`Debt.bankPayments`).
+ * Accounts payday leaves short this pay ("Gem Visa needs $50 more"). A debt the bank already shows paid
+ * enough this pay isn't short: payday sent it less, but more went to it from other accounts (`Debt.bankPayments`).
  */
 export function shortAccounts(b: Budget, plan: PeriodPlan): AccountPlan[] {
   const { start, end } = plan.period;

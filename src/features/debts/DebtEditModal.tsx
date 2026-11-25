@@ -12,7 +12,11 @@ import { PaymentModal } from './PaymentModal';
 import { DebtModal } from './DebtModal';
 
 /** Outstanding balance and available credit, editable either way round. */
-export function BalanceEditor({ debt: d, used, onAddPlan, editing: startEditing, onDone }: { debt: Debt; used: number; onAddPlan: () => void; editing?: boolean; onDone?: () => void }) {
+export function BalanceEditor({ debt: d, used, on, onAddPlan, editing: startEditing, onDone }: {
+  debt: Debt; used: number; onAddPlan: () => void; editing?: boolean; onDone?: () => void;
+  /** A later day being looked at: `used` is projected for then. */
+  on?: string;
+}) {
   const { budget, update } = useBudget();
   // Money owed outside a plan still gets paid from the payday amount; it's only unscheduled when that's $0.
   const unscheduled = debtPerPay(budget, d) === 0;
@@ -82,7 +86,7 @@ export function BalanceEditor({ debt: d, used, onAddPlan, editing: startEditing,
     <div className="stack gap-6">
       {d.limit ? <div className="bar" style={{ marginTop: 0 }} role="img" aria-label={`${Math.round(used)}% of the limit used`}><div style={{ width: `${used}%`, background: used > 80 ? 'var(--bad)' : undefined }} /></div> : null}
       <p className="small muted">
-        {d.balance ? `Balance checked ${fmtShort(d.balance.asOf)}${d.balance.asOf.slice(0, 4) !== today.slice(0, 4) ? ` ${d.balance.asOf.slice(0, 4)}` : ''}` : 'Owed is from the plans below'}{d.limit ? ` · ${Math.round(used)}% of the limit used` : ''}
+        {d.balance ? `Balance checked ${fmtShort(d.balance.asOf)}${d.balance.asOf.slice(0, 4) !== today.slice(0, 4) ? ` ${d.balance.asOf.slice(0, 4)}` : ''}` : 'Owed is from the plans below'}{d.limit ? ` · ${Math.round(used)}% of the limit used${on ? ` by ${fmtShort(on)}` : ''}` : ''}
       </p>
       {d.balance && extra > 0 && d.rules !== 'gem' && unscheduled && (
         <div className="tip">

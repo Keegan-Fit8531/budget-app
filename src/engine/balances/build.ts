@@ -9,8 +9,8 @@ import { between, cached, fromRun, runKey, runLength, runStart, window, type Run
 // "Build up" (`SplitLine.mode` 'build'): each payday looks only as far as the next pay that needs more
 // than the account's average (a 5-Friday rent pay) and shares what's still due up to then evenly over
 // the paydays left, less what's in the account now. So the account builds up in the 4-Friday pays and
-// is back to about $0 after each 5-Friday one. Rent at $415 a week, paid on the 19th: $1,800, $1,800,
-// then $1,795 on the 5-Friday pay (back to $0). Money moved in or out changes the next payday's amount.
+// is back to about $0 after each 5-Friday one. Rent at $400 a week, paid on the 19th: $1,730, $1,740,
+// then $1,730 on the 5-Friday pay (back to $0: build.test.ts). Money moved in or out changes the next payday's amount.
 // ---------------------------------------------------------------------------------------------
 
 /** How far ahead a stretch can reach: a year of pays. With no bigger pay in it, the stretch is just this pay. */

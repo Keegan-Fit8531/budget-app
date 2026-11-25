@@ -75,7 +75,7 @@ function topUpGemHoldOutflows(b: Budget, accountId: string, from: ISODate, to: I
       const lo = period.start < from ? from : period.start;
       const hi = period.end > to ? to : period.end;
       // Never more than Gem is projected to still owe: once it's paid off, nothing is kept for it
-      // (its recommended amount stays $245, so Misc bills built up by that much every month).
+      // (otherwise its recommended amount kept being held, and the hold account built up by that much every month).
       let need = Math.min(debtAdvice(b, debt, period).recommended, projectedOwed(debt, b.settings, period.start, debtPay(b, debt)));
       const frozen = b.splitSent?.[period.start]?.[debt.accountId];
       if (frozen !== undefined && paySplitLocked(b, period, today)) need = Math.max(need, frozen);
@@ -133,7 +133,7 @@ export function fundedOut(b: Budget, accountId: string, from: ISODate, to: ISODa
 /**
  * Money put aside in an account by `payday`: what was spare on the day you entered its balance, plus what
  * each payday since puts aside (capped at each cost's max). Rolling that figure forward by bills alone
- * (`asideSpareNow`) lost the paydays' money, so a later pay never reached Haircut's $60 max and kept putting $30 aside.
+ * (`asideSpareNow`) lost the paydays' money, so a later pay never reached a cost's max and kept putting money aside.
  */
 function asideSpareAt(b: Budget, accountId: string, payday: ISODate): Cents | undefined {
   const entry = b.balances?.[accountId];

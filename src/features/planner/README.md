@@ -7,7 +7,7 @@ after the plan, the pay itself, where it goes, the payday split card by card, an
 - `PlannerPage.tsx`: the page. The leftover and pay figures (type the pay in, or upload a payslip), the "Not balanced yet / Re-balance / Reset to defaults" note, the chart of where pay goes by group, the payday split, the weeks view and the due list. Its figures come from `logic/plannerFigures.ts`; the page keeps only what's typed or clicked (pay, Balance this pay, Optimise's Undo); amounts for one pay only change through `logic/thisPay.ts`.
 - `PaydayCard.tsx`: one account in the payday split, and its details pop-up: what payday sends it (or on average), the Short / Spare / Ends / Buffer pill (buffer from `engine/balances/buffer.ts`), each cost this pay, and links to its debt, goal or settings. `PlannerView` is the view it's given.
 - `PayNotes.tsx`: "What's different this pay": accounts sending more or less than usual and why, with Change / Reset for an amount set for this pay only.
-- `ShortAlert.tsx`: "Gem Visa needs $182 more this pay", with Dismiss (kept in localStorage until what's short changes).
+- `ShortAlert.tsx`: "Gem Visa needs $50 more this pay", with Dismiss (kept in localStorage until what's short changes).
 - `DueList.tsx`: "Coming up before next pay" / "Due this period", grouped by day.
 - `WeeksView.tsx`: the pay as a calendar, with the weekly costs you chose to show ("Show in Weeks this pay").
 - `OptimiseModal.tsx`: Optimise: hand out what's left over to goals, debts, the allowance or spending, for this pay or every pay, with Undo (kept in localStorage: `readOptimiseUndo`, `clearOptimiseUndo`).

@@ -89,8 +89,8 @@ export function balanceOn(b: Budget, accountId: string, date: ISODate, today: IS
 /**
  * Envelope money spent by `date` (Food shop, Car gas): what's unspent today, and what every payday after
  * today up to `date` puts in its envelopes. Envelope spending leaves by transfers the projection can't
- * see, so without this a future pay's balance grows by each payday's envelope money (Food and gas
- * "Ends $2,400" in Jan when it really ends about $0). 0 for an account with no envelopes.
+ * see, so without this a future pay's balance grows by each payday's envelope money (a food and gas
+ * account shows thousands at its end a few pays out when it really ends about $0). 0 for an account with no envelopes.
  */
 export function envelopeSpentBy(b: Budget, accountId: string, date: ISODate, today: ISODate = todayISO()): Cents {
   if (!b.items.some((i) => i.accountId === accountId && isEnvelope(i))) return 0;

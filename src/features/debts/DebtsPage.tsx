@@ -151,7 +151,8 @@ export function DebtsPage() {
         const gem = d.rules === 'gem' && d.plans.length + unplanned(d) > 0 ? gemPlan(d, s, debtPay(budget, d)) : null;
         const o = owed(d);
         const oDay = owedOn(d);
-        const used = d.limit ? Math.min(100, (o / d.limit) * 100) : 0;
+        // Looking at a later day: the limit used then, after the payments before it.
+        const used = d.limit ? Math.min(100, Math.max(0, ((oDay ?? o) / d.limit) * 100)) : 0;
         const funded = plan.accounts.find((a) => a.account.id === d.accountId);
         const isOpen = open.includes(d.id);
         const adv = advice.find((a) => a.debt.id === d.id);
@@ -224,7 +225,7 @@ export function DebtsPage() {
               </div>
             )}
 
-            <BalanceEditor debt={d} used={used} onAddPlan={() => setPlanModal({ debt: d, prefill: unplanned(d) })} />
+            <BalanceEditor debt={d} used={used} on={day > today ? day : undefined} onAddPlan={() => setPlanModal({ debt: d, prefill: unplanned(d) })} />
 
             {gem && gem.perPay < gem.recommended && (
               <p className="small error">At {cash(gem.perPay)} a pay, some interest-free plans won’t clear in time.</p>
