@@ -2,7 +2,7 @@ import { addDays, todayISO, type ISODate } from '../../core/dates';
 import { shiftPeriod, type Period } from '../periods';
 import type { Budget, Cents } from '../../core/types';
 import { estimateBalance, balanceOn } from './estimate';
-import { accountMode, type Outflow, outflows, fundedOut } from './outflows';
+import { accountMode, type Outflow, outflows } from './outflows';
 import { depositFor } from './deposits';
 
 /**
@@ -36,21 +36,6 @@ export function spareInfo(b: Budget, accountId: string, period: Period, pays = 1
   }
   const reserve = outflows(b, accountId, period.start, p.end).reduce((m, o) => Math.max(m, o.amount), 0);
   return { low, lowAt, reserve, spare: Math.max(0, Math.floor((low - reserve) / 100) * 100) };
-}
-
-/**
- * For a steady account: the next pay (after `from`) whose costs are bigger than its steady deposit,
- * e.g. a pay with 5 rent Mondays. That's what the money sitting in the account is kept for.
- */
-export function nextBufferUse(b: Budget, accountId: string, from: Period, pays = 13, today: ISODate = todayISO()): { period: Period; need: Cents; deposit: Cents } | undefined {
-  let p = from;
-  for (let i = 0; i < pays; i++) {
-    p = shiftPeriod(p, 1, b.settings);
-    const need = fundedOut(b, accountId, p.start, p.end).reduce((t, o) => t + o.amount, 0);
-    const deposit = depositFor(b, accountId, p, today);
-    if (need > deposit) return { period: p, need, deposit };
-  }
-  return undefined;
 }
 
 export interface ProjectedRow extends Outflow { after?: Cents }
