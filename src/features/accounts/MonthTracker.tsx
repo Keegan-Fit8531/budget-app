@@ -3,7 +3,7 @@ import { accountMode } from '../../engine/balances/outflows';
 import { balanceOn } from '../../engine/balances/estimate';
 import { billTracker } from '../../engine/balances/billTracker';
 import { payProjection } from '../../engine/balances/projection';
-import { bufferLine, potBuffer } from '../../engine/balances/buffer';
+import { BUFFER_PAYS, bufferLine, potBuffer } from '../../engine/balances/buffer';
 import { fmtDay, fmtShort, monthName, ordinal, todayISO } from '../../core/dates';
 import { debtAdvice } from '../debts/logic/advice';
 import { accountEnvelopes, envelopeHeld, transferKey } from '../../engine/envelope';
@@ -65,7 +65,7 @@ export function MonthTracker({ budget, account, today = todayISO(), open, toggle
   const short = afterReserved < 0;
   // Steady: "Buffer" is what later pays need of what's left after this pay's bills (and gas), as a running
   // balance (`engine/balances/buffer.ts`). More than is left: short by that much, for a later pay.
-  const pot = steady && !short ? potBuffer(budget, account.id, t.period, spareAmt, 13, today) : undefined;
+  const pot = steady && !short ? potBuffer(budget, account.id, t.period, spareAmt, BUFFER_PAYS, today) : undefined;
   const bufferFor = pot && pot.buffer > 0 ? pot.lowest : undefined;
   const bufferShort = pot && pot.free < 0 ? -pot.free : undefined;
   const bufferShown = bufferFor && bufferShort === undefined ? pot!.buffer : undefined;

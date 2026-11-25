@@ -99,7 +99,7 @@ export function inspectAccount(b: Budget, which: string, today: ISODate = todayI
     const need = fundedOut(b, a.id, p.start, p.end).reduce((s, o) => s + o.amount, 0);
     out.push(`  ${span(p.start, p.end)}: ${cash(need)} / ${cash(depositFor(b, a.id, p, today))}`);
   }
-  if (accountMode(b, a.id) === 'smooth') out.push(`  Steady buffer (running balance, next 13 pays): ${bufferLine(potBuffer(b, a.id, t.period, t.spare, 13, today))}.`);
+  if (accountMode(b, a.id) === 'smooth') out.push(`  Steady buffer (running balance, next 12 pays): ${bufferLine(potBuffer(b, a.id, t.period, t.spare, 12, today))}.`);
 
   // Recent transactions, with what each one counted as.
   out.push('', 'Last 14 days of transactions (category → envelope):');

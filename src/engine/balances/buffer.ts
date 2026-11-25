@@ -6,11 +6,10 @@ import { depositFor } from './deposits';
 import { fundedOut } from './outflows';
 
 // ---------------------------------------------------------------------------------------------
-// A steady account's buffer (Rent): how much of what's left after this pay's bills has to stay for the
-// next pay that needs more than payday sends it (a 5-Friday rent pay), worked out as a running balance
-// up to and including that pay. The spare from 4-payment pays before it counts towards it, so a
-// 5-payment pay after two 4-payment ones needs nothing held. Later 5-payment pays aren't counted: the
-// owner wants the buffer to be what's needed until the next one.
+// A steady account's buffer (Rent): how much of what's left after this pay's bills has to stay for
+// later pays, worked out as a running balance. A weekly bill from a monthly pay gives 4- and 5-payment
+// pays; the spare from the 4-payment pays in between covers a 5-payment one, so only the lowest the
+// running balance falls below zero is held, not each 5-payment pay's own gap.
 // ---------------------------------------------------------------------------------------------
 
 /**
@@ -28,39 +27,39 @@ export function runningLow(nets: Cents[]): { buffer: Cents; at: number } {
   return { buffer: low < 0 ? -low : 0, at };
 }
 
+/** How far ahead the buffer looks: 12 pays, a year of monthly pays (each 5-payment pay in it). */
+export const BUFFER_PAYS = 12;
+
 export interface PayNet { period: Period; need: Cents; deposit: Cents }
 
 export interface PotBuffer {
   /** What's left after the bills before `nextPayday` (the start of the run). */
   left: Cents;
   nextPayday: ISODate;
-  /** Held for the next short pay: the lowest the running balance falls below zero up to it. */
+  /** Held for later pays: the lowest the running balance falls below zero. */
   buffer: Cents;
   /** left − buffer. Negative = the pot can't cover its bills by `lowest`'s pay: that much short. */
   free: Cents;
   /** The pays from `nextPayday` up to the lowest point, with what they need and get in total. */
   lowest?: { period: Period; pays: number; need: Cents; deposit: Cents };
-  /** Each pay in the run: up to and including the next short pay (need > deposit), at most `pays`. */
+  /** Each pay in the run. */
   run: PayNet[];
 }
 
 /**
  * The buffer for an account after `period`, given `left` = what's in it at the end of `period` after
  * its bills (for the pay you're in: balance − bills still to come; for a later pay: its projected end,
- * which includes the surplus built up before it). Runs pay by pay on their real paydays, each with what
- * payday sends it then (`depositFor`: a changed or one-pay amount counts) less what's due from its
- * payday to the day before the next (`fundedOut`), up to the first pay that needs more than it gets
- * (looking at most `pays` ahead). Transfers in or out are already in `left`.
+ * which includes the surplus built up before it). Runs the next `pays` pays on their real paydays, each
+ * with what payday sends it then (`depositFor`: a changed or one-pay amount counts) less what's due
+ * from its payday to the day before the next (`fundedOut`). Transfers in or out are already in `left`.
  */
-export function potBuffer(b: Budget, accountId: string, period: Period, left: Cents, pays = 13, today: ISODate = todayISO()): PotBuffer {
+export function potBuffer(b: Budget, accountId: string, period: Period, left: Cents, pays = BUFFER_PAYS, today: ISODate = todayISO()): PotBuffer {
   const run: PayNet[] = [];
   let p = period;
   for (let i = 0; i < pays; i++) {
     p = shiftPeriod(p, 1, b.settings);
     const need = fundedOut(b, accountId, p.start, p.end).reduce((t, o) => t + o.amount, 0);
-    const deposit = depositFor(b, accountId, p, today);
-    run.push({ period: p, need, deposit });
-    if (need > deposit) break;
+    run.push({ period: p, need, deposit: depositFor(b, accountId, p, today) });
   }
   const { buffer, at } = runningLow(run.map((r) => r.deposit - r.need));
   const upTo = run.slice(0, at + 1);
@@ -81,11 +80,7 @@ export function potBuffer(b: Budget, accountId: string, period: Period, left: Ce
 export function bufferLine(x: PotBuffer): string {
   const head = `${cash(x.left)} left after bills before ${fmtShort(x.nextPayday)}`;
   const low = x.lowest;
-  if (!low || x.buffer <= 0) {
-    const last = x.run[x.run.length - 1];
-    const upTo = last && last.need > last.deposit ? `the ${fmtShort(last.period.start)} pay is covered` : `nothing to hold for the next ${x.run.length} pays`;
-    return `${head} · ${upTo} · ${cash(x.left)} free`;
-  }
+  if (!low || x.buffer <= 0) return `${head} · nothing to hold for the next ${x.run.length} pays · ${cash(x.left)} free`;
   const pay = `the ${fmtShort(low.period.start)} pay`;
   const why = low.pays === 1
     ? `needs ${cash(low.need)}, gets ${cash(low.deposit)}`

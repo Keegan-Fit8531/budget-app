@@ -2,7 +2,7 @@ import { fmtShort, monthName, ordinal, type ISODate } from '../../core/dates';
 import { cash } from '../../core/money';
 import type { Budget, Cents, EnvelopeSpan } from '../../core/types';
 import { accountMode } from '../../engine/balances/outflows';
-import { bufferLine, potBuffer } from '../../engine/balances/buffer';
+import { BUFFER_PAYS, bufferLine, potBuffer } from '../../engine/balances/buffer';
 import { leftoverBeforeBudget, topsUp } from '../../engine/balances/topUps';
 import { envelopeHeld } from '../../engine/envelope';
 import { firstBudgetPay, shiftPeriod, type Period } from '../../engine/periods';
@@ -66,7 +66,7 @@ export function PaydayCard({ budget, a, view, why, isOpen, onOpen, onClose, onEd
   // Steady (e.g. rent): "Buffer" is what the pays after this one need of what it ends with, as a running
   // balance from this pay's end (which includes what earlier pays built up) — not the whole ending balance.
   const pot = ends !== undefined && ends > 0 && steadyMode
-    ? potBuffer(budget, a.account.id, period, ends, 13, today) : undefined;
+    ? potBuffer(budget, a.account.id, period, ends, BUFFER_PAYS, today) : undefined;
   const bufferFor = pot && pot.buffer > 0 ? pot.lowest : undefined;
   const bufferShort = bufferFor && pot!.free < 0 ? -pot!.free : undefined;
   const bufferShown = bufferFor ? pot!.buffer : undefined;
