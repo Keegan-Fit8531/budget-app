@@ -23,15 +23,16 @@ code or test fixtures (make up the numbers there, as `src/testing/fixtures.ts` d
   One field across the last saves: `for c in $(git -C ../budget-data log --format=%h -20); do git -C ../budget-data show $c:budget.json | jq -c .billChecks; done`.
 - A synced balance already has pending transactions out (don't take them off again), and can be ahead of its transactions (`services/bank/README.md`). A card is the other way round: the bank leaves pending purchases out, and the app adds `Debt.pending` back.
 - `inspect -- gem` shows a debt's payday account, not its plans: query them with `jq '.debts[]|select(.id=="gem")|{balance,plans,pending,t:.transactions[-20:]}' ../budget-data/budget.json`, or as the app loads it with `_try.ts` (below).
+- A jump in one pay (Gem $1,633 in March) is often a one-pay amount, not the rules: `jq .overrides`. The owner resets it in that pay's "What's different this pay". The clone is shallow: `fetch --unshallow` before searching old saves.
 - To see a state the real budget isn't in yet (a card newly linked, a pending payment), make a changed copy in your scratchpad with `jq` and pass it with `--file`.
 
 ## Screenshot options
+- The Planner opens on the next pay: `--click '[aria-label="Previous pay period"]'` for the pay you're in.
 - `--click <selector>` taps things first. On Accounts (Bill check) and Debts (Plan check) a pop-up covers the page: add `--click 'text="Later"'` (quoted, exact: `text=Later` hits "for later costs" under it).
   It can open after a bank sync, later than the clicks: if it's still there, or "Nothing to click" is printed, run it again.
 - Open a card with `--click '.acct:has-text("Rent") >> text=Details'`, and picture only it with `--only '.acct:has-text("Rent")'` (Debts cards are `.acct` too).
   A pop-up itself: `--only '.modal'` (payday settings: `--click '.acct:has-text("Rent") >> [aria-label*=dit]' --click 'text="Payday send"'`); tap an answer with `--click '.check-row:has-text("…") >> text=12 months'`.
-- No sync is set up, so nothing is written back; what shows only with the bank connection (Debts cards' sync buttons) doesn't appear: for that, use a throwaway script that also sets `localStorage['paydays.bank']` to `{ url: 'http://localhost:1/none', key: 'test-key-123456', lastSync: <now> }`.
-- For what it can't do (drag, type, check a pop-up stays open), write a throwaway Playwright script in your scratchpad set up the same way (budget in `localStorage`, `timezoneId: 'Pacific/Auckland'`, `page.clock.setFixedTime`), loading Playwright with `createRequire(import.meta.url)('playwright')`.
+- No bank connection, nothing written back; for what it can't do (drag, type), a throwaway Playwright script: see the header of `screenshot.mjs`.
 
 ## Checking a deploy with live
 - Built JSX text is split up, and comments are dropped: search a CSS class, a string prop (`sub="…"`), a `localStorage` key or a string from a `.ts` file, exactly as the code has it (`/plan transfer/i`, not "PLAN TRANSFER" from a comment), or `--wait` runs 8 minutes for nothing.
@@ -47,7 +48,7 @@ let b = bringUpToDate(JSON.parse(readFileSync('../budget-data/budget.json', 'utf
 // change it as the app would (call a check's apply/undo, set a field), then look with a fresh copy:
 b = structuredClone(b); // matching results are cached per budget object, so clone after each change
 ```
-Then call what you need (`billTracker`, `billChecks`, `recordCardPayments`…) with a fixed `today`.
+Then call what you need (`billTracker`, `billChecks`, `recordCardPayments`…) with a fixed `today`; code that reads `todayISO()` itself (Gem's hold top-up) needs `Date` pinned as `scripts/inspect.ts` does.
 For anything a sync changes (`applyBank`), run it twice, then load the result again (`bringUpToDate(JSON.parse(JSON.stringify(b)))`): if the figures move, they'll drift on every sync.
 A bank reply for a linked card can be rebuilt from what's saved (`accounts: [{ id, type: 'CREDITCARD', balance: -owed, … }]`, `pending` from `debt.pending`).
 
