@@ -134,6 +134,9 @@ function AccountSection({ account: a, open, bare, onToggle, periodNeed, periodSe
   // Money put aside here (a WOF, tyres) stays in the account; the bills are what really comes out.
   const bills = items.filter((i) => !isSetAside(i) && !isEnvelope(i));
   const asides = items.filter(isSetAside);
+  // The choices offered: Level amount and Build up for anything spent (bills or envelopes like Food shop,
+  // which has 4- and 5-week pays too); Set amount only when balancing isn't choosing for you.
+  const offer = { fixed: !balanced || mode === 'fixed', level: items.some((i) => !isSetAside(i)), exact: items.length > 0 };
   const envelopes = items.filter(isEnvelope);
   const asidePerPay = asides.filter((i) => !i.end || i.end >= today).reduce((t, i) => t + setAsidePerPay(i), 0)
     + envelopes.filter((i) => !i.end || i.end >= today).reduce((t, i) => t + setAsidePerPay(i), 0);
@@ -213,18 +216,18 @@ function AccountSection({ account: a, open, bare, onToggle, periodNeed, periodSe
               {(bills.length > 0 || items.length > 0 || heldDebts.length > 0) && (
                 <div className="seg" role="group" aria-label="How payday fills this account" style={{ alignSelf: 'flex-start', flexWrap: 'wrap' }}>
                   {/* Set amount: when balancing is not choosing for you, or you already use it. */}
-                  {(!balanced || mode === 'fixed') && (
+                  {offer.fixed && (
                     <button aria-pressed={mode === 'fixed'} onClick={() => setMode('fixed')}>{PAYDAY_MODE_LABEL.fixed}</button>
                   )}
-                  {bills.length > 0 && (
+                  {offer.level && (
                     <button aria-pressed={mode === 'smooth'} onClick={() => setMode('smooth')}>
                       {PAYDAY_MODE_LABEL.smooth}{balanced === 'smooth' ? ' · recommended' : ''}
                     </button>
                   )}
-                  {bills.length > 0 && (
+                  {offer.level && (
                     <button aria-pressed={mode === 'build'} onClick={() => setMode('build')}>{PAYDAY_MODE_LABEL.build}</button>
                   )}
-                  {items.length > 0 && (
+                  {offer.exact && (
                     <button aria-pressed={mode === 'exact'} onClick={() => setMode('exact')}>
                       {PAYDAY_MODE_LABEL.exact}{balanced === 'not-fixed' ? ' · recommended' : ''}
                     </button>
@@ -233,10 +236,10 @@ function AccountSection({ account: a, open, bare, onToggle, periodNeed, periodSe
               )}
               {(bills.length > 0 || items.length > 0) && (
                 <ul className="stack gap-4 small muted" style={{ margin: 0, paddingLeft: 18 }}>
-                  <li><b>{PAYDAY_MODE_LABEL.fixed}</b>{mode === 'fixed' ? ' (in use)' : ''}: {PAYDAY_MODE_HINT.fixed}</li>
-                  <li><b>{PAYDAY_MODE_LABEL.smooth}</b>{mode === 'smooth' ? ' (in use)' : ''}{balanced === 'smooth' && mode !== 'smooth' ? ' · recommended' : ''}: {PAYDAY_MODE_HINT.smooth}</li>
-                  {bills.length > 0 && <li><b>{PAYDAY_MODE_LABEL.build}</b>{mode === 'build' ? ' (in use)' : ''}: {PAYDAY_MODE_HINT.build}</li>}
-                  <li><b>{PAYDAY_MODE_LABEL.exact}</b>{mode === 'exact' ? ' (in use)' : ''}{balanced === 'not-fixed' && mode !== 'exact' ? ' · recommended' : ''}: {PAYDAY_MODE_HINT.exact}</li>
+                  {offer.fixed && <li><b>{PAYDAY_MODE_LABEL.fixed}</b>{mode === 'fixed' ? ' (in use)' : ''}: {PAYDAY_MODE_HINT.fixed}</li>}
+                  {offer.level && <li><b>{PAYDAY_MODE_LABEL.smooth}</b>{mode === 'smooth' ? ' (in use)' : ''}{balanced === 'smooth' && mode !== 'smooth' ? ' · recommended' : ''}: {PAYDAY_MODE_HINT.smooth}</li>}
+                  {offer.level && <li><b>{PAYDAY_MODE_LABEL.build}</b>{mode === 'build' ? ' (in use)' : ''}: {PAYDAY_MODE_HINT.build}</li>}
+                  {offer.exact && <li><b>{PAYDAY_MODE_LABEL.exact}</b>{mode === 'exact' ? ' (in use)' : ''}{balanced === 'not-fixed' && mode !== 'exact' ? ' · recommended' : ''}: {PAYDAY_MODE_HINT.exact}</li>}
                 </ul>
               )}
               {periodSends !== (mode === 'smooth' ? steady : periodNeed) && mode !== 'fixed' && (
