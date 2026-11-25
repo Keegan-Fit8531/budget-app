@@ -2,7 +2,7 @@ import { fmtShort, monthName, ordinal, type ISODate } from '../../core/dates';
 import { cash } from '../../core/money';
 import type { Budget, Cents, EnvelopeSpan } from '../../core/types';
 import { accountMode } from '../../engine/balances/outflows';
-import { nextBufferUse } from '../../engine/balances/projection';
+import { bufferLine, potBuffer } from '../../engine/balances/buffer';
 import { leftoverBeforeBudget, topsUp } from '../../engine/balances/topUps';
 import { envelopeHeld } from '../../engine/envelope';
 import { firstBudgetPay, shiftPeriod, type Period } from '../../engine/periods';
@@ -63,13 +63,13 @@ export function PaydayCard({ budget, a, view, why, isOpen, onOpen, onClose, onEd
   const gasHeld = rawEnds !== undefined ? envelopeHeld(budget, a.account.id, today) : 0;
   const ends = rawEnds !== undefined ? rawEnds - gasHeld : undefined;
   const diff = ends !== undefined ? null : a.diff === null || auto ? null : funded - need;
-  // Steady (e.g. rent): only the cushion for the next 5-week pay is "Buffer" — not the whole
-  // ending balance (which was reading as a massive spare pile).
-  const bufferFor = ends !== undefined && ends > 0 && steadyMode
-    ? nextBufferUse(budget, a.account.id, period, 13, today) : undefined;
-  const bufferCushion = bufferFor ? Math.max(0, bufferFor.need - bufferFor.deposit) : 0;
-  const bufferShown = bufferFor && bufferCushion > 0 && ends !== undefined
-    ? Math.min(ends, bufferCushion) : undefined;
+  // Steady (e.g. rent): "Buffer" is what the pays after this one need of what it ends with, as a running
+  // balance from this pay's end (which includes what earlier pays built up) — not the whole ending balance.
+  const pot = ends !== undefined && ends > 0 && steadyMode
+    ? potBuffer(budget, a.account.id, period, ends, 13, today) : undefined;
+  const bufferFor = pot && pot.buffer > 0 ? pot.lowest : undefined;
+  const bufferShort = bufferFor && pot!.free < 0 ? -pot!.free : undefined;
+  const bufferShown = bufferFor ? pot!.buffer : undefined;
   // Money put aside on payday (a WOF, tyres) isn't a payment: it's counted on its own.
   const paying = a.dues.filter((d) => !isHeldInAccount(d.item));
   const asideTotal = a.need - paying.reduce((t, d) => t + d.item.amount, 0);
@@ -103,8 +103,8 @@ export function PaydayCard({ budget, a, view, why, isOpen, onOpen, onClose, onEd
       ? (gasHeld > 0
         ? `Short after bills and ${cash(gasHeld)} still budgeted for this month’s envelopes (assumed spent)`
         : 'Estimated balance at the end of this pay period')
-    : bufferShown !== undefined && bufferFor
-      ? `${cash(bufferShown)} kept for the ${fmtShort(bufferFor.period.start)} pay (${cash(bufferFor.need)} needed, ${cash(bufferFor.deposit)} sent)${gasHeld ? `, after ${cash(gasHeld)} reserved for month budgets` : ''}.`
+    : pot && bufferFor
+      ? `${bufferLine(pot)}${gasHeld ? ` (after ${cash(gasHeld)} reserved for month budgets)` : ''}.`
       : gasHeld > 0 ? `Ends about ${cash(ends)} after reserving ${cash(gasHeld)} for this month’s envelopes`
       : steadyMode ? `Estimated balance at the end of this pay (a level amount evens out 4- and 5-week pays)`
       : 'Estimated balance at the end of this pay period';
@@ -115,9 +115,11 @@ export function PaydayCard({ budget, a, view, why, isOpen, onOpen, onClose, onEd
       )}
       {diff === 0 && <span className="pill">Exactly right</span>}
       {ends !== undefined && (
-        <span className={`pill ${ends < 0 ? 'bad' : ''}`} title={endTip}>
+        <span className={`pill ${ends < 0 || bufferShort !== undefined ? 'bad' : ''}`} title={endTip}>
           {ends < 0
             ? `${cash(-ends)} short`
+            : bufferShort !== undefined && bufferFor
+              ? `${cash(bufferShort)} short by ${fmtShort(bufferFor.period.start)}`
             : bufferShown !== undefined
               ? `Buffer ${cash(bufferShown)}`
               : `Ends ${cash(ends)}`}

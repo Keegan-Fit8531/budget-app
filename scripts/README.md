@@ -12,7 +12,7 @@ code or test fixtures (make up the numbers there, as `src/testing/fixtures.ts` d
 - `live.mjs`: `npm run live -- <text> [--wait]` says whether some text is in the published app's code or stylesheet; `--wait` checks every 10s for up to 8 minutes.
 - `stop-checks.sh`: the Stop hook (`.claude/settings.json`): when an agent finishes, runs tests, type-check and lint (about 10s) and hands failures back. Skips when nothing changed since its last pass (`.git/claude-checks-passed`); after 3 blocks in a row it lets the agent stop.
 - `copy-ocr.mjs`: copies Tesseract.js and its English data into `public/ocr/` (git-ignored) for the on-device reader. Runs before `npm run dev` and `npm run build`.
-- `crawl.mjs`: `npm run crawl -- savings[,planner]` (options in its header, as `screenshot.mjs`) clicks everything on a page of the dev server, and in each pop-up it opens, and lists errors, odd text (NaN, undefined) and sideways overflow. Confirm prompts are answered No.
+- `crawl.mjs`: `npm run crawl -- savings[,planner]` (options in its header, as `screenshot.mjs`) clicks everything on a page of the dev server, and in each pop-up it opens, and lists errors, odd text (NaN, undefined) and sideways overflow. Confirm prompts are answered No. Two pages take about 2 minutes: run it in the background.
 
 ## Reading the real budget
 - Match `../budget-data` to GitHub first (`git -C ../budget-data fetch origin main && git -C ../budget-data checkout -B main origin/main`): the app saves to `main`. Not `pull`: the history can be rewritten, so a pull stops ("divergent branches").
@@ -38,7 +38,7 @@ code or test fixtures (make up the numbers there, as `src/testing/fixtures.ts` d
 - It also finds text the old build had, so pick something new to this change, and check the file it names (`assets/index-….js`) differs from before the merge: the same name means the deploy hasn't finished. The app keeps an offline copy (`public/sw.js`), so a phone can need a reopen before it shows it.
 
 ## Trying a change on the real budget
-To see what an answer or a change would do ("what if Bill check is answered Still to send?"), write a throwaway
+To see what an answer or a change would do ("what if Bill check is answered Still to send?"), or old vs new figures pay by pay, write a throwaway
 `scripts/_try.ts` (vite-node won't load a file outside the repo), run it with `npx vite-node scripts/_try.ts`, then delete it (it prints the owner's money; it's git-ignored, but lint still fails on an `any`):
 ```ts
 import { readFileSync } from 'node:fs';

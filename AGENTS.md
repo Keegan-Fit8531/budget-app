@@ -45,7 +45,7 @@ Each row names the folder or file to start in; its README has the detail.
 | When a cost falls (weekly, monthly, skip near payday) | `engine/occurrences.ts` |
 | Money put aside (WOF), envelopes (Gas, Food) and what counts against one | `engine/setAside.ts`, `engine/envelope.ts`, `engine/envelopeMatch.ts` |
 | Which bank transaction paid a bill; the Accounts Bill check pop-up | `engine/billMatch.ts`, `features/accounts/logic/billCheck.ts` |
-| What payday sends each account (fixed / exact / steady), "allocated this pay" | `engine/balances/` |
+| What payday sends each account (fixed / exact / steady), "allocated this pay", a Steady account's Buffer | `engine/balances/` |
 | A pay's plan: totals, leftover, what each account needs | `engine/plan.ts` → `planFor()` |
 | Automatic balancing, "Balance this pay", rounding, an odd one-pay amount | `engine/rebalance.ts` (`budget.autoBalanced[pay]` says what set it and why) |
 | Planner page, Optimise the leftover | `features/planner/` |
@@ -69,6 +69,7 @@ each account is for). `scripts/README.md` has the how-to and gotchas:
 
 - `git -C ../budget-data fetch origin main && git -C ../budget-data checkout -B main origin/main` first: the app saves to `main`.
 - `npm run inspect -- <account> --today <NZ date>`: an account as the app sees it. The container's clock is UTC, a day behind NZ until 1pm.
+  Any other figure (old vs new numbers across pays): a throwaway `scripts/_try.ts` (`scripts/README.md`).
 - `npm run dev`, then `npm run screenshot -- '#/accounts' --today <NZ date> --width 400 --dark`: the page as the owner sees it on their phone;
   `npm run crawl -- planner` clicks every button and pop-up on a page and reports crashes and broken text. Don't edit code while either runs.
 - For a card's plans, the card's own app is the truth: ask the owner for a screenshot and compare plan by plan.
