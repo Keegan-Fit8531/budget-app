@@ -39,21 +39,31 @@ describe('potBuffer', () => {
     const t = billTracker(b, 'rent', TODAY);
     expect(t.rows.filter((r) => r.status !== 'paid').map((r) => r.date)).toEqual(['2026-11-27', '2026-12-04', '2026-12-11']);
     expect(t.spare).toBe(37451);
-    // The 18 Dec pay has 5 Fridays, the two after it 4.
-    const x = potBuffer(b, 'rent', thisPay(b), t.spare, 3, TODAY);
-    expect(x.run.map((r) => [r.period.start, r.need])).toEqual([['2026-12-18', 207500], ['2027-01-19', 166000], ['2027-02-19', 166000]]);
+    // The 18 Dec pay has 5 Fridays: the run stops there.
+    const x = potBuffer(b, 'rent', thisPay(b), t.spare, 13, TODAY);
+    expect(x.run.map((r) => [r.period.start, r.need])).toEqual([['2026-12-18', 207500]]);
     expect(x).toMatchObject({ left: 37451, buffer: 27049, free: 10402 });
     expect(x.lowest).toMatchObject({ pays: 1, need: 207500, deposit: 180451 });
     expect(bufferLine(x)).toBe('$374.51 left after bills before 18 Dec · $270.49 held for the 18 Dec pay (needs $2,075, gets $1,804.51) · $104.02 free');
   });
 
-  it('over 13 pays, names a later pay when the running balance is lowest there', () => {
+  it('holds nothing when 4-payment pays before the next 5-payment pay cover it', () => {
     const b = rentBudget();
-    const x = potBuffer(b, 'rent', thisPay(b), 37451, 13, TODAY);
-    expect(x.lowest!.pays).toBeGreaterThan(1);
-    expect(x.buffer).toBe(x.lowest!.need - x.lowest!.deposit);
-    expect(bufferLine(x)).toContain(`held for the ${x.lowest!.period.start.slice(8, 10).replace(/^0/, '')} `);
-    expect(bufferLine(x)).toContain(`the ${x.lowest!.pays} pays to then need`);
+    // The 18 Dec pay ends with $104.02; Jan and Feb (4 Fridays) build $289.02 before the 19 Mar pay's $270.49 gap.
+    const dec = periodContaining('2026-12-18', b.settings);
+    const x = potBuffer(b, 'rent', dec, 10402, 13, TODAY);
+    expect(x.run.map((r) => r.period.start)).toEqual(['2027-01-19', '2027-02-19', '2027-03-19']);
+    expect(x).toMatchObject({ buffer: 0, free: 10402 });
+    expect(bufferLine(x)).toBe('$104.02 left after bills before 19 Jan · the 19 Mar pay is covered · $104.02 free');
+  });
+
+  it('names the next 5-payment pay and adds up the pays to it when they don’t cover it', () => {
+    const b = rentBudget();
+    b.overrides = { '2027-03-19': { rent: 100000 } };
+    const x = potBuffer(b, 'rent', periodContaining('2027-01-19', b.settings), 100000, 13, TODAY);
+    expect(x.lowest).toMatchObject({ pays: 2, need: 166000 + 207500, deposit: 180451 + 100000 });
+    expect(x.buffer).toBe(166000 + 207500 - 180451 - 100000);
+    expect(bufferLine(x)).toContain(`held for the 19 Mar pay (the 2 pays to then need $3,735, get $2,804.51)`);
   });
 
   it('never shows money as free when the pot can’t cover its bills', () => {
@@ -84,17 +94,18 @@ describe('potBuffer', () => {
       { id: 'o', name: 'One-off', amount: 300000, frequency: 'once', start: '2027-01-25', accountId: 'rent' },
     ]);
     const x = potBuffer(b, 'rent', thisPay(b), 0, 3, TODAY);
-    // 18 Dec pay: fortnightly 18 Dec, 1 Jan, 15 Jan + monthly 1 Jan. 19 Jan pay: 29 Jan, 12 Feb + 1 Feb + the one-off.
-    expect(x.run.map((r) => r.need)).toEqual([80000, 370000, 70000]);
+    // 18 Dec pay: fortnightly 18 Dec, 1 Jan, 15 Jan + monthly 1 Jan. 19 Jan pay: 29 Jan, 12 Feb + 1 Feb + the one-off,
+    // more than it gets, so the run stops there.
+    expect(x.run.map((r) => r.need)).toEqual([80000, 370000]);
     expect(x.buffer).toBe(80000 + 370000 - 2 * 180451);
   });
 
   it('puts a bill on payday in the new pay, and one the day before in the old pay', () => {
     const b = rentBudget([
-      { id: 'a', name: 'On payday', amount: 100000, frequency: 'once', start: '2027-01-19', accountId: 'rent' },
-      { id: 'c', name: 'Day before', amount: 300000, frequency: 'once', start: '2027-01-18', accountId: 'rent' },
+      { id: 'a', name: 'On payday', amount: 300000, frequency: 'once', start: '2027-01-19', accountId: 'rent' },
+      { id: 'c', name: 'Day before', amount: 100000, frequency: 'once', start: '2027-01-18', accountId: 'rent' },
     ]);
     const x = potBuffer(b, 'rent', thisPay(b), 0, 2, TODAY);
-    expect(x.run.map((r) => [r.period.start, r.need])).toEqual([['2026-12-18', 300000], ['2027-01-19', 100000]]);
+    expect(x.run.map((r) => [r.period.start, r.need])).toEqual([['2026-12-18', 100000], ['2027-01-19', 300000]]);
   });
 });
