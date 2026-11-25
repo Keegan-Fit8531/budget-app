@@ -11,6 +11,7 @@ import { WeeksView } from './WeeksView';
 import { PaydayCard, type PlannerView } from './PaydayCard';
 import { PayNotes, type AdjEdit } from './PayNotes';
 import { DueList } from './DueList';
+import { ShortAlert } from './ShortAlert';
 import { PayNav, useViewPeriod, ViewModes } from '../../state/period';
 import { clearOptimiseUndo, OptimiseModal, readOptimiseUndo, type OptimiseUndo } from './OptimiseModal';
 import { undoAllocation } from './logic/allocate';
@@ -271,18 +272,7 @@ export function PlannerPage() {
         </div>
       </section>
 
-      {!avg && shorts.length > 0 && (
-        <div className="alert" role="status">
-          <Icon name="alert" />
-          <span>
-            {shorts.map((s) => `${s.account.name} needs ${cash(-(s.diff ?? 0))} more`).join(' · ')}
-            {' '}this {period.days}-day period.
-            {shorts.some((s) => s.account.kind === 'bank' && !budget.balances?.[s.account.id]) && (
-              <> That's unless it's already in {shorts.length === 1 ? 'the account' : 'those accounts'}: <a href="#/accounts">enter the balance in Accounts</a> to check.</>
-            )}
-          </span>
-        </div>
-      )}
+      {!avg && <ShortAlert budget={budget} shorts={shorts} period={period} />}
 
       <section className="stack gap-12">
         <div className="card-head">
