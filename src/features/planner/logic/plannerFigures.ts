@@ -185,7 +185,7 @@ export function plannerFigures(b: Budget, period: Period, mode: PlannerMode, tod
 
   return {
     ...scale, plan, isCurrent, estimated, known, paydayEnded, estimateWhy, notes, usualTotal, planned, totalBudgeted, leftover,
-    shorts: plan.accounts.filter((a) => a.diff !== null && a.diff < 0),
+    shorts: shortAccounts(b, plan),
     cards: paydayCards(b, plan),
     slices: chartSlices(b, plan, sentOf),
     upcoming: plan.dues.filter((d) => !isCurrent || d.date >= today),
@@ -196,4 +196,18 @@ export function plannerFigures(b: Budget, period: Period, mode: PlannerMode, tod
     autoHere: autoPays(b, today).some((p) => p.start === period.start),
     passedNote,
   };
+}
+
+/**
+ * Accounts payday leaves short this pay ("Gem Visa needs $182 more"). A debt the bank already shows paid
+ * enough this pay isn't short: payday sent $133 to Gem, but $700 went to it from ANZ accounts (`Debt.bankPayments`).
+ */
+export function shortAccounts(b: Budget, plan: PeriodPlan): AccountPlan[] {
+  const { start, end } = plan.period;
+  return plan.accounts.filter((a) => {
+    if (a.diff === null || a.diff >= 0) return false;
+    const paid = (b.debts ?? []).filter((d) => d.accountId === a.account.id)
+      .flatMap((d) => d.bankPayments ?? []).filter((x) => x.date >= start && x.date <= end).reduce((t, x) => t + x.amount, 0);
+    return paid < a.need;
+  });
 }

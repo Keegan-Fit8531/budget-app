@@ -4,7 +4,7 @@ import { periodContaining } from '../../../engine/periods';
 import { planFor, type AccountPlan, type PeriodPlan } from '../../../engine/plan';
 import type { BalanceResult } from '../../../engine/rebalance';
 import { budget, heldGemBudget } from '../../../testing/fixtures';
-import { chartSlices, paydayCards, payNotes, plannerFigures, viewScale } from './plannerFigures';
+import { chartSlices, paydayCards, payNotes, plannerFigures, shortAccounts, viewScale } from './plannerFigures';
 
 // Before the pay of 19 Nov starts, so nothing about it is frozen yet.
 const today = '2026-11-10';
@@ -127,5 +127,22 @@ describe('plannerFigures', () => {
     const f = plannerFigures(b, payOf(b), 'period', today, null);
     expect(f.known).toBe(false);
     expect(f.estimateWhy).toBe('');
+  });
+});
+
+describe('shortAccounts', () => {
+  it('a debt the bank shows paid enough this pay isn’t short', () => {
+    // Payday has passed and sent Gem only $10 (a locked pay), less than its plans need.
+    const b = heldGemBudget();
+    const now = '2026-11-25';
+    const p = periodContaining(now, b.settings);
+    b.splitSent = { [p.start]: { gem: 1000 } };
+    const short = () => shortAccounts(b, planFor(b, p, now)).map((a) => a.account.id);
+    expect(short()).toContain('gem');
+    const need = planFor(b, p, now).accounts.find((a) => a.account.id === 'gem')!.need;
+    b.debts![0].bankPayments = [{ date: p.start, amount: need - 1, from: 'weekly', counted: 0 }];
+    expect(short()).toContain('gem'); // a dollar short still shows
+    b.debts![0].bankPayments[0].amount = need;
+    expect(short()).not.toContain('gem');
   });
 });
