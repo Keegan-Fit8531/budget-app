@@ -131,16 +131,16 @@ export function fundedOut(b: Budget, accountId: string, from: ISODate, to: ISODa
 }
 
 /**
- * Money put aside in an account by `payday`: what's spare now, plus what each payday from now until then
- * puts aside (capped at each cost's max). Rolling today's figure forward by bills alone (`asideSpareNow`)
- * lost the paydays' money, so a far-off pay never reached Haircut's $60 max and kept putting $30 aside.
+ * Money put aside in an account by `payday`: what was spare on the day you entered its balance, plus what
+ * each payday since puts aside (capped at each cost's max). Rolling that figure forward by bills alone
+ * (`asideSpareNow`) lost the paydays' money, so a later pay never reached Haircut's $60 max and kept putting $30 aside.
  */
 function asideSpareAt(b: Budget, accountId: string, payday: ISODate): Cents | undefined {
-  const today = todayISO();
-  if (payday <= today) return asideSpareNow(b, accountId, payday);
-  let spare = asideSpareNow(b, accountId, today);
+  const entry = b.balances?.[accountId];
+  if (!entry || payday <= entry.asOf) return asideSpareNow(b, accountId, payday);
+  let spare = asideSpareNow(b, accountId, entry.asOf);
   if (spare === undefined) return undefined;
-  for (let p = shiftPeriod(periodContaining(today, b.settings), 1, b.settings); p.start < payday; p = shiftPeriod(p, 1, b.settings)) {
+  for (let p = shiftPeriod(periodContaining(entry.asOf, b.settings), 1, b.settings); p.start < payday; p = shiftPeriod(p, 1, b.settings)) {
     for (const x of setAsidesOn(b, accountId, p.start, { spare })) spare += Math.max(0, x.amount);
   }
   return spare;

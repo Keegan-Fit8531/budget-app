@@ -102,6 +102,7 @@ describe('optimising the leftover, then changing it', () => {
 
   it('this pay only, to Gem held in Misc bills: Misc bills sends it, and it comes off Gem in the forecast', () => {
     const b = heldGemBudget();
+    delete b.balances; // with a balance, Misc bills' own leftover would pay the extra (it tops up)
     const p = periodContaining('2026-12-20', b.settings);
     const today = '2026-11-25';
     const was = planFor(structuredClone(b), p, today);

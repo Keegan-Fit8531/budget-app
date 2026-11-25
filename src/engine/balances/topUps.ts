@@ -13,7 +13,10 @@ import { pausedAside, window, between, runStart, runLength, type Run, cached, ru
 /** Exact accounts that pay bills from a bank account (not debts or savings): leftovers count towards the next pay. */
 export function topsUp(b: Budget, accountId: string): boolean {
   const a = b.accounts.find((x) => x.id === accountId);
-  return !!a && a.kind === 'bank' && accountMode(b, accountId) === 'exact' && !accountHasGoals(b, accountId) && !accountHasPlans(b, accountId);
+  // Not for a debt paid from here. A debt only held here until statement day (Gem in Misc bills) is fine
+  // once a balance is entered: what's left over then is real, so the next pay sends that much less.
+  const held = accountHasPlans(b, accountId) && !(b.debts ?? []).some((d) => d.accountId === accountId) && !!b.balances?.[accountId];
+  return !!a && a.kind === 'bank' && accountMode(b, accountId) === 'exact' && !accountHasGoals(b, accountId) && (!accountHasPlans(b, accountId) || held);
 }
 
 /** Pay-by-pay run for an exact account that tops up: each pay's bills less what's already there. */

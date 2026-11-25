@@ -15,7 +15,7 @@ describe('max saved on money put aside', () => {
     b.accounts.push({ id: 'bills', name: 'Misc bills', kind: 'bank', color: '#000', groupId: 'needs' });
     b.split.push({ accountId: 'bills', amount: 0, mode: 'exact' });
     b.items.push(
-      { id: 'power', name: 'Power', amount: 10000, frequency: 'monthly', start: '2026-11-25', accountId: 'bills' },
+      { id: 'power', name: 'Power', amount: 10000, frequency: 'monthly', start: '2026-11-15', accountId: 'bills' },
       { id: 'cut', name: 'Haircut', amount: 2000, frequency: 'monthly', start: '2026-11-01', accountId: 'bills', setAside: true, maxSaved: 6000 },
     );
     // $100 bill still to come + $60 already aside → spare for Haircut is $60 → add nothing.
