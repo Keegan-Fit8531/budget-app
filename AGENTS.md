@@ -69,6 +69,7 @@ each account is for). `scripts/README.md` has the how-to and gotchas:
 
 - `git -C ../budget-data fetch origin main && git -C ../budget-data checkout -B main origin/main` first: the app saves to `main`.
 - `npm run inspect -- <account> --today <NZ date>`: an account as the app sees it. The container's clock is UTC, a day behind NZ until 1pm.
+  Any other figure (old vs new numbers across pays): a throwaway `scripts/_try.ts` (`scripts/README.md`).
 - `npm run dev`, then `npm run screenshot -- '#/accounts' --today <NZ date> --width 400 --dark`: the page as the owner sees it on their phone;
   `npm run crawl -- planner` clicks every button and pop-up on a page and reports crashes and broken text. Don't edit code while either runs.
 - For a card's plans, the card's own app is the truth: ask the owner for a screenshot and compare plan by plan.

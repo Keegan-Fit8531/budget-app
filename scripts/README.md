@@ -38,7 +38,7 @@ code or test fixtures (make up the numbers there, as `src/testing/fixtures.ts` d
 - It also finds text the old build had, so pick something new to this change, and check the file it names (`assets/index-….js`) differs from before the merge: the same name means the deploy hasn't finished. The app keeps an offline copy (`public/sw.js`), so a phone can need a reopen before it shows it.
 
 ## Trying a change on the real budget
-To see what an answer or a change would do ("what if Bill check is answered Still to send?"), write a throwaway
+To see what an answer or a change would do ("what if Bill check is answered Still to send?"), or old vs new figures pay by pay, write a throwaway
 `scripts/_try.ts` (vite-node won't load a file outside the repo), run it with `npx vite-node scripts/_try.ts`, then delete it (it prints the owner's money; it's git-ignored, but lint still fails on an `any`):
 ```ts
 import { readFileSync } from 'node:fs';
