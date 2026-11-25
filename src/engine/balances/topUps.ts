@@ -20,11 +20,11 @@ export function topsUp(b: Budget, accountId: string): boolean {
 }
 
 /** Pay-by-pay run for an exact account that tops up: each pay's bills less what's already there. */
-function topUpRun(b: Budget, accountId: string, today: ISODate, useBalance = true): Run {
-  return cached(b, runKey(b, 'topup', accountId, today, useBalance), () => {
+function topUpRun(b: Budget, accountId: string, today: ISODate, useBalance = true, until?: ISODate): Run {
+  return cached(b, runKey(b, 'topup', accountId, today, useBalance) + (until ?? ''), () => {
     const s = b.settings;
     const start = runStart(b, accountId, today, useBalance);
-    const count = runLength(start.pay, today, s);
+    const count = runLength(start.pay, today, s, until);
     const { slots, out } = window(b, accountId, start.pay, count);
     let bal = start.bal - fundedOut(b, accountId, addDays(start.cursor, 1), addDays(start.pay.start, -1)).reduce((t, o) => t + o.amount, 0);
     const amounts = new Map<string, Cents>();

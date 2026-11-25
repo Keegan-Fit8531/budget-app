@@ -35,10 +35,10 @@ export function buildAt(needs: Cents[], balance: Cents, average: Cents, step: Ce
 }
 
 /** Build-up amounts pay by pay from the balance you entered (as Steady's run: `steady.ts`). Cached. */
-function buildRun(b: Budget, accountId: string, today: ISODate, useBalance = true): Run {
-  return cached(b, runKey(b, 'build', accountId, today, useBalance), () => {
+function buildRun(b: Budget, accountId: string, today: ISODate, useBalance = true, until?: ISODate): Run {
+  return cached(b, runKey(b, 'build', accountId, today, useBalance) + (until ?? ''), () => {
     const start = runStart(b, accountId, today, useBalance);
-    const count = runLength(start.pay, today, b.settings);
+    const count = runLength(start.pay, today, b.settings, until);
     const { slots, out } = window(b, accountId, start.pay, count + STRETCH_PAYS);
     const idx = { i: 0 };
     const needs = slots.slice(0, -1).map((x, i) => between(out, x.date, slots[i + 1].date, idx).reduce((t, o) => t + o.amount, 0));
