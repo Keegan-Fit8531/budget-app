@@ -6,7 +6,7 @@ import type { Budget, Cents } from '../../core/types';
 import { type Outflow, fundedOut } from './outflows';
 import { depositSansBalance, depositPending } from './deposits';
 import { priorLeftover } from './topUps';
-import { balanceOn } from './estimate';
+import { balanceOn, unpaidByBalanceDay } from './estimate';
 import { envelopeHeld } from '../envelope';
 
 /**
@@ -103,7 +103,7 @@ export function runStart(b: Budget, accountId: string, today: ISODate, useBalanc
     const pending = depositPending(b, accountId, known) ? depositSansBalance(b, accountId, p) : 0;
     // Envelope money still unspent (Food shop's later weeks, this month's gas) will be spent before the
     // next payday: it's spoken for, not a cushion. Counted as spare, an envelope account's next pay sent almost nothing.
-    const held = envelopeHeld(b, accountId, known.asOf)
+    const held = envelopeHeld(b, accountId, known.asOf) + unpaidByBalanceDay(b, accountId, known.asOf, today)
       + (capped !== undefined ? Math.min(capped, asideSpareNow(b, accountId, known.asOf) ?? 0) : 0);
     return { pay: shiftPeriod(p, 1, b.settings), bal: known.amount + pending - held, cursor: known.asOf };
   }
