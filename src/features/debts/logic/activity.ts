@@ -10,6 +10,16 @@ import type { Budget, Cents, Debt, DebtPlan } from '../../../core/types';
 // sent for it each pay.
 // ---------------------------------------------------------------------------------------------
 
+/**
+ * A plan as it will be at a later pay (`at`): what's left after its scheduled payments from today up to
+ * then (each payment's `after`), so looking ahead the plans tick down. Today or earlier: as it is now.
+ */
+export function planAt(p: DebtPlan, payments: { date: ISODate; after: Cents }[], at: ISODate, today: ISODate): DebtPlan {
+  if (at <= today) return p;
+  const last = payments.filter((x) => x.date > today && x.date < at).sort((a, b) => a.date.localeCompare(b.date)).pop();
+  return last ? { ...p, remaining: Math.max(0, last.after), asOf: last.date } : p;
+}
+
 /** Months from `from` until `to`, a part month counting as one. */
 export function monthsUntil(from: ISODate, to: ISODate): number {
   let n = 0;

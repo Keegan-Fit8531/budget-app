@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { debtBudget, debt, gemStatement, upload } from '../../../testing/fixtures';
-import { monthsUntil, paymentRows, planProgress } from './activity';
+import { monthsUntil, paymentRows, planAt, planProgress } from './activity';
 
 describe('a debt card’s activity', () => {
   it('a plan’s progress: paid of its total, and months left of its length', () => {
@@ -43,5 +43,20 @@ describe('a debt card’s activity', () => {
     shot.statement!.avoidInterest = { amount: '1.00' };
     upload(b, shot, '2026-11-22');
     expect(debt(b, 'gem').statementDue?.avoidInterest).toBe(64050);
+  });
+});
+
+describe('planAt: a plan as it will be at a later pay', () => {
+  const plan = { id: 'p', name: 'TV', type: 'interest-free' as const, original: 54000, remaining: 54000, asOf: '2026-11-23', purchaseDate: '2026-11-19', months: 6, ends: '2027-05-20' };
+  const pays = [{ date: '2026-12-21', after: 37690 }, { date: '2027-01-21', after: 21380 }, { date: '2027-02-21', after: 5070 }];
+  it('ticks down by the payments before that pay', () => {
+    expect(planAt(plan, pays, '2027-03-19', '2026-11-25').remaining).toBe(5070);
+    expect(planAt(plan, pays, '2027-01-19', '2026-11-25').remaining).toBe(37690);
+  });
+  it('is as it is now for the pay you’re in', () => {
+    expect(planAt(plan, pays, '2026-11-19', '2026-11-25')).toBe(plan);
+  });
+  it('months left count from that pay', () => {
+    expect(planProgress(planAt(plan, pays, '2027-03-19', '2026-11-25'), '2027-03-19', plan.ends).monthsLeft).toBe(3);
   });
 });
