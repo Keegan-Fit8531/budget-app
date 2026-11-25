@@ -27,6 +27,9 @@ export function runningLow(nets: Cents[]): { buffer: Cents; at: number } {
   return { buffer: low < 0 ? -low : 0, at };
 }
 
+/** How far ahead the buffer looks: 12 pays, a year of monthly pays (each 5-payment pay in it). */
+export const BUFFER_PAYS = 12;
+
 export interface PayNet { period: Period; need: Cents; deposit: Cents }
 
 export interface PotBuffer {
@@ -50,7 +53,7 @@ export interface PotBuffer {
  * with what payday sends it then (`depositFor`: a changed or one-pay amount counts) less what's due
  * from its payday to the day before the next (`fundedOut`). Transfers in or out are already in `left`.
  */
-export function potBuffer(b: Budget, accountId: string, period: Period, left: Cents, pays = 13, today: ISODate = todayISO()): PotBuffer {
+export function potBuffer(b: Budget, accountId: string, period: Period, left: Cents, pays = BUFFER_PAYS, today: ISODate = todayISO()): PotBuffer {
   const run: PayNet[] = [];
   let p = period;
   for (let i = 0; i < pays; i++) {

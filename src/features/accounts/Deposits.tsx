@@ -7,6 +7,7 @@ import { fmtShort, ordinal, todayISO } from '../../core/dates';
 import { depositFor } from '../../engine/balances/deposits';
 import { exactNeed, modeOf } from '../../engine/balances/outflows';
 import { smoothAmount, usualSteady } from '../../engine/balances/steady';
+import { buildStep } from '../../engine/balances/build';
 import { topsUp } from '../../engine/balances/topUps';
 import { debtPerPay } from '../debts/logic/amounts';
 import { averageNeed, planFor } from '../../engine/plan';
@@ -220,6 +221,9 @@ function AccountSection({ account: a, open, bare, onToggle, periodNeed, periodSe
                       {PAYDAY_MODE_LABEL.smooth}{balanced === 'smooth' ? ' · recommended' : ''}
                     </button>
                   )}
+                  {bills.length > 0 && (
+                    <button aria-pressed={mode === 'build'} onClick={() => setMode('build')}>{PAYDAY_MODE_LABEL.build}</button>
+                  )}
                   {items.length > 0 && (
                     <button aria-pressed={mode === 'exact'} onClick={() => setMode('exact')}>
                       {PAYDAY_MODE_LABEL.exact}{balanced === 'not-fixed' ? ' · recommended' : ''}
@@ -231,6 +235,7 @@ function AccountSection({ account: a, open, bare, onToggle, periodNeed, periodSe
                 <ul className="stack gap-4 small muted" style={{ margin: 0, paddingLeft: 18 }}>
                   <li><b>{PAYDAY_MODE_LABEL.fixed}</b>{mode === 'fixed' ? ' (in use)' : ''}: {PAYDAY_MODE_HINT.fixed}</li>
                   <li><b>{PAYDAY_MODE_LABEL.smooth}</b>{mode === 'smooth' ? ' (in use)' : ''}{balanced === 'smooth' && mode !== 'smooth' ? ' · recommended' : ''}: {PAYDAY_MODE_HINT.smooth}</li>
+                  {bills.length > 0 && <li><b>{PAYDAY_MODE_LABEL.build}</b>{mode === 'build' ? ' (in use)' : ''}: {PAYDAY_MODE_HINT.build}</li>}
                   <li><b>{PAYDAY_MODE_LABEL.exact}</b>{mode === 'exact' ? ' (in use)' : ''}{balanced === 'not-fixed' && mode !== 'exact' ? ' · recommended' : ''}: {PAYDAY_MODE_HINT.exact}</li>
                 </ul>
               )}
@@ -281,6 +286,22 @@ function AccountSection({ account: a, open, bare, onToggle, periodNeed, periodSe
                   </span>
                 </div>
               )}
+
+              {mode === 'build' && (() => {
+                const next = shiftPeriod(periodContaining(today, budget.settings), 1, budget.settings);
+                return (
+                  <div className="tip">
+                    <Icon name="bulb" />
+                    <span>
+                      Next pay ({fmtShort(next.start)}) sends <b>{cash(depositFor(budget, a.id, next, today))}</b>. Pays before a 5-week pay send an even share,
+                      to the nearest {cash(buildStep(budget, a.id))}; the 5-week pay sends exactly what's left, so the account ends it at $0.
+                      {hasBalance
+                        ? ' Worked out from the balance in Accounts each payday, so money moved in or out changes the next amount.'
+                        : <> Add this account's balance in <a href="#/accounts">Accounts</a> for an exact figure.</>}
+                    </span>
+                  </div>
+                );
+              })()}
 
               {mode === 'exact' && (
                 <div className="tip">

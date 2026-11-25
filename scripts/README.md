@@ -29,7 +29,7 @@ code or test fixtures (make up the numbers there, as `src/testing/fixtures.ts` d
 - `--click <selector>` taps things first. On Accounts (Bill check) and Debts (Plan check) a pop-up covers the page: add `--click 'text="Later"'` (quoted, exact: `text=Later` hits "for later costs" under it).
   It can open after a bank sync, later than the clicks: if it's still there, or "Nothing to click" is printed, run it again.
 - Open a card with `--click '.acct:has-text("Rent") >> text=Details'`, and picture only it with `--only '.acct:has-text("Rent")'` (Debts cards are `.acct` too).
-  To see a pop-up itself, leave out the click and use `--only '.modal'`; tap an answer with `--click '.check-row:has-text("…") >> text=12 months'`.
+  A pop-up itself: `--only '.modal'` (payday settings: `--click '.acct:has-text("Rent") >> [aria-label*=dit]' --click 'text="Payday send"'`); tap an answer with `--click '.check-row:has-text("…") >> text=12 months'`.
 - No sync is set up, so nothing is written back; what shows only with the bank connection (Debts cards' sync buttons) doesn't appear: for that, use a throwaway script that also sets `localStorage['paydays.bank']` to `{ url: 'http://localhost:1/none', key: 'test-key-123456', lastSync: <now> }`.
 - For what it can't do (drag, type, check a pop-up stays open), write a throwaway Playwright script in your scratchpad set up the same way (budget in `localStorage`, `timezoneId: 'Pacific/Auckland'`, `page.clock.setFixedTime`), loading Playwright with `createRequire(import.meta.url)('playwright')`.
 

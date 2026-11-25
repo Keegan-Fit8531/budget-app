@@ -8,6 +8,7 @@ import { paySplitLocked } from './freeze';
 import { topsUp, exactTopUp, sentBeforeBudget } from './topUps';
 import { modeOf, exactNeed } from './outflows';
 import { usualSteady, steadyFor } from './steady';
+import { buildFor } from './build';
 
 /**
  * What payday sends to an account in a period, by its mode. The Planner and every balance projection
@@ -46,6 +47,7 @@ export function liveDepositFor(b: Budget, accountId: string, p: Period, today: I
   const mode = modeOf(line);
   if (mode === 'exact') return topsUp(b, accountId) ? exactTopUp(b, accountId, p, today) : exactNeed(b, accountId, p);
   if (mode === 'smooth') return steadyFor(b, accountId, p, today);
+  if (mode === 'build') return buildFor(b, accountId, p, today);
   const amount = line?.amount ?? 0;
   // A debt never gets more than it still owes (e.g. once a card is paid off, stop sending money).
   const debt = (b.debts ?? []).find((d) => d.accountId === accountId);
@@ -81,7 +83,7 @@ export function depositSansBalance(b: Budget, accountId: string, p: Period): Cen
   const line = b.split.find((l) => l.accountId === accountId);
   const mode = modeOf(line);
   if (mode === 'exact') return exactNeed(b, accountId, p);
-  if (mode === 'smooth') return usualSteady(b, accountId);
+  if (mode === 'smooth' || mode === 'build') return usualSteady(b, accountId);
   return Math.max(line?.amount ?? 0, setAsideOn(b, accountId, p.start) + envelopeOn(b, accountId, p.start));
 }
 

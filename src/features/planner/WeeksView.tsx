@@ -3,7 +3,7 @@ import { addDays, fmtDay, monthName, ordinal, toDate, todayISO, WEEKDAY_NAMES, t
 import { debtPaymentsIn } from '../debts/logic/funding';
 import type { Period } from '../../engine/periods';
 import type { PeriodPlan } from '../../engine/plan';
-import { accountMode } from '../../engine/balances/outflows';
+import { accountMode, keepsBuffer } from '../../engine/balances/outflows';
 import { balanceOn } from '../../engine/balances/estimate';
 import { usualSteady } from '../../engine/balances/steady';
 import { isSetAside } from '../../engine/setAside';
@@ -79,8 +79,9 @@ export function WeeksView({ budget, period, plan }: { budget: Budget; period: Pe
     const diff = ap.funded - ap.need;
     // What's in the account the day before payday and at the end: shows whether the extra this pay
     // builds the buffer or makes up for an earlier pay that left it short.
-    const before = mode === 'smooth' ? balanceOn(budget, acc.id, addDays(period.start, -1), today) : undefined;
-    const after = mode === 'smooth' ? ap.endBalance : undefined;
+    const buffered = keepsBuffer(budget, acc.id); // Steady or Build up
+    const before = buffered ? balanceOn(budget, acc.id, addDays(period.start, -1), today) : undefined;
+    const after = buffered ? ap.endBalance : undefined;
     const known = before !== undefined && after !== undefined;
     const shortBefore = known && before! < 0 ? -before! : 0;
     const prevPay = `the ${monthName(shiftPeriod(period, -1, budget.settings).start)} pay`;
@@ -89,7 +90,7 @@ export function WeeksView({ budget, period, plan }: { budget: Budget; period: Pe
     const what = (all.length ? all : items).map((i) => `${i.name} ${cash(i.amount, { whole: true })}`).join(' + ');
     const message = mode === 'exact'
       ? { text: `Sends all ${count}: ${cash(ap.need)}`, tone: 'muted' }
-      : mode === 'smooth'
+      : buffered
         ? known
           ? after! >= before!
             ? shortBefore && after! - before! <= shortBefore
@@ -105,6 +106,7 @@ export function WeeksView({ budget, period, plan }: { budget: Budget; period: Pe
     const usual = usualSteady(budget, acc.id);
     const how = `${count} ${day}s × (${what}) = ${cash(ap.need)} this pay. ${mode === 'smooth'
       ? ap.funded === usual ? `Level amount ${cash(ap.funded)} each pay.` : `Sends ${cash(ap.funded)} this pay (usually ${cash(usual)})${shortBefore ? `, including ${cash(shortBefore)} ${prevPay} left short` : ap.funded > usual ? ', leaving enough for the next 5-week pay' : ''}.`
+      : mode === 'build' ? `Sends ${cash(ap.funded)} this pay, building up for the next 5-week pay.`
       : mode === 'fixed' ? `Sending ${cash(ap.funded)}.` : ''}`;
     return { acc, message, how };
   }).filter((x): x is NonNullable<typeof x> => !!x);

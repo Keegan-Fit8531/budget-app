@@ -1,7 +1,7 @@
 import { ordinal, todayISO, type ISODate } from '../core/dates';
 import { balanceOn } from './balances/estimate';
 import { depositFor } from './balances/deposits';
-import { exactNeed, modeOf } from './balances/outflows';
+import { exactNeed, keepsBuffer, modeOf } from './balances/outflows';
 import { freezePaySplit } from './balances/freeze';
 import { topsUp } from './balances/topUps';
 import { accountHasPlans, debtPaymentsIn, heldDebtPaymentsIn, isHoldDisplayAccount } from '../features/debts/logic/funding';
@@ -141,7 +141,7 @@ export function planFor(b: Budget, period: Period, today: ISODate = todayISO()):
     // Steady, or exact that tops up, with no balance entered: what it's projected to hold by then.
     const entry = b.balances?.[account.id];
     const tracked = account.id !== payId && (entry ? account.kind === 'bank'
-      : modeOf(b.split.find((l) => l.accountId === account.id)) === 'smooth' || topsUp(b, account.id));
+      : keepsBuffer(b, account.id) || topsUp(b, account.id));
     const endBalance = tracked ? balanceOn(b, account.id, period.end, today) : undefined;
     // A one-pay adjustment to a debt changes what's paid, not what's "due", so don't call it short.
     const isDebt = (b.debts ?? []).some((d) => d.accountId === account.id);
@@ -215,7 +215,7 @@ export function averageSplit(b: Budget, accountId: string): Cents {
   if (!line) return 0;
   const mode = modeOf(line);
   // Steady: its usual amount (not the next pay's, which can include a one-off catch-up).
-  return mode === 'exact' ? averageNeed(b, accountId) : mode === 'smooth' ? averageNeed(b, accountId) : line.amount;
+  return mode === 'fixed' ? line.amount : averageNeed(b, accountId);
 }
 
 /**

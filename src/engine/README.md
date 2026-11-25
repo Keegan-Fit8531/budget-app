@@ -23,7 +23,7 @@ period runs from payday to the day before the next payday.
 - `envelopeStatus(b, item, date)` counts the whole week, fortnight or month holding `date`, including spending after it.
 - A transfer's envelope depends on the other transfers near it (they share out the purchases), so test several transfers together, as the real account makes them (`envelope.test.ts` → "several transfers after several purchases").
 - `state/store.tsx` runs `autoBalance` on every `update()`, so anything slow here slows every change. Keep heavy work cached (see `balances/steady.ts`).
-- What payday sends a pay can be a one-pay adjustment (`budget.overrides`), a frozen split once the pay is locked (`budget.splitSent`), or the account's mode (fixed / exact / steady). Always ask `balances/deposits.ts` → `depositFor`, never read those fields directly.
+- What payday sends a pay can be a one-pay adjustment (`budget.overrides`), a frozen split once the pay is locked (`budget.splitSent`), or the account's mode (fixed / exact / steady / build up). Always ask `balances/deposits.ts` → `depositFor`, never read those fields directly.
 - `autoBalanced` records what balancing set and why, so it can redo a pay without touching your changes. Keep that working when you change `rebalance.ts`.
 - `engine` and `features/debts/logic` / `features/savings/logic` call each other (debt payments and goal amounts are part of the plan). That's fine; don't add new cycles.
 

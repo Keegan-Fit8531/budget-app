@@ -17,6 +17,9 @@ export function accountMode(b: Budget, accountId: string): PaydayMode {
   return modeOf(b.split.find((l) => l.accountId === accountId));
 }
 
+/** Steady and Build up keep money between pays for the bigger (5-week) ones: their "Buffer" (`buffer.ts`). */
+export const keepsBuffer = (b: Budget, accountId: string): boolean => ['smooth', 'build'].includes(accountMode(b, accountId));
+
 export interface Outflow {
   date: ISODate; amount: Cents; name: string;
   /** The cost (`Item`) or debt it's for, so a bank transaction can be matched to it (`engine/billMatch.ts`). */

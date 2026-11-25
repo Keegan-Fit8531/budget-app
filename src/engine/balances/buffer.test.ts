@@ -47,9 +47,9 @@ describe('potBuffer', () => {
     expect(bufferLine(x)).toBe('$374.51 left after bills before 18 Dec · $270.49 held for the 18 Dec pay (needs $2,075, gets $1,804.51) · $104.02 free');
   });
 
-  it('over 13 pays, names a later pay when the running balance is lowest there', () => {
+  it('over the next 12 pays (a year), names a later pay when the running balance is lowest there', () => {
     const b = rentBudget();
-    const x = potBuffer(b, 'rent', thisPay(b), 37451, 13, TODAY);
+    const x = potBuffer(b, 'rent', thisPay(b), 37451, 12, TODAY);
     expect(x.lowest!.pays).toBeGreaterThan(1);
     expect(x.buffer).toBe(x.lowest!.need - x.lowest!.deposit);
     expect(bufferLine(x)).toContain(`held for the ${x.lowest!.period.start.slice(8, 10).replace(/^0/, '')} `);
@@ -72,7 +72,7 @@ describe('potBuffer', () => {
 
   it('is 0 for a pot with no recurring bills', () => {
     const b = rentBudget([]);
-    const x = potBuffer(b, 'rent', thisPay(b), 50000, 13, TODAY);
+    const x = potBuffer(b, 'rent', thisPay(b), 50000, 12, TODAY);
     expect(x).toMatchObject({ buffer: 0, free: 50000 });
     expect(x.lowest).toBeUndefined();
   });

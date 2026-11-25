@@ -1,9 +1,9 @@
 import type { ReactNode } from 'react';
-import { accountMode } from '../../engine/balances/outflows';
+import { keepsBuffer } from '../../engine/balances/outflows';
 import { balanceOn } from '../../engine/balances/estimate';
 import { billTracker } from '../../engine/balances/billTracker';
 import { payProjection } from '../../engine/balances/projection';
-import { bufferLine, potBuffer } from '../../engine/balances/buffer';
+import { BUFFER_PAYS, bufferLine, potBuffer } from '../../engine/balances/buffer';
 import { fmtDay, fmtShort, monthName, ordinal, todayISO } from '../../core/dates';
 import { debtAdvice } from '../debts/logic/advice';
 import { accountEnvelopes, envelopeHeld, transferKey } from '../../engine/envelope';
@@ -56,7 +56,7 @@ export function MonthTracker({ budget, account, today = todayISO(), open, toggle
   // unless every set-aside has a max (Haircut $60) and the account is already over it.
   const aside = hasSetAsides(budget, account.id);
   const paysBills = budget.items.some((i) => i.accountId === account.id && !isHeldInAccount(i));
-  const steady = !aside && accountMode(budget, account.id) === 'smooth';
+  const steady = !aside && keepsBuffer(budget, account.id);
   const names = aside ? asideNames(budget, account.id) : '';
   const maxAside = aside ? asideMaxSaved(budget, account.id) : undefined;
   const spareAmt = Math.max(0, afterReserved);
@@ -65,7 +65,7 @@ export function MonthTracker({ budget, account, today = todayISO(), open, toggle
   const short = afterReserved < 0;
   // Steady: "Buffer" is what later pays need of what's left after this pay's bills (and gas), as a running
   // balance (`engine/balances/buffer.ts`). More than is left: short by that much, for a later pay.
-  const pot = steady && !short ? potBuffer(budget, account.id, t.period, spareAmt, 13, today) : undefined;
+  const pot = steady && !short ? potBuffer(budget, account.id, t.period, spareAmt, BUFFER_PAYS, today) : undefined;
   const bufferFor = pot && pot.buffer > 0 ? pot.lowest : undefined;
   const bufferShort = pot && pot.free < 0 ? -pot.free : undefined;
   const bufferShown = bufferFor && bufferShort === undefined ? pot!.buffer : undefined;
@@ -311,7 +311,7 @@ export function PayProjectionView({ budget, account, period, day, today = todayI
   const left = onDay !== undefined ? onDay - toCome : undefined;
   const showAfter = pr.rows.some((r) => r.after !== undefined);
   const kind = pr.depositKind === 'set' ? 'set amount' : pr.depositKind === 'adjusted' ? 'adjusted for this pay' : 'estimated';
-  const steady = accountMode(budget, account.id) === 'smooth';
+  const steady = keepsBuffer(budget, account.id);
   const row = (r: (typeof pr.rows)[number], i: number, done: boolean) => (
     <div className={`list-row small${done ? ' muted' : ''}`} key={`${r.date}-${r.name}-${i}`}>
       <span style={{ flex: '0 0 84px' }}>{fmtDay(r.date)}</span>
