@@ -1,5 +1,6 @@
 import { dateInMonth, todayISO, type ISODate } from '../../core/dates';
 import { debtAdvice } from '../../features/debts/logic/advice';
+import { debtPay, projectedOwed } from '../../features/debts/logic/amounts';
 import { debtPaymentsIn, heldDebtPaymentsIn, isHoldDisplayAccount } from '../../features/debts/logic/funding';
 import type { Debt } from '../../core/types';
 import { asideSpareNow, hasEnvelopes, hasSetAsides, isHeldInAccount, envelopesOn, setAsidesOn } from '../setAside';
@@ -69,22 +70,25 @@ function topUpGemHoldOutflows(b: Budget, accountId: string, from: ISODate, to: I
       continue;
     }
     if (debt.rules !== 'gem') continue;
-    const period = periodContaining(from, b.settings);
-    if (period.start > to || period.end < from) continue;
-    const adv = debtAdvice(b, debt, period);
-    let need = adv.recommended;
-    const frozen = b.splitSent?.[period.start]?.[debt.accountId];
-    if (frozen !== undefined && paySplitLocked(b, period, today)) need = Math.max(need, frozen);
-    if (need <= 0) continue;
-    const rows = out.filter((o) => o.name === debt.name);
-    const sum = rows.reduce((t, o) => t + o.amount, 0);
-    if (need <= sum) continue;
-    const bump = need - sum;
-    const stmt = gemStatementInRange(debt, from, to) ?? rows[0]?.date;
-    if (!stmt || stmt < from || stmt > to) continue;
-    const hit = rows.find((o) => o.date === stmt) ?? rows[0];
-    if (hit) hit.amount += bump;
-    else out.push({ date: stmt, amount: bump, name: debt.name, debtId: debt.id });
+    // Each pay in the range on its own (a projection asks for many pays at once).
+    for (let period = periodContaining(from, b.settings); period.start <= to; period = shiftPeriod(period, 1, b.settings)) {
+      const lo = period.start < from ? from : period.start;
+      const hi = period.end > to ? to : period.end;
+      // Never more than Gem is projected to still owe: once it's paid off, nothing is kept for it
+      // (its recommended amount stays $245, so Misc bills built up by that much every month).
+      let need = Math.min(debtAdvice(b, debt, period).recommended, projectedOwed(debt, b.settings, period.start, debtPay(b, debt)));
+      const frozen = b.splitSent?.[period.start]?.[debt.accountId];
+      if (frozen !== undefined && paySplitLocked(b, period, today)) need = Math.max(need, frozen);
+      if (need <= 0) continue;
+      const rows = out.filter((o) => o.name === debt.name && o.date >= lo && o.date <= hi);
+      const sum = rows.reduce((t, o) => t + o.amount, 0);
+      if (need <= sum) continue;
+      const stmt = gemStatementInRange(debt, lo, hi) ?? rows[0]?.date;
+      if (!stmt) continue;
+      const hit = rows.find((o) => o.date === stmt) ?? rows[0];
+      if (hit) hit.amount += need - sum;
+      else out.push({ date: stmt, amount: need - sum, name: debt.name, debtId: debt.id });
+    }
   }
 }
 
@@ -111,7 +115,7 @@ export function fundedOut(b: Budget, accountId: string, from: ISODate, to: ISODa
   let p = periodContaining(from, s);
   if (p.start < from) p = shiftPeriod(p, 1, s);
   // Running spare so maxSaved caps apply across several pays without re-reading the same balance.
-  let spare = asideSpareNow(b, accountId, from);
+  let spare = asideSpareAt(b, accountId, p.start);
   for (; p.start <= to; p = shiftPeriod(p, 1, s)) {
     const asides = setAsidesOn(b, accountId, p.start, spare === undefined ? undefined : { spare });
     for (const x of asides) {
@@ -124,6 +128,22 @@ export function fundedOut(b: Budget, accountId: string, from: ISODate, to: ISODa
     }
   }
   return out.sort((x, y) => x.date.localeCompare(y.date) || y.amount - x.amount);
+}
+
+/**
+ * Money put aside in an account by `payday`: what's spare now, plus what each payday from now until then
+ * puts aside (capped at each cost's max). Rolling today's figure forward by bills alone (`asideSpareNow`)
+ * lost the paydays' money, so a far-off pay never reached Haircut's $60 max and kept putting $30 aside.
+ */
+function asideSpareAt(b: Budget, accountId: string, payday: ISODate): Cents | undefined {
+  const today = todayISO();
+  if (payday <= today) return asideSpareNow(b, accountId, payday);
+  let spare = asideSpareNow(b, accountId, today);
+  if (spare === undefined) return undefined;
+  for (let p = shiftPeriod(periodContaining(today, b.settings), 1, b.settings); p.start < payday; p = shiftPeriod(p, 1, b.settings)) {
+    for (const x of setAsidesOn(b, accountId, p.start, { spare })) spare += Math.max(0, x.amount);
+  }
+  return spare;
 }
 
 /** What 'exact' mode sends in a period: the period's costs, debt payments, money put aside and savings-goal amounts. */
