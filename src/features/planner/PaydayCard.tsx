@@ -4,7 +4,7 @@ import type { Budget, Cents, EnvelopeSpan } from '../../core/types';
 import { accountMode, keepsBuffer } from '../../engine/balances/outflows';
 import { BUFFER_PAYS, bufferLine, potBuffer } from '../../engine/balances/buffer';
 import { leftoverBeforeBudget, topsUp } from '../../engine/balances/topUps';
-import { envelopeHeld } from '../../engine/envelope';
+import { envelopeSpentBy } from '../../engine/balances/estimate';
 import { firstBudgetPay, shiftPeriod, type Period } from '../../engine/periods';
 import { isAuto, type AccountPlan } from '../../engine/plan';
 import { envelopeBudget, envelopeSpan, isEnvelope, isHeldInAccount, isSetAside } from '../../engine/setAside';
@@ -60,7 +60,8 @@ export function PaydayCard({ budget, a, view, why, isOpen, onOpen, onClose, onEd
   // With a balance entered, the pill shows what the account ends the period with —
   // after reserving unspent month envelopes (Gas assumed spent this month).
   const rawEnds = !avg ? a.endBalance : undefined;
-  const gasHeld = rawEnds !== undefined ? envelopeHeld(budget, a.account.id, today) : 0;
+  // Envelope money is assumed spent: unspent now, and (a later pay) what each payday till then funds.
+  const gasHeld = rawEnds !== undefined ? envelopeSpentBy(budget, a.account.id, period.end, today) : 0;
   const ends = rawEnds !== undefined ? rawEnds - gasHeld : undefined;
   const diff = ends !== undefined ? null : a.diff === null || auto ? null : funded - need;
   // Steady (e.g. rent): "Buffer" is what the pays after this one need of what it ends with, as a running
@@ -101,11 +102,11 @@ export function PaydayCard({ budget, a, view, why, isOpen, onOpen, onClose, onEd
   const endTip = ends === undefined ? ''
     : ends < 0
       ? (gasHeld > 0
-        ? `Short after bills and ${cash(gasHeld)} still budgeted for this month’s envelopes (assumed spent)`
+        ? `Short after bills and ${cash(gasHeld)} budgeted for envelopes (assumed spent)`
         : 'Estimated balance at the end of this pay period')
     : pot && bufferFor
-      ? `${bufferLine(pot)}${gasHeld ? ` (after ${cash(gasHeld)} reserved for month budgets)` : ''}.`
-      : gasHeld > 0 ? `Ends about ${cash(ends)} after reserving ${cash(gasHeld)} for this month’s envelopes`
+      ? `${bufferLine(pot)}${gasHeld ? ` (after ${cash(gasHeld)} for envelopes)` : ''}.`
+      : gasHeld > 0 ? `Ends about ${cash(ends)} after ${cash(gasHeld)} for envelopes (assumed spent)`
       : steadyMode ? `Estimated balance at the end of this pay (a level amount evens out 4- and 5-week pays)`
       : 'Estimated balance at the end of this pay period';
   const pill = (
