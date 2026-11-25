@@ -1,11 +1,11 @@
 import { useState } from 'react';
-import { Icon } from '../../ui/Icon';
 import { nextColor } from '../../core/colors';
 import { todayISO } from '../../core/dates';
 import { centsToInput, parseMoney } from '../../core/money';
 import { isKiwiSaver, recordReading } from './logic/kiwisaver';
 import { newId, useBudget } from '../../state/store';
 import type { SavingsGoal } from '../../core/types';
+import { Modal } from '../../ui/components';
 
 export function GoalModal({ goal, onClose }: { goal?: SavingsGoal; onClose: () => void }) {
   const { budget, update } = useBudget();
@@ -70,59 +70,53 @@ export function GoalModal({ goal, onClose }: { goal?: SavingsGoal; onClose: () =
   }
 
   return (
-    <div className="modal-back" onClick={onClose}>
-      <div className="modal" role="dialog" aria-modal="true" aria-labelledby="goal-title" onClick={(e) => e.stopPropagation()}>
-        <div className="between">
-          <h2 id="goal-title" className="h2">{goal ? `Edit ${goal.name}` : 'Add a savings goal'}</h2>
-          <button className="icon-btn plain" aria-label="Close" onClick={onClose}><Icon name="x" /></button>
-        </div>
-        <label className="field">Name
-          <input autoFocus={!goal} value={name} onChange={(e) => { setName(e.target.value); setErr(''); }} placeholder="Emergency fund" />
+    <Modal title={goal ? `Edit ${goal.name}` : 'Add a savings goal'} onClose={onClose}>
+      <label className="field">Name
+        <input autoFocus={!goal} value={name} onChange={(e) => { setName(e.target.value); setErr(''); }} placeholder="Emergency fund" />
+      </label>
+      <label className="field">Saved in
+        <select value={accountId} onChange={(e) => setAccountId(e.target.value)}>
+          <option value="new">A new account</option>
+          {options.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+        </select>
+      </label>
+      <label className="check-row">
+        <input type="checkbox" checked={kiwi} onChange={(e) => setKiwi(e.target.checked)} />
+        <span>KiwiSaver: taken from my pay, and I can’t add to it or take it out</span>
+      </label>
+      <div className="form-grid">
+        <label className="field">{kiwi ? 'Balance' : 'Saved so far'}
+          <input inputMode="decimal" value={balance} onChange={(e) => setBalance(e.target.value)} placeholder="0.00" />
         </label>
-        <label className="field">Saved in
-          <select value={accountId} onChange={(e) => setAccountId(e.target.value)}>
-            <option value="new">A new account</option>
-            {options.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
-          </select>
+        <label className="field">Target (optional)
+          <input inputMode="decimal" value={target} onChange={(e) => setTarget(e.target.value)} placeholder="20,000.00" />
         </label>
-        <label className="check-row">
-          <input type="checkbox" checked={kiwi} onChange={(e) => setKiwi(e.target.checked)} />
-          <span>KiwiSaver: taken from my pay, and I can’t add to it or take it out</span>
-        </label>
-        <div className="form-grid">
-          <label className="field">{kiwi ? 'Balance' : 'Saved so far'}
-            <input inputMode="decimal" value={balance} onChange={(e) => setBalance(e.target.value)} placeholder="0.00" />
-          </label>
-          <label className="field">Target (optional)
-            <input inputMode="decimal" value={target} onChange={(e) => setTarget(e.target.value)} placeholder="20,000.00" />
-          </label>
-          {!kiwi && (
-            <>
-              <label className="field">Target date (optional)
-                <input type="date" value={targetDate} onChange={(e) => setTargetDate(e.target.value)} />
-              </label>
-              <label className="field">Others add each pay (optional)
-                <input inputMode="decimal" value={other} onChange={(e) => setOther(e.target.value)} placeholder="e.g. a partner's share" />
-              </label>
-            </>
-          )}
-        </div>
-        <label className="field">Note (optional)
-          <input value={note} onChange={(e) => setNote(e.target.value)} />
-        </label>
-        {targetDate && targetDate <= today && <p className="small muted">That target date has passed, so nothing more is planned for this goal. Pick a later date to keep saving towards it.</p>}
-        <p className="small muted">{kiwi
-          ? 'Payday sends it nothing. Each balance you enter (or the bank connection brings in) is kept, to chart its gains and losses.'
-          : 'Update "saved so far" whenever you check your balance. Investment fund returns aren\'t predicted.'}</p>
-        {err && <p className="error" role="alert">{err}</p>}
-        <div className="between">
-          {goal ? <button className="btn ghost danger" onClick={remove}>Remove goal</button> : <span />}
-          <div className="row">
-            <button className="btn" onClick={onClose}>Cancel</button>
-            <button className="btn primary" onClick={save}>{goal ? 'Save' : 'Add'}</button>
-          </div>
+        {!kiwi && (
+          <>
+            <label className="field">Target date (optional)
+              <input type="date" value={targetDate} onChange={(e) => setTargetDate(e.target.value)} />
+            </label>
+            <label className="field">Others add each pay (optional)
+              <input inputMode="decimal" value={other} onChange={(e) => setOther(e.target.value)} placeholder="e.g. a partner's share" />
+            </label>
+          </>
+        )}
+      </div>
+      <label className="field">Note (optional)
+        <input value={note} onChange={(e) => setNote(e.target.value)} />
+      </label>
+      {targetDate && targetDate <= today && <p className="small muted">That target date has passed, so nothing more is planned for this goal. Pick a later date to keep saving towards it.</p>}
+      <p className="small muted">{kiwi
+        ? 'Payday sends it nothing. Each balance you enter (or the bank connection brings in) is kept, to chart its gains and losses.'
+        : 'Update "saved so far" whenever you check your balance. Investment fund returns aren\'t predicted.'}</p>
+      {err && <p className="error" role="alert">{err}</p>}
+      <div className="between">
+        {goal ? <button className="btn ghost danger" onClick={remove}>Remove goal</button> : <span />}
+        <div className="row">
+          <button className="btn" onClick={onClose}>Cancel</button>
+          <button className="btn primary" onClick={save}>{goal ? 'Save' : 'Add'}</button>
         </div>
       </div>
-    </div>
+    </Modal>
   );
 }

@@ -75,6 +75,17 @@ describe('month envelope (Gas)', () => {
     expect(envelopePerPay(item, pays[0], b.settings)).toBe(20000);
   });
 
+  it('funds a month with no payday of its own from the pay that runs through it', () => {
+    // Paid on the 31st, Sundays moved to Monday: 31 Jan 2027 is a Sunday, so January has no payday.
+    const b = budget();
+    b.settings.paydayDay = 31;
+    b.settings.sunday = 'monday';
+    const item = { id: 'gas', name: 'Gas', amount: 20000, frequency: 'monthly' as const, start: '2026-11-01', accountId: 'food', envelope: 'month' as const };
+    expect(envelopePerPay(item, '2026-12-31', b.settings)).toBe(40000); // December's and January's
+    expect(envelopePerPay(item, '2027-02-01', b.settings)).toBe(20000); // February's
+    expect(envelopePerPay({ ...item, end: '2026-12-31' }, '2026-12-31', b.settings)).toBe(20000); // stopped before January
+  });
+
   it('treats unspent gas budget as reserved: food + gas can make the account short', () => {
     const b = budget();
     b.accounts.push({ id: 'food', name: 'Food and gas', kind: 'bank', color: '#000', groupId: 'needs' });

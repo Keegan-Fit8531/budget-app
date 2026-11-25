@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { costCategories, removeCostCategory, renameCostCategory } from './logic/goalcosts';
 import { useBudget } from '../../state/store';
 import { Icon } from '../../ui/Icon';
+import { Modal } from '../../ui/components';
 
 /** Rename, add and remove the categories used for savings-goal costs (e.g. wedding). */
 export function CostCategoriesEditor() {
@@ -58,15 +59,9 @@ export function CostCategoriesEditor() {
 /** The same editor in a pop-up, for use from the wedding costs. */
 export function CostCategoriesModal({ onClose }: { onClose: () => void }) {
   return (
-    <div className="modal-back" onClick={onClose}>
-      <div className="modal" role="dialog" aria-modal="true" aria-labelledby="cats-title" onClick={(e) => e.stopPropagation()}>
-        <div className="between">
-          <h2 id="cats-title" className="h2">Cost categories</h2>
-          <button className="icon-btn plain" aria-label="Close" onClick={onClose}><Icon name="x" /></button>
-        </div>
-        <CostCategoriesEditor />
-        <div className="row end"><button className="btn primary" onClick={onClose}>Done</button></div>
-      </div>
-    </div>
+    <Modal title="Cost categories" onClose={onClose}>
+      <CostCategoriesEditor />
+      <div className="row end"><button className="btn primary" onClick={onClose}>Done</button></div>
+    </Modal>
   );
 }

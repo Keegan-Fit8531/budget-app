@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseMoney } from './money';
+import { money, parseMoney } from './money';
 import type { Budget } from './types';
 import { looksLikeBudget } from './valid';
 import { moveAmong } from './order';
@@ -11,6 +11,7 @@ describe('checking what comes in', () => {
     expect(parseMoney('.5')).toBe(50);
     expect(parseMoney('$1,234.56')).toBe(123456);
     expect(parseMoney('-20')).toBe(-2000);
+    expect(parseMoney(money(-12050))).toBe(-12050); // an amount as shown ("−$120.50"), pasted back in
   });
 
   it('a backup or the synced file has to have the shape of a budget', () => {

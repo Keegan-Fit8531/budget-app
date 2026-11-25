@@ -1,7 +1,7 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Icon } from '../../ui/Icon';
 import { ColorPicker, Disclosure, PageHead, Section } from '../../ui/components';
-import { fmtDay, monthName, todayISO } from '../../core/dates';
+import { fmtDay, monthName, ordinal, todayISO } from '../../core/dates';
 import { clearPaydayMove, periodContaining, shiftPeriod } from '../../engine/periods';
 import { cash, centsToInput, parseMoney } from '../../core/money';
 import { nextColor } from '../../core/colors';
@@ -22,14 +22,13 @@ const RULES = [
   { name: '70/20/10', needs: 70, wants: 20, savings: 10 },
 ];
 
-/** 1st, 2nd, 3rd, 4th… 11th, 12th, 13th… 21st. */
-const ordinal = (n: number) => `${n}${n % 100 >= 11 && n % 100 <= 13 ? 'th' : ['th', 'st', 'nd', 'rd'][n % 10] ?? 'th'}`;
-
 export function SettingsPage() {
   const [theme, setTheme] = useState<Theme>(readTheme);
   const { budget, update, replace, reset, sync } = useBudget();
   const s = budget.settings;
   const [payText, setPayText] = useState(centsToInput(s.expectedPay));
+  // Follows the budget when it changes from elsewhere (a backup restored, a sync), or leaving the box would save the old pay back.
+  useEffect(() => setPayText(centsToInput(s.expectedPay)), [s.expectedPay]);
   const [msg, setMsg] = useState('');
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -125,7 +124,7 @@ export function SettingsPage() {
           </label>
           <label className="field">Expected pay (NZD)
             <input inputMode="decimal" value={payText} onChange={(e) => setPayText(e.target.value)}
-              onBlur={() => { const c = parseMoney(payText); if (c !== null && c > 0) setS('expectedPay', c); else setPayText(centsToInput(s.expectedPay)); }} />
+              onBlur={() => { const c = parseMoney(payText); if (c !== null && c > 0) { if (c !== s.expectedPay) setS('expectedPay', c); } else setPayText(centsToInput(s.expectedPay)); }} />
           </label>
           <label className="field">Pay lands in
             <select value={s.payAccountId} onChange={(e) => setS('payAccountId', e.target.value)}>
@@ -245,7 +244,11 @@ export function SettingsPage() {
         <div className="row wrap gap-8">
           <button className="btn" onClick={exportData}>Download backup</button>
           <button className="btn" onClick={() => fileRef.current?.click()}>Restore backup</button>
-          <input ref={fileRef} type="file" accept="application/json" hidden onChange={(e) => e.target.files?.[0] && importData(e.target.files[0])} />
+          <input ref={fileRef} type="file" accept="application/json" hidden onChange={(e) => {
+            const file = e.target.files?.[0];
+            if (file) void importData(file);
+            e.target.value = ''; // so choosing the same file again restores it again
+          }} />
           <button className="btn danger" onClick={() => { if (confirm(`Start over with a blank budget?${sync.state === 'off' ? '' : ' It syncs to every browser, but your current budget stays in Earlier versions and in the repo\u2019s history.'}`)) { reset(); setMsg('Started over with a blank budget.'); } }}>
             Start over
           </button>

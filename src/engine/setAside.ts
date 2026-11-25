@@ -1,4 +1,4 @@
-import { addDays, dateInMonth, daysInMonth, diffDays, todayISO, type ISODate } from '../core/dates';
+import { addDays, addMonths, dateInMonth, daysInMonth, diffDays, todayISO, type ISODate } from '../core/dates';
 import { debtPaymentsIn } from '../features/debts/logic/funding';
 import type { Budget, Cents, EnvelopeSpan, Item } from '../core/types';
 import { convert } from './frequency';
@@ -183,8 +183,10 @@ export function paydaysInMonth(ym: string, s: PayRules): ISODate[] {
 
 /**
  * What a payday puts into an envelope. A month envelope: an even share of the calendar month's budget
- * across the paydays in that month (last payday gets any remainder). A week or fortnight envelope: the
- * budget of every week / fortnight that starts in this pay (from the item's start, up to its end).
+ * across the paydays in that month (last payday gets any remainder), and the whole of the next month's when
+ * that month has no payday of its own (paid on the 31st: 31 Jan a Sunday moves to Mon 1 Feb, so January has
+ * none, and the 31 Dec pay that runs through it funds it). A week or fortnight envelope: the budget of every
+ * week / fortnight that starts in this pay (from the item's start, up to its end).
  */
 export function envelopePerPay(item: Item, payday: ISODate, s: PayRules): Cents {
   if (!isEnvelope(item)) return 0;
@@ -204,9 +206,11 @@ export function envelopePerPay(item: Item, payday: ISODate, s: PayRules): Cents 
   const pays = paydaysInMonth(payday.slice(0, 7), s);
   const i = pays.indexOf(payday);
   if (i < 0) return 0;
-  if (pays.length <= 1) return budget;
   const each = Math.floor(budget / pays.length);
-  return i === pays.length - 1 ? budget - each * (pays.length - 1) : each;
+  if (i < pays.length - 1) return each;
+  const next = addMonths(`${payday.slice(0, 7)}-01`, 1);
+  const alsoNext = !paydaysInMonth(next.slice(0, 7), s).length && (!item.end || item.end >= next);
+  return budget - each * (pays.length - 1) + (alsoNext ? budget : 0);
 }
 
 /** Envelope amounts a payday funds in an account. */

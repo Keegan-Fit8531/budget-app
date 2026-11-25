@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
 import { fmtShort, todayISO } from '../../core/dates';
-import { costCategories, spentOn } from './logic/goalcosts';
+import { changeSaved, costCategories, spentOn } from './logic/goalcosts';
 import { cash, centsToInput, parseMoney } from '../../core/money';
 import { newId, useBudget } from '../../state/store';
 import type { GoalCost, SavingsGoal } from '../../core/types';
@@ -8,6 +8,7 @@ import { NEW_PERSON } from './logic/gifts';
 import { PersonPicker } from './GoalGifts';
 import { addPerson, paidShares, peopleOf } from './logic/contributions';
 import { Icon } from '../../ui/Icon';
+import { Modal } from '../../ui/components';
 
 export function CostModal({ goal, cost, onClose }: { goal: SavingsGoal; cost?: GoalCost; onClose: () => void }) {
   const { budget, update } = useBudget();
@@ -66,7 +67,7 @@ export function CostModal({ goal, cost, onClose }: { goal: SavingsGoal; cost?: G
       // Only paying from the fund changes the saved balance; paid outside the fund just records it.
       const fromFundBefore = existing?.paid && !existing.paidOutside ? Math.max(0, existing.amount - spent) : 0;
       const fromFundNow = pay === 'fund' ? Math.max(0, c - spent) : 0;
-      if (fromFundBefore !== fromFundNow) { g.balance = Math.max(0, g.balance + fromFundBefore - fromFundNow); g.asOf = todayISO(); }
+      if (fromFundBefore !== fromFundNow) changeSaved(b, g, fromFundBefore - fromFundNow, todayISO());
       for (const x of shares) addPerson(g, x.person);
       const next: GoalCost = {
         ...existing, id: cost?.id ?? newId(), name: name.trim(), amount: c, category: cat, due: pay === 'no' ? due || undefined : undefined,
@@ -92,106 +93,100 @@ export function CostModal({ goal, cost, onClose }: { goal: SavingsGoal; cost?: G
   }
 
   return (
-    <div className="modal-back" onClick={onClose}>
-      <div className="modal" role="dialog" aria-modal="true" aria-labelledby="cost-title" onClick={(e) => e.stopPropagation()}>
-        <div className="between">
-          <h2 id="cost-title" className="h2">{cost ? `Edit ${cost.name}` : `${goal.name}: add a cost`}</h2>
-          <button className="icon-btn plain" aria-label="Close" onClick={onClose}><Icon name="x" /></button>
-        </div>
-        <label className="field">What it is
-          <input ref={nameRef} autoFocus={!cost} value={name} onChange={(e) => { setName(e.target.value); setErr(''); }} placeholder="Wedding bands" />
-          {fieldErr('name')}
+    <Modal title={cost ? `Edit ${cost.name}` : `${goal.name}: add a cost`} onClose={onClose}>
+      <label className="field">What it is
+        <input ref={nameRef} autoFocus={!cost} value={name} onChange={(e) => { setName(e.target.value); setErr(''); }} placeholder="Wedding bands" />
+        {fieldErr('name')}
+      </label>
+      <div className="form-grid">
+        <label className="field">Amount
+          <input ref={amountRef} inputMode="decimal" value={amount} onChange={(e) => { setAmount(e.target.value); setErr(''); }} placeholder="3,000.00" />
+          {fieldErr('amount')}
         </label>
-        <div className="form-grid">
-          <label className="field">Amount
-            <input ref={amountRef} inputMode="decimal" value={amount} onChange={(e) => { setAmount(e.target.value); setErr(''); }} placeholder="3,000.00" />
-            {fieldErr('amount')}
+        <label className="field">Category
+          <select value={category} onChange={(e) => setCategory(e.target.value)}>
+            {COST_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
+            <option value="__new">+ New category…</option>
+          </select>
+        </label>
+        {category === '__new' && (
+          <label className="field">New category name
+            <input autoFocus value={newCategory} onChange={(e) => { setNewCategory(e.target.value); setErr(''); }} placeholder="Cake" />
+            {fieldErr('category')}
           </label>
-          <label className="field">Category
-            <select value={category} onChange={(e) => setCategory(e.target.value)}>
-              {COST_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
-              <option value="__new">+ New category…</option>
-            </select>
-          </label>
-          {category === '__new' && (
-            <label className="field">New category name
-              <input autoFocus value={newCategory} onChange={(e) => { setNewCategory(e.target.value); setErr(''); }} placeholder="Cake" />
-              {fieldErr('category')}
-            </label>
-          )}
+        )}
+      </div>
+      <div className="stack gap-8">
+        <span className="h3">Paid?</span>
+        <div className="seg" role="group" aria-label="Paid?" style={{ display: 'flex' }}>
+          <button aria-pressed={pay === 'no'} onClick={() => setPay('no')} style={{ flex: 1, paddingInline: 6 }}>Not yet</button>
+          <button aria-pressed={pay === 'fund'} onClick={() => setPay('fund')} style={{ flex: 1, paddingInline: 6 }}>From the fund</button>
+          <button aria-pressed={pay === 'outside'} onClick={() => setPay('outside')} style={{ flex: 1, paddingInline: 6 }}>Paid already</button>
         </div>
-        <div className="stack gap-8">
-          <span className="h3">Paid?</span>
-          <div className="seg" role="group" aria-label="Paid?" style={{ display: 'flex' }}>
-            <button aria-pressed={pay === 'no'} onClick={() => setPay('no')} style={{ flex: 1, paddingInline: 6 }}>Not yet</button>
-            <button aria-pressed={pay === 'fund'} onClick={() => setPay('fund')} style={{ flex: 1, paddingInline: 6 }}>From the fund</button>
-            <button aria-pressed={pay === 'outside'} onClick={() => setPay('outside')} style={{ flex: 1, paddingInline: 6 }}>Paid already</button>
-          </div>
-          {pay === 'fund' && <p className="small muted">Takes {cost && spentOn(cost) ? 'what\u2019s left of it' : 'it'} off the saved balance.</p>}
-          {pay === 'outside' && <p className="small muted">Paid with other money (not the fund), so your savings don't change. It's recorded against who paid.</p>}
-          {pay === 'outside' && (() => {
-            const total = parseMoney(amount) ?? 0;
-            const sum = split.reduce((t, r) => t + (split.length === 1 && !r.amount.trim() ? total : parseMoney(r.amount) ?? 0), 0);
-            return (
-              <div className="stack gap-8">
-                {split.map((r, i) => (
-                  <div key={r.key} className="row gap-8 bottom nowrap">
-                    <div className="grow">
-                      <PersonPicker goal={goal} value={r.person} label={i === 0 ? 'Paid by' : 'And'}
-                        onChange={(v) => { setSplit((sp) => sp.map((x) => (x.key === r.key ? { ...x, person: v } : x))); setErr(''); }} />
-                    </div>
-                    <label className="field" style={{ width: 120, flex: '0 0 120px' }}>{i === 0 ? 'Amount' : ' '}
-                      <input inputMode="decimal" value={r.amount} placeholder={split.length === 1 ? 'All of it' : '0.00'}
-                        onChange={(e) => { setSplit((sp) => sp.map((x) => (x.key === r.key ? { ...x, amount: e.target.value } : x))); setErr(''); }} />
-                    </label>
-                    {split.length > 1 && (
-                      <button className="icon-btn" aria-label="Remove this person" style={{ marginBottom: 4 }} onClick={() => setSplit((sp) => sp.filter((x) => x.key !== r.key))}><Icon name="x" /></button>
-                    )}
+        {pay === 'fund' && <p className="small muted">Takes {cost && spentOn(cost) ? 'what\u2019s left of it' : 'it'} off the saved balance.</p>}
+        {pay === 'outside' && <p className="small muted">Paid with other money (not the fund), so your savings don't change. It's recorded against who paid.</p>}
+        {pay === 'outside' && (() => {
+          const total = parseMoney(amount) ?? 0;
+          const sum = split.reduce((t, r) => t + (split.length === 1 && !r.amount.trim() ? total : parseMoney(r.amount) ?? 0), 0);
+          return (
+            <div className="stack gap-8">
+              {split.map((r, i) => (
+                <div key={r.key} className="row gap-8 bottom nowrap">
+                  <div className="grow">
+                    <PersonPicker goal={goal} value={r.person} label={i === 0 ? 'Paid by' : 'And'}
+                      onChange={(v) => { setSplit((sp) => sp.map((x) => (x.key === r.key ? { ...x, person: v } : x))); setErr(''); }} />
                   </div>
-                ))}
-                <div className="between small">
-                  <button className="btn small ghost" onClick={() => setSplit((sp) => {
-                    const used = sp.map((x) => nameOf(x.person));
-                    const next = peopleOf(goal).find((p) => !used.includes(p)) ?? `${NEW_PERSON}`;
-                    const first = sp.length === 1 && !sp[0].amount.trim() ? [{ ...sp[0], amount: '' }] : sp;
-                    return [...first, { key: `r${Date.now()}`, person: next, amount: '' }];
-                  })}><Icon name="plus" size={16} /> Add another person</button>
-                  {fieldErr('split')}
-                  {split.length > 1 && total > 0 && (
-                    <b className={sum === total ? 'pos' : 'neg'}>{sum === total ? 'Adds up' : sum < total ? `${cash(total - sum)} still to split` : `${cash(sum - total)} too much`}</b>
+                  <label className="field" style={{ width: 120, flex: '0 0 120px' }}>{i === 0 ? 'Amount' : ' '}
+                    <input inputMode="decimal" value={r.amount} placeholder={split.length === 1 ? 'All of it' : '0.00'}
+                      onChange={(e) => { setSplit((sp) => sp.map((x) => (x.key === r.key ? { ...x, amount: e.target.value } : x))); setErr(''); }} />
+                  </label>
+                  {split.length > 1 && (
+                    <button className="icon-btn" aria-label="Remove this person" style={{ marginBottom: 4 }} onClick={() => setSplit((sp) => sp.filter((x) => x.key !== r.key))}><Icon name="x" /></button>
                   )}
                 </div>
+              ))}
+              <div className="between small">
+                <button className="btn small ghost" onClick={() => setSplit((sp) => {
+                  const used = sp.map((x) => nameOf(x.person));
+                  const next = peopleOf(goal).find((p) => !used.includes(p)) ?? `${NEW_PERSON}`;
+                  const first = sp.length === 1 && !sp[0].amount.trim() ? [{ ...sp[0], amount: '' }] : sp;
+                  return [...first, { key: `r${Date.now()}`, person: next, amount: '' }];
+                })}><Icon name="plus" size={16} /> Add another person</button>
+                {fieldErr('split')}
+                {split.length > 1 && total > 0 && (
+                  <b className={sum === total ? 'pos' : 'neg'}>{sum === total ? 'Adds up' : sum < total ? `${cash(total - sum)} still to split` : `${cash(sum - total)} too much`}</b>
+                )}
               </div>
-            );
-          })()}
-          {pay !== 'no' && (
-            <div className="form-grid">
-              <label className="field">Paid on
-                <input type="date" value={paidOn} onChange={(e) => setPaidOn(e.target.value)} />
-              </label>
             </div>
-          )}
-        </div>
-        {pay === 'no' && (
-          <div className="stack gap-6">
-            <div className="row gap-8 bottom">
-              <label className="field" style={{ flex: 1 }}>Due date (optional)
-                <input type="date" value={due} onChange={(e) => setDue(e.target.value)} />
-              </label>
-              {due && <button className="btn small ghost" onClick={() => setDue('')}>Clear</button>}
-            </div>
-            <p className="small muted">No due date? It's checked against the wedding date{goal.targetDate ? ` (${fmtShort(goal.targetDate)})` : ''}.</p>
+          );
+        })()}
+        {pay !== 'no' && (
+          <div className="form-grid">
+            <label className="field">Paid on
+              <input type="date" value={paidOn} onChange={(e) => setPaidOn(e.target.value)} />
+            </label>
           </div>
         )}
-        {err && <p className="error small" role="status">{errAt === 'name' ? '\u2191 ' : ''}{err}</p>}
-        <div className="between">
-          {cost ? <button className="btn ghost danger" onClick={remove}>Delete</button> : <span />}
-          <div className="row">
-            <button className="btn" onClick={onClose}>Cancel</button>
-            <button className="btn primary" onClick={save}>{cost ? 'Save' : 'Add'}</button>
+      </div>
+      {pay === 'no' && (
+        <div className="stack gap-6">
+          <div className="row gap-8 bottom">
+            <label className="field" style={{ flex: 1 }}>Due date (optional)
+              <input type="date" value={due} onChange={(e) => setDue(e.target.value)} />
+            </label>
+            {due && <button className="btn small ghost" onClick={() => setDue('')}>Clear</button>}
           </div>
+          <p className="small muted">No due date? It's checked against the wedding date{goal.targetDate ? ` (${fmtShort(goal.targetDate)})` : ''}.</p>
+        </div>
+      )}
+      {err && <p className="error small" role="status">{errAt === 'name' ? '\u2191 ' : ''}{err}</p>}
+      <div className="between">
+        {cost ? <button className="btn ghost danger" onClick={remove}>Delete</button> : <span />}
+        <div className="row">
+          <button className="btn" onClick={onClose}>Cancel</button>
+          <button className="btn primary" onClick={save}>{cost ? 'Save' : 'Add'}</button>
         </div>
       </div>
-    </div>
+    </Modal>
   );
 }

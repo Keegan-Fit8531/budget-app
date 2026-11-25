@@ -1,4 +1,5 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react';
+import { Modal } from './components';
 
 /**
  * Whether an error is this tab running an older copy of the app than the one now online: a new version
@@ -34,9 +35,10 @@ export class ErrorBoundary extends Component<{ children: ReactNode; onClose?: ()
     if (!error) return this.props.children;
     const { onClose } = this.props;
     const stale = isStaleBuild(error);
+    const heading = stale ? STALE_TITLE : onClose ? 'This couldn’t be shown' : 'This page couldn’t be shown';
     const body = (
       <section className={onClose ? 'stack gap-12' : 'card stack gap-12'} role="alert">
-        <h1 className="h2">{stale ? STALE_TITLE : onClose ? 'This couldn’t be shown' : 'This page couldn’t be shown'}</h1>
+        {!onClose && <h1 className="h2">{heading}</h1>}
         {stale ? <p className="small muted">{STALE_BODY}</p> : (
           <>
             <p className="small muted">
@@ -59,10 +61,6 @@ export class ErrorBoundary extends Component<{ children: ReactNode; onClose?: ()
       </section>
     );
     if (!onClose) return body;
-    return (
-      <div className="modal-back" onClick={onClose}>
-        <div className="modal" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>{body}</div>
-      </div>
-    );
+    return <Modal title={heading} onClose={onClose}>{body}</Modal>;
   }
 }

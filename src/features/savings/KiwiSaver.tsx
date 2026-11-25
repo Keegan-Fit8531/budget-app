@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent } from 'react';
-import { AccIcon } from '../../ui/components';
+import { AccIcon, Modal } from '../../ui/components';
 import { Donut } from '../../ui/Donut';
 import { Icon } from '../../ui/Icon';
 import { tone } from '../../core/colors';
@@ -131,40 +131,34 @@ function KiwiBalanceModal({ goal, onClose }: { goal: SavingsGoal; onClose: () =>
   }
 
   return (
-    <div className="modal-back" onClick={onClose}>
-      <div className="modal" role="dialog" aria-modal="true" aria-labelledby="kiwi-title" onClick={(e) => e.stopPropagation()}>
-        <div className="between">
-          <h2 id="kiwi-title" className="h2">Add a {goal.name} balance</h2>
-          <button className="icon-btn plain" aria-label="Close" onClick={onClose}><Icon name="x" /></button>
-        </div>
-        <label className="field">As at
-          <input type="date" value={date} max={todayISO()} onChange={(e) => { setDate(e.target.value); setErr(''); }} />
-        </label>
-        <div className="stack gap-8">
-          <b className="small">Each fund’s value</b>
-          {funds.map((f, i) => (
-            <div key={i} className="row nowrap gap-8">
-              <input aria-label="Fund" value={f.name} placeholder="High Growth" onChange={(e) => setFunds(funds.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)))} />
-              <input aria-label={`${f.name || 'Fund'} value`} inputMode="decimal" value={f.value} placeholder="0.00" onChange={(e) => { setFunds(funds.map((x, j) => (j === i ? { ...x, value: e.target.value } : x))); setErr(''); }} />
-              <button className="icon-btn plain" aria-label={`Remove ${f.name || 'fund'}`} onClick={() => setFunds(funds.filter((_, j) => j !== i))}><Icon name="x" size={16} /></button>
-            </div>
-          ))}
-          <button className="btn small" style={{ alignSelf: 'flex-start' }} onClick={() => setFunds([...funds, { name: '', value: '' }])}><Icon name="plus" size={16} /> Add a fund</button>
-          {named.length > 0 && <span className="small">Balance: <b>{cash(sum)}</b></span>}
-        </div>
-        {named.length === 0 && (
-          <label className="field">Balance
-            <input inputMode="decimal" value={total} placeholder={centsToInput(goal.balance)} onChange={(e) => { setTotal(e.target.value); setErr(''); }} />
-          </label>
-        )}
-        <p className="small muted">A statement or breakdown from your provider fills in what went in and what it earned too: upload it with Add → Upload a document.</p>
-        {err && <p className="error" role="alert">{err}</p>}
-        <div className="row end">
-          <button className="btn" onClick={onClose}>Cancel</button>
-          <button className="btn primary" onClick={save}>Add</button>
-        </div>
+    <Modal title={<>Add a {goal.name} balance</>} onClose={onClose}>
+      <label className="field">As at
+        <input type="date" value={date} max={todayISO()} onChange={(e) => { setDate(e.target.value); setErr(''); }} />
+      </label>
+      <div className="stack gap-8">
+        <b className="small">Each fund’s value</b>
+        {funds.map((f, i) => (
+          <div key={i} className="row nowrap gap-8">
+            <input aria-label="Fund" value={f.name} placeholder="High Growth" onChange={(e) => setFunds(funds.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)))} />
+            <input aria-label={`${f.name || 'Fund'} value`} inputMode="decimal" value={f.value} placeholder="0.00" onChange={(e) => { setFunds(funds.map((x, j) => (j === i ? { ...x, value: e.target.value } : x))); setErr(''); }} />
+            <button className="icon-btn plain" aria-label={`Remove ${f.name || 'fund'}`} onClick={() => setFunds(funds.filter((_, j) => j !== i))}><Icon name="x" size={16} /></button>
+          </div>
+        ))}
+        <button className="btn small" style={{ alignSelf: 'flex-start' }} onClick={() => setFunds([...funds, { name: '', value: '' }])}><Icon name="plus" size={16} /> Add a fund</button>
+        {named.length > 0 && <span className="small">Balance: <b>{cash(sum)}</b></span>}
       </div>
-    </div>
+      {named.length === 0 && (
+        <label className="field">Balance
+          <input inputMode="decimal" value={total} placeholder={centsToInput(goal.balance)} onChange={(e) => { setTotal(e.target.value); setErr(''); }} />
+        </label>
+      )}
+      <p className="small muted">A statement or breakdown from your provider fills in what went in and what it earned too: upload it with Add → Upload a document.</p>
+      {err && <p className="error" role="alert">{err}</p>}
+      <div className="row end">
+        <button className="btn" onClick={onClose}>Cancel</button>
+        <button className="btn primary" onClick={save}>Add</button>
+      </div>
+    </Modal>
   );
 }
 

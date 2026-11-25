@@ -2,7 +2,7 @@ import { addDays, type ISODate } from '../../../core/dates';
 import { periodContaining } from '../../../engine/periods';
 import type { Budget, Cents, Debt, PaidPayment, Settings } from '../../../core/types';
 import { PAID_KEPT, historyOwed, plannedOwed, recordHistory } from './amounts';
-import { gemApply, gemTakeOff, planEnds } from './gem';
+import { gemApply, gemTakeOff, planEnds } from './gem/gem';
 import { type PerPay, last, debtSchedules } from './schedule';
 
 export interface Applied { planId: string; planName: string; date: ISODate; amount: Cents; cleared: boolean }

@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
-import { freezePaySplitFrom, paySplitLocked } from '../engine/balances/freeze';
+import { freezePaySplitFrom, morningFlag, paySplitLocked } from '../engine/balances/freeze';
 import { pullBudget, pushBudget, readSyncConfig, SyncError, takePairingFromUrl, writeSyncConfig, type SyncConfig } from '../services/sync/sync';
 import { todayISO } from '../core/dates';
 import { periodContaining } from '../engine/periods';
@@ -42,7 +42,7 @@ async function restoreSplitFromMorningCopy(current: Budget): Promise<Budget | nu
   const today = todayISO();
   const p = periodContaining(today, current.settings);
   if (!paySplitLocked(current, p, today)) return null;
-  const flag = `split-morning-${p.start}`;
+  const flag = morningFlag(p.start);
   if (current.flags?.includes(flag)) return null;
   const infos = await listCopies();
   const day = localDay(new Date());

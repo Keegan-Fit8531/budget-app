@@ -12,7 +12,7 @@ import { recordStatement } from '../../../services/reader/documents';
 import { planFor } from '../../../engine/plan';
 import { periodContaining, shiftPeriod } from '../../../engine/periods';
 import type { Budget, Debt } from '../../../core/types';
-import { budget } from '../../../testing/fixtures';
+import { budget, heldGemBudget } from '../../../testing/fixtures';
 
 describe('debts', () => {
   it('a 3-months-interest-free card balance is only paid down once per payday', () => {
@@ -268,6 +268,14 @@ describe('Gem payment held in Misc bills until statement day', () => {
     const plan = planFor(b, p, '2026-11-19');
     const gem = plan.accounts.find((a) => a.account.id === 'gem')!;
     expect(gem.funded).toBeGreaterThan(0);
+  });
+
+  it("Misc bills' own one-pay amount isn't a Gem payment (it pays Misc bills' bills too)", () => {
+    const b = heldGemBudget();
+    const gem = b.debts![0];
+    const usual = projectedOwed(gem, b.settings, '2027-02-01', debtPay(b, gem));
+    b.overrides = { '2026-12-18': { bills: 90000 } }; // Misc bills topped up for one pay
+    expect(projectedOwed(gem, b.settings, '2027-02-01', debtPay(b, gem))).toBe(usual);
   });
 
   it('auto-updates Gem to Latitude’s recommended allocation and reserves that in Misc bills', () => {

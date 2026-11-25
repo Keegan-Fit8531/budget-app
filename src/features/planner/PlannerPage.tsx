@@ -1,7 +1,7 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { startRead, type ReadJob } from '../../services/reader/job';
-import { applyBalance, restoreOverrides } from '../../engine/rebalance';
+import { applyBalance } from '../../engine/rebalance';
 import { freezePaySplit, unfreezePaySplit } from '../../engine/balances/freeze';
 import { Donut, Legend } from '../../ui/Donut';
 import { Icon } from '../../ui/Icon';
@@ -14,13 +14,14 @@ import { DueList } from './DueList';
 import { PayNav, useViewPeriod, ViewModes } from '../../state/period';
 import { clearOptimiseUndo, OptimiseModal, readOptimiseUndo, type OptimiseUndo } from './OptimiseModal';
 import { undoAllocation } from './logic/allocate';
+import { resetPay, setThisPay as setPayAmount } from './logic/thisPay';
 import { modesChangedIn, rememberModes, takeModes } from './logic/modeMemory';
 import { plannerFigures, type LastBalance } from './logic/plannerFigures';
 import { todayISO } from '../../core/dates';
 import { shiftPeriod, upcomingPayPeriod } from '../../engine/periods';
 import { cash, moneyParts, centsToInput, parseMoney } from '../../core/money';
 import { useBudget } from '../../state/store';
-import type { Cents, PaydayMode } from '../../core/types';
+import type { Cents } from '../../core/types';
 
 // Loaded only when a document is chosen.
 const UploadQueue = lazy(() => import('../../services/reader/ui/UploadFlow').then((m) => ({ default: m.UploadQueue })));
@@ -69,18 +70,7 @@ export function PlannerPage() {
 
   /** Set (or with null, remove) an account's amount for this pay only. */
   function setThisPay(id: string, amount: Cents | null) {
-    update((b) => {
-      const o = { ...(b.overrides?.[period.start] ?? {}) };
-      if (amount === null) delete o[id]; else o[id] = amount;
-      b.overrides = b.overrides ?? {};
-      if (Object.keys(o).length) b.overrides[period.start] = o; else delete b.overrides[period.start];
-      // Locked cycle: keep the frozen split in step with a hand edit.
-      if (b.splitSent?.[period.start]) {
-        if (amount === null) delete b.splitSent[period.start][id];
-        else b.splitSent[period.start][id] = amount;
-      }
-      return b;
-    });
+    update((b) => { setPayAmount(b, period.start, id, amount); return b; });
     setAdjEdit(null);
   }
   function saveAdj() {
@@ -103,14 +93,7 @@ export function PlannerPage() {
   /** Back to defaults for this pay: no one-pay adjustments, and payday amounts balancing changed put back. */
   function resetToDefaults() {
     const modes = takeModes(period.start);
-    update((b) => {
-      restoreOverrides(b, period.start, undefined);
-      for (const [id, m] of Object.entries(modes)) {
-        const l = b.split.find((x) => x.accountId === id);
-        if (l) l.mode = m as PaydayMode;
-      }
-      return b;
-    });
+    update((b) => { resetPay(b, period.start, modes); return b; });
     setBalanced(null);
     // Reset removes this pay's one-pay changes, Optimise's included, so there's nothing left to undo.
     if (optUndo?.periodStart === period.start) { clearOptimiseUndo(); setOptUndo(null); }

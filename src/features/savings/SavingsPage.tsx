@@ -27,7 +27,8 @@ export function SavingsPage() {
   const { budget, update } = useBudget();
   const all = budget.savings ?? [];
   // KiwiSaver comes from your salary and is locked in: it has its own card, and isn't in the payday totals or projection.
-  const goals = all.filter((g) => !isKiwiSaver(g));
+  // (Kept from one render to the next, so the chart's projection is only worked out again when the budget changes.)
+  const goals = useMemo(() => (budget.savings ?? []).filter((g) => !isKiwiSaver(g)), [budget.savings]);
   const kiwis = all.filter(isKiwiSaver);
   const today = todayISO();
   const [modal, setModal] = useState<{ goal?: SavingsGoal } | null>(null);
@@ -84,7 +85,7 @@ export function SavingsPage() {
         {kiwis.map((g) => <KiwiSaverCard key={g.id} goal={g} extra={<>{pill(g)}{mover(g, kiwis)}</>} onEdit={() => setModal({ goal: g })} />)}
       </div>
 
-      {goals.length > 0 && <SavingsChart budget={{ ...budget, savings: goals }} />}
+      {goals.length > 0 && <SavingsChart budget={budget} goals={goals} />}
 
       {modal && <GoalModal goal={modal.goal} onClose={() => setModal(null)} />}
     </>

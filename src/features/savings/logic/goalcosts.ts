@@ -66,22 +66,52 @@ export interface GoalCostSummary {
  * same as savings.ts. A payday that has passed since then isn't in it yet, so it's still added.)
  */
 export function projectedAt(b: Budget, goal: SavingsGoal, date: ISODate, today: ISODate): { amount: Cents; pays: number } {
-  // Expected gifts (not yet in the balance) count from their date.
-  let amount = goal.balance + expectedGifts(goal, date);
-  let pays = 0;
-  let p = firstPayToCome(b, goal, today);
-  for (let i = 0; i < 400 && p.start <= date; i++) {
-    const funded = planFor(b, p, today).accounts.find((a) => a.account.id === goal.accountId)?.funded ?? 0;
-    amount += funded + (goal.otherPerPay ?? 0);
-    pays++;
-    p = shiftPeriod(p, 1, b.settings);
-  }
-  return { amount, pays };
+  return fundAt(b, goal, today)(date);
+}
+
+/**
+ * `projectedAt` for many dates: each pay's send is worked out once, however many dates are asked for
+ * (`planFor` is slow, and a goal's costs ask for one date each).
+ */
+function fundAt(b: Budget, goal: SavingsGoal, today: ISODate): (date: ISODate) => { amount: Cents; pays: number } {
+  const sends: { start: ISODate; amount: Cents }[] = [];
+  let next = firstPayToCome(b, goal, today);
+  return (date) => {
+    while (sends.length < 400 && next.start <= date) {
+      const funded = planFor(b, next, today).accounts.find((a) => a.account.id === goal.accountId)?.funded ?? 0;
+      sends.push({ start: next.start, amount: funded + (goal.otherPerPay ?? 0) });
+      next = shiftPeriod(next, 1, b.settings);
+    }
+    // Expected gifts (not yet in the balance) count from their date.
+    let amount = goal.balance + expectedGifts(goal, date);
+    let pays = 0;
+    for (const x of sends) {
+      if (x.start > date) break;
+      amount += x.amount;
+      pays++;
+    }
+    return { amount, pays };
+  };
 }
 
 /** Money expected (not yet received) for a goal on or before `date`. */
 export function expectedGifts(goal: SavingsGoal, date: ISODate): Cents {
   return (goal.gifts ?? []).filter((x) => !x.received && x.date <= date).reduce((t, x) => t + x.amount, 0);
+}
+
+/** What's in a goal's fund today: the saved balance plus each payday since it was last updated (not money still expected). */
+export function savedToday(b: Budget, goal: SavingsGoal, today: ISODate): Cents {
+  return projectedAt(b, goal, today, today).amount - expectedGifts(goal, today);
+}
+
+/**
+ * Put money into a goal's fund today, or take it out (negative). The saved balance is as at the day it was
+ * last updated, and every payday since is added on top, so it's brought up to today first: moving its date
+ * to today without them would drop those paydays from the fund.
+ */
+export function changeSaved(b: Budget, goal: SavingsGoal, amount: Cents, today: ISODate): void {
+  goal.balance = Math.max(0, savedToday(b, goal, today) + amount);
+  goal.asOf = today;
 }
 
 export function summariseCosts(b: Budget, goal: SavingsGoal, today: ISODate): GoalCostSummary {
@@ -93,9 +123,10 @@ export function summariseCosts(b: Budget, goal: SavingsGoal, today: ISODate): Go
     .map((c) => ({ c, by: c.due ?? goal.targetDate, left: leftOn(c) }))
     .sort((x, y) => (x.by ?? '9999').localeCompare(y.by ?? '9999'));
 
+  const fund = fundAt(b, goal, today);
   let spent = 0;
   const checks: CostCheck[] = unpaid.map(({ c, by, left }) => {
-    const at = by ? projectedAt(b, goal, by, today).amount : goal.balance;
+    const at = by ? fund(by).amount : goal.balance;
     spent += left;
     const available = at - (spent - left);
     return { cost: c, by, available, covered: at >= spent, short: Math.min(left, Math.max(0, spent - at)) }; // this cost's own uncovered part
@@ -107,13 +138,13 @@ export function summariseCosts(b: Budget, goal: SavingsGoal, today: ISODate): Go
   for (const { by, left } of unpaid) {
     cum += left;
     if (!by) continue;
-    const pays = projectedAt(b, goal, by, today).pays;
+    const pays = fund(by).pays;
     const need = cum - goal.balance - expectedGifts(goal, by) - (goal.otherPerPay ?? 0) * pays;
     const per = pays > 0 ? Math.ceil(need / pays) : need;
     neededPerPay = Math.max(neededPerPay ?? 0, per, 0);
   }
 
-  const byTarget = goal.targetDate ? projectedAt(b, goal, goal.targetDate, today).amount : undefined;
+  const byTarget = goal.targetDate ? fund(goal.targetDate).amount : undefined;
   const cats = new Map<string, Cents>();
   for (const c of costs) cats.set(c.category || 'Other', (cats.get(c.category || 'Other') ?? 0) + Math.max(c.amount, spentOn(c)));
   return {
@@ -123,8 +154,8 @@ export function summariseCosts(b: Budget, goal: SavingsGoal, today: ISODate): Go
   };
 }
 
-/** Spend money from a goal on a cost (existing, or a new one). Takes it off the saved balance. */
-export function spendFromGoal(goal: SavingsGoal, spend: { id: string; amount: Cents; date: ISODate; note?: string },
+/** Spend money from a goal on a cost (existing, or a new one). Takes it off the saved balance (`changeSaved`). */
+export function spendFromGoal(b: Budget, goal: SavingsGoal, spend: { id: string; amount: Cents; date: ISODate; note?: string },
   target: { costId: string } | { newCost: { id: string; name: string; category: string } }, today: ISODate = todayISO()): void {
   goal.costs = goal.costs ?? [];
   let cost = 'costId' in target ? goal.costs.find((c) => c.id === target.costId) : undefined;
@@ -135,20 +166,16 @@ export function spendFromGoal(goal: SavingsGoal, spend: { id: string; amount: Ce
   }
   if (!cost) return;
   cost.spends = [...(cost.spends ?? []), spend];
-  goal.balance = Math.max(0, goal.balance - spend.amount);
-  // The balance is now as at the day of the spend, but never a day that hasn't come yet (a spend dated
-  // ahead would otherwise leave out the paydays before it).
-  const on = spend.date > today ? today : spend.date;
-  goal.asOf = on > goal.asOf ? on : goal.asOf;
+  changeSaved(b, goal, -spend.amount, today);
 }
 
 /** Undo a spend. `putBack` (the default) returns the money to the saved balance; false leaves the balance as it is. */
-export function removeSpend(goal: SavingsGoal, costId: string, spendId: string, putBack = true): void {
+export function removeSpend(b: Budget, goal: SavingsGoal, costId: string, spendId: string, putBack = true, today: ISODate = todayISO()): void {
   const cost = goal.costs?.find((c) => c.id === costId);
   const s = cost?.spends?.find((x) => x.id === spendId);
   if (!cost || !s) return;
   cost.spends = cost.spends!.filter((x) => x.id !== spendId);
-  if (putBack) goal.balance += s.amount;
+  if (putBack) changeSaved(b, goal, s.amount, today);
 }
 
 /** Your cost categories, plus any still used by a cost but no longer in the list. */

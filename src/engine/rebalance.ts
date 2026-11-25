@@ -185,9 +185,11 @@ export function balancePay(input: Budget, period: Period, today: ISODate = today
       if (d.payroll) continue; // taken from salary, nothing to trim
       const adv = debtAdvice(b, d, period);
       const interestFree = d.rules === 'gem' || d.kind === 'bnpl' || !d.rate;
+      // What this pay sends the debt is on its own card. A debt held in another account (Gem in Misc bills)
+      // has its money in that account's send, which also pays that account's own bills: never compare that.
+      const extra = funded(d.accountId) - adv.recommended;
       // Trim the account that actually holds the money (Misc bills when Gem stores payment there).
       const fundId = fundingAccountId(d);
-      const extra = funded(fundId) - adv.recommended;
       if (interestFree && extra > 0) {
         cut(fundId, d.name, extra,
           `Paying more than ${fmt(adv.recommended)} saves no interest: ${d.rules === 'gem' ? 'every Gem plan still clears before it expires' : 'it’s interest-free'}.`);
@@ -252,12 +254,6 @@ export function applyBalance(b: Budget, period: Period, r: BalanceResult): Recor
     if (l) { l.mode = t.to ?? 'smooth'; delete l.auto; } else b.split.push({ accountId: t.accountId, amount: 0, mode: t.to ?? 'smooth' });
   }
   return previous;
-}
-
-/** Put a pay's adjustments back to what they were (undefined = none). */
-export function restoreOverrides(b: Budget, periodStart: string, previous: Record<string, Cents> | undefined): void {
-  b.overrides = b.overrides ?? {};
-  if (previous) b.overrides[periodStart] = previous; else delete b.overrides[periodStart];
 }
 
 const fmt = (c: Cents) => `$${(c / 100).toLocaleString('en-NZ', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;

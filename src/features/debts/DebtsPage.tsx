@@ -13,7 +13,7 @@ import { PlanCheckButton, PlanCheckModal, usePlanCheck } from './PlanCheck';
 import { DebtPayments, DebtPaydayHistory, StatementDueLine } from './DebtActivity';
 import { TransactionList } from '../../shared/Transactions';
 import { fmtDay, fmtShort, monthName, todayISO, type ISODate } from '../../core/dates';
-import { gemPlan } from './logic/gem';
+import { gemPlan } from './logic/gem/gem';
 import { debtAdvice, offRecommended as isOffRecommended, type DebtAdvice } from './logic/advice';
 import { debtPay, historyOwed, owed, projectedOwed, unplanned } from './logic/amounts';
 import { debtSchedules } from './logic/schedule';

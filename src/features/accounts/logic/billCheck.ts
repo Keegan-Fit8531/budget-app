@@ -6,7 +6,7 @@ import { billTracker } from '../../../engine/balances/billTracker';
 import { bankFed, businessDay, checkKey, matchBills, outflowId, sameAmount, type BillMatch } from '../../../engine/billMatch';
 import type { BillRow } from '../../../engine/balances/billTracker';
 import type { Budget, Cents, Item } from '../../../core/types';
-import { setHeld } from '../../debts/logic/held';
+import { setHeld } from '../../debts/logic/held/held';
 import { realStart } from './newBill';
 
 // The bill check: after a bank sync, what the bank shows about your bills that the plan should know.

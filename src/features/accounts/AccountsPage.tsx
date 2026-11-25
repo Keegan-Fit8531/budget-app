@@ -6,7 +6,7 @@ import { TransactionList } from '../../shared/Transactions';
 import { DayPicker, useDayView } from '../../shared/DayPicker';
 import { Icon } from '../../ui/Icon';
 import { MonthTracker, PayProjectionView } from './MonthTracker';
-import { addDays, fmtDay, fmtShort, monthName, todayISO } from '../../core/dates';
+import { fmtDay, fmtShort, monthName, todayISO } from '../../core/dates';
 import { balanceOn, balanceToday, forecastBalances } from '../../engine/balances/estimate';
 import { depositFor } from '../../engine/balances/deposits';
 import { outflows } from '../../engine/balances/outflows';
@@ -16,6 +16,7 @@ import { moveAmong } from '../../core/order';
 import { AccIcon, CardColumns, Collapse, DetailsToggle, Disclosure, MoveButtons, ReorderToggle, useFlip, FlatDetails } from '../../ui/components';
 import { bankSync } from '../../services/bank/bank';
 import { setBalance } from './logic/history';
+import { lastMonthFlow } from './logic/moneyFlow';
 import { newId, useBudget } from '../../state/store';
 import type { Account } from '../../core/types';
 import { DepositsModal } from './Deposits';
@@ -246,9 +247,8 @@ function BankOnlyCard({ account: a, mover }: { account: Account; mover: React.Re
   const sync = bankSync(budget, `account:${a.id}`);
   const goalSync = goal ? bankSync(budget, `saving:${goal.id}`) : { linked: false };
   const bal = sync.linked ? budget.balances?.[a.id] : goal ? { amount: goal.balance, asOf: goal.asOf } : undefined;
-  const month = addDays(today, -30);
-  const spent = txns.filter((t) => t.amount < 0 && t.date > month).reduce((x, t) => x - t.amount, 0);
-  const inn = txns.filter((t) => t.amount > 0 && t.date > month).reduce((x, t) => x + t.amount, 0);
+  // Money moved to your own accounts (the payday split) isn't spending.
+  const { spent, in: inn } = lastMonthFlow(budget, a.id, today);
   const latest = txns[txns.length - 1];
 
   return (

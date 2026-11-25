@@ -100,6 +100,17 @@ export function freezeLockedPays(b: Budget, today: ISODate = todayISO()): void {
   }
 }
 
+/** Set once a locked pay's frozen split has been checked against the morning's saved copy (`state/store.tsx`). */
+export const morningFlag = (start: ISODate) => `split-morning-${start}`;
+
+/**
+ * A change you made yourself to a locked pay's frozen split (an amount for that pay only, Reset, Optimise's
+ * Undo): it stands, so the morning's saved copy isn't put back over it.
+ */
+export function keepSplitChange(b: Budget, start: ISODate): void {
+  if (!(b.flags ?? []).includes(morningFlag(start))) b.flags = [...(b.flags ?? []), morningFlag(start)];
+}
+
 /** Drop a frozen split (e.g. you cleared the payslip on payday so the pay can be planned again). */
 export function unfreezePaySplit(b: Budget, start: ISODate): void {
   if (!b.splitSent?.[start]) return;

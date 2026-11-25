@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { applyBank } from '../../../services/bank/bank';
-import { debtBudget, debt, gemStatement, upload } from '../../../testing/fixtures';
-import { owed } from './amounts';
+import { applyBank } from '../../../../services/bank/bank';
+import { debtBudget, debt, gemStatement, upload } from '../../../../testing/fixtures';
+import { owed } from '../amounts';
 
 describe('Gem plans from the card’s own transactions', () => {
   const card = { id: 'c9', name: 'Gem Visa', number: null, type: 'CREDITCARD', institution: 'Latitude', transactions: true };

@@ -4,7 +4,7 @@ The Planner (`#/planner`, the home page): one pay at a time (it opens on the nex
 after the plan, the pay itself, where it goes, the payday split card by card, and what's due.
 
 ## Files
-- `PlannerPage.tsx`: the page. The leftover and pay figures (type the pay in, or upload a payslip), the "Not balanced yet / Re-balance / Reset to defaults" note, the chart of where pay goes by group, the payday split, the weeks view and the due list. Its figures come from `logic/plannerFigures.ts`; the page keeps only what's typed or clicked (pay, Balance this pay, Reset to defaults, Optimise's Undo).
+- `PlannerPage.tsx`: the page. The leftover and pay figures (type the pay in, or upload a payslip), the "Not balanced yet / Re-balance / Reset to defaults" note, the chart of where pay goes by group, the payday split, the weeks view and the due list. Its figures come from `logic/plannerFigures.ts`; the page keeps only what's typed or clicked (pay, Balance this pay, Optimise's Undo); amounts for one pay only change through `logic/thisPay.ts`.
 - `PaydayCard.tsx`: one account in the payday split, and its details pop-up: what payday sends it (or on average), the Short / Spare / Ends / Buffer pill, each cost this pay, and links to its debt, goal or settings. `PlannerView` is the view it's given.
 - `PayNotes.tsx`: "What's different this pay": accounts sending more or less than usual and why, with Change / Reset for an amount set for this pay only.
 - `DueList.tsx`: "Coming up before next pay" / "Due this period", grouped by day.

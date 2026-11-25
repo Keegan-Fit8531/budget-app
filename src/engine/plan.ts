@@ -199,8 +199,8 @@ export function averageNeed(b: Budget, accountId: string): Cents {
     let p = periodContaining(todayISO(), b.settings);
     let total = 0;
     for (let i = 0; i < 12; i++) {
-      total += debtPaymentsIn(b, accountId, p.start, p.end).reduce((s, x) => s + x.amount, 0);
-      total += heldDebtPaymentsIn(b, accountId, p.start, p.end).reduce((s, x) => s + x.amount, 0);
+      total += debtPaymentsIn(b, accountId, p.start, p.end, { usual: true }).reduce((s, x) => s + x.amount, 0);
+      total += heldDebtPaymentsIn(b, accountId, p.start, p.end, { usual: true }).reduce((s, x) => s + x.amount, 0);
       total += savingsNeedIn(b, accountId, p.start);
       p = shiftPeriod(p, 1, b.settings);
     }

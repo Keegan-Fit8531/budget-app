@@ -1,5 +1,5 @@
 import { addDays, diffDays, fmtShort, type ISODate } from '../../../core/dates';
-import { planEnds } from '../../../features/debts/logic/gem';
+import { planEnds } from '../../../features/debts/logic/gem/gem';
 import { suggestPlan } from '../../../features/debts/logic/amounts';
 import { periodContaining, recordPayday, shiftPeriod } from '../../../engine/periods';
 import { cash } from '../../../core/money';

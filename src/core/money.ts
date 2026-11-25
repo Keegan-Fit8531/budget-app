@@ -22,9 +22,9 @@ export function moneyParts(c: Cents): { main: string; cents: string } {
   return i < 0 ? { main: s, cents: '' } : { main: s.slice(0, i), cents: s.slice(i) };
 }
 
-/** Parse "1,234.56" or "$80" into cents; null if invalid. */
+/** Parse "1,234.56" or "$80" into cents; null if invalid. Takes the "−" amounts are shown with, so a shown one can be pasted in. */
 export function parseMoney(s: string): Cents | null {
-  const clean = s.replace(/[$,\s]/g, '');
+  const clean = s.replace(/[$,\s]/g, '').replace(/^\u2212/, '-');
   if (!/^-?\d*(\.\d{0,2})?$/.test(clean) || !/\d/.test(clean)) return null;
   return Math.round(parseFloat(clean) * 100);
 }

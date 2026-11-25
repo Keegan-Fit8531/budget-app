@@ -1,12 +1,12 @@
-import { addDays, addMonths, dateInMonth, gemEndsFromMonthsLeft, todayISO, type ISODate } from '../../../core/dates';
-import { periodContaining, shiftPeriod } from '../../../engine/periods';
-import type { Cents, Debt, DebtPlan, PlanType, Settings } from '../../../core/types';
-import { owed, unplanned } from './amounts';
+import { addDays, addMonths, dateInMonth, gemEndsFromMonthsLeft, todayISO, type ISODate } from '../../../../core/dates';
+import { periodContaining, shiftPeriod } from '../../../../engine/periods';
+import type { Cents, Debt, DebtPlan, PlanType, Settings } from '../../../../core/types';
+import { owed, unplanned } from '../amounts';
 import {
   type Payment, type PlanSchedule, HORIZON, type PerPay, usualPay, payFor, lastOneOff, firstPeriodFrom, last,
   debtSchedules, fmt,
-} from './schedule';
-import { type Applied, rememberPaid, later, recordPaymentHistory } from './payments';
+} from '../schedule';
+import { type Applied, rememberPaid, later, recordPaymentHistory } from '../payments';
 
 /** Gem plan lengths you can pick (interest-free 6 months, or equal-payment deals). */
 export const GEM_PLAN_MONTHS = [6, 12, 24, 36, 60] as const;

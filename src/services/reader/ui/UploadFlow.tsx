@@ -9,6 +9,7 @@ import type { DocKind, Extraction } from '../types';
 import { newId, useBudget } from '../../../state/store';
 import { isStaleBuild } from '../../../ui/ErrorBoundary';
 import { Icon } from '../../../ui/Icon';
+import { Modal } from '../../../ui/components';
 import { showToast } from '../../../ui/toast';
 import { Rundown } from './Rundown';
 
@@ -111,60 +112,51 @@ export function UploadFlow({ job: firstJob, onClose, onPayslip, queue }: {
   const secs = stage.step === 'reading' ? Math.floor((now - stage.since) / 1000) : 0;
 
   return (
-    <div className="modal-back" onClick={close}>
-      <div className="modal" role="dialog" aria-modal="true" aria-labelledby="up-title" onClick={(e) => e.stopPropagation()}>
-        <div className="between nowrap">
-          <div className="min0">
-            <h2 id="up-title" className="h2">{title}</h2>
-            <span className="small muted" style={{ overflowWrap: 'anywhere' }}>{queue ? `${queue.index + 1} of ${queue.total}: ` : ''}{file.name}</span>
+    <Modal title={title} sub={<span style={{ overflowWrap: 'anywhere' }}>{queue ? `${queue.index + 1} of ${queue.total}: ` : ''}{file.name}</span>} onClose={close}>
+
+      {phase.s === 'reading' && (
+        <div className="stack gap-8">
+          <p className="small muted" role="status">{job.source === 'device'
+            ? (file.type.startsWith('image/') ? 'Reading the text in the photo on this device. This can take a little while the first time.' : isCsv(file) ? 'Reading the export on this device…' : 'Reading the PDF on this device.')
+            : stage.step === 'preparing'
+              ? (isPdf ? 'Getting the PDF ready to send…' : 'Making the image smaller to send…')
+              : stage.parts
+                ? `Google’s Gemini is reading the ${stage.pages} pages, a few at a time: ${stage.read ?? 0} of ${stage.pages} read…`
+                : `Google’s Gemini is reading it (${stage.bytes < 1e6 ? `${Math.max(1, Math.round(stage.bytes / 1000))} KB` : `${(stage.bytes / 1e6).toFixed(1)} MB`} sent)…`}</p>
+          <div className="bar moving" role="progressbar" aria-label="Reading" aria-valuemin={0} aria-valuemax={100}
+            aria-valuenow={Math.round(job.source === 'device' ? progress * 100 : gp.pct)}>
+            <div style={{ width: `${job.source === 'device' ? Math.max(6, Math.round(progress * 100)) : gp.pct.toFixed(1)}%` }} />
           </div>
-          <button className="icon-btn plain" aria-label="Close" onClick={close}><Icon name="x" /></button>
+          {job.source === 'gemini' && stage.step === 'reading' && (
+            <span className="xs muted">{gp.slow ? `${secs} s: taking longer than usual. You can keep waiting, or cancel and try again.` : secs >= 1 ? `${secs} s` : '\u00a0'}</span>
+          )}
+          <div className="row end">
+            {queue ? <button className="btn" onClick={() => { job.cancel(); next(); }}>Skip this one</button> : <button className="btn" onClick={close}>Cancel</button>}
+          </div>
         </div>
+      )}
 
-        {phase.s === 'reading' && (
-          <div className="stack gap-8">
-            <p className="small muted" role="status">{job.source === 'device'
-              ? (file.type.startsWith('image/') ? 'Reading the text in the photo on this device. This can take a little while the first time.' : isCsv(file) ? 'Reading the export on this device…' : 'Reading the PDF on this device.')
-              : stage.step === 'preparing'
-                ? (isPdf ? 'Getting the PDF ready to send…' : 'Making the image smaller to send…')
-                : stage.parts
-                  ? `Google’s Gemini is reading the ${stage.pages} pages, a few at a time: ${stage.read ?? 0} of ${stage.pages} read…`
-                  : `Google’s Gemini is reading it (${stage.bytes < 1e6 ? `${Math.max(1, Math.round(stage.bytes / 1000))} KB` : `${(stage.bytes / 1e6).toFixed(1)} MB`} sent)…`}</p>
-            <div className="bar moving" role="progressbar" aria-label="Reading" aria-valuemin={0} aria-valuemax={100}
-              aria-valuenow={Math.round(job.source === 'device' ? progress * 100 : gp.pct)}>
-              <div style={{ width: `${job.source === 'device' ? Math.max(6, Math.round(progress * 100)) : gp.pct.toFixed(1)}%` }} />
-            </div>
-            {job.source === 'gemini' && stage.step === 'reading' && (
-              <span className="xs muted">{gp.slow ? `${secs} s: taking longer than usual. You can keep waiting, or cancel and try again.` : secs >= 1 ? `${secs} s` : '\u00a0'}</span>
-            )}
-            <div className="row end">
-              {queue ? <button className="btn" onClick={() => { job.cancel(); next(); }}>Skip this one</button> : <button className="btn" onClick={close}>Cancel</button>}
-            </div>
-          </div>
-        )}
+      {phase.s === 'error' && (
+        <ErrorView err={phase.err} source={job.source} onClose={next} closeLabel={queue ? 'Skip this one' : 'Close'}
+          onDevice={() => setJob(startRead(file, budget, 'device'))}
+          onRetry={() => setJob(startRead(file, budget, 'gemini'))}
+          onType={() => setPhase({ s: 'review', draft: toDraft(blank(/\.pdf$/i.test(file.name) || file.type === 'application/pdf' ? 'payslip' : 'statement'), budget, 'device', newId) })} />
+      )}
 
-        {phase.s === 'error' && (
-          <ErrorView err={phase.err} source={job.source} onClose={next} closeLabel={queue ? 'Skip this one' : 'Close'}
-            onDevice={() => setJob(startRead(file, budget, 'device'))}
-            onRetry={() => setJob(startRead(file, budget, 'gemini'))}
-            onType={() => setPhase({ s: 'review', draft: toDraft(blank(/\.pdf$/i.test(file.name) || file.type === 'application/pdf' ? 'payslip' : 'statement'), budget, 'device', newId) })} />
-        )}
+      {phase.s === 'review' && (
+        <Rundown draft={phase.draft} sourceLabel={job.source === 'device' ? 'Read on this device' : 'Read by Google’s Gemini'}
+          onEdit={(draft) => setPhase({ s: 'review', draft })}
+          onCancel={next} cancelLabel={queue ? 'Skip this one' : 'Cancel'}
+          onConfirm={(proposal, pv) => {
+            update((b) => applyProposal(b, proposal, todayISO()));
+            if (proposal.kind === 'payslip' && pv.payStart) onPayslip?.(pv.payStart);
+            const more = pv.lines.length - 1;
+            showToast(`Saved${queue ? ` ${queue.index + 1} of ${queue.total}` : ''}. ${pv.lines[0] ?? ''}${more > 0 ? ` (and ${more} more change${more === 1 ? '' : 's'})` : ''}`);
+            next();
+          }} />
+      )}
 
-        {phase.s === 'review' && (
-          <Rundown draft={phase.draft} sourceLabel={job.source === 'device' ? 'Read on this device' : 'Read by Google’s Gemini'}
-            onEdit={(draft) => setPhase({ s: 'review', draft })}
-            onCancel={next} cancelLabel={queue ? 'Skip this one' : 'Cancel'}
-            onConfirm={(proposal, pv) => {
-              update((b) => applyProposal(b, proposal, todayISO()));
-              if (proposal.kind === 'payslip' && pv.payStart) onPayslip?.(pv.payStart);
-              const more = pv.lines.length - 1;
-              showToast(`Saved${queue ? ` ${queue.index + 1} of ${queue.total}` : ''}. ${pv.lines[0] ?? ''}${more > 0 ? ` (and ${more} more change${more === 1 ? '' : 's'})` : ''}`);
-              next();
-            }} />
-        )}
-
-      </div>
-    </div>
+    </Modal>
   );
 }
 

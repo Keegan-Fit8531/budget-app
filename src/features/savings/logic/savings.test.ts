@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { projectedAt, removeSpend, spendFromGoal } from './goalcosts';
+import { projectedAt, removeSpend, savedToday, spendFromGoal } from './goalcosts';
+import { saveGift } from './gifts';
 import { forecast } from './savings';
 import type { SavingsGoal } from '../../../core/types';
 import { budget } from '../../../testing/fixtures';
@@ -58,28 +59,53 @@ describe('savings goals', () => {
   });
 });
 
-describe('undoing a spend from a goal', () => {
-  const goal = (): SavingsGoal => ({ id: 'g', name: 'G', accountId: 'sv', balance: 10000, asOf: '2026-11-01', costs: [{ id: 'c', name: 'C', amount: 50000, category: 'x' }] });
+describe('spending from a goal, and undoing it', () => {
+  // $100 saved as at 1 Nov; $100 goes to it each payday (fixed).
+  const setup = () => {
+    const b = budget();
+    b.accounts.push({ id: 'sv', name: 'Savings', kind: 'bank', color: '#000', groupId: 'savings' });
+    b.split.push({ accountId: 'sv', amount: 10000, mode: 'fixed' });
+    const g: SavingsGoal = { id: 'g', name: 'G', accountId: 'sv', balance: 10000, asOf: '2026-11-01', costs: [{ id: 'c', name: 'C', amount: 50000, category: 'x' }] };
+    b.savings = [g];
+    return { b, g };
+  };
 
   it('can put the money back', () => {
-    const g = goal();
-    spendFromGoal(g, { id: 's', amount: 4000, date: '2026-11-12' }, { costId: 'c' });
-    removeSpend(g, 'c', 's');
+    const { b, g } = setup();
+    spendFromGoal(b, g, { id: 's', amount: 4000, date: '2026-11-12' }, { costId: 'c' }, '2026-11-12');
+    removeSpend(b, g, 'c', 's', true, '2026-11-12');
     expect(g.balance).toBe(10000);
   });
 
   it('can leave the balance alone (e.g. the spend was more than was saved)', () => {
-    const g = goal();
-    spendFromGoal(g, { id: 's', amount: 30000, date: '2026-11-12' }, { costId: 'c' });
+    const { b, g } = setup();
+    spendFromGoal(b, g, { id: 's', amount: 30000, date: '2026-11-12' }, { costId: 'c' }, '2026-11-12');
     expect(g.balance).toBe(0);
-    removeSpend(g, 'c', 's', false);
+    removeSpend(b, g, 'c', 's', false, '2026-11-12');
     expect(g.balance).toBe(0);
     expect(g.costs?.[0].spends).toEqual([]);
   });
 
   it("a spend dated ahead doesn't date the balance ahead (the paydays before it would stop counting)", () => {
-    const g = goal();
-    spendFromGoal(g, { id: 's', amount: 1000, date: '2026-12-25' }, { costId: 'c' }, '2026-11-12');
+    const { b, g } = setup();
+    spendFromGoal(b, g, { id: 's', amount: 1000, date: '2026-12-25' }, { costId: 'c' }, '2026-11-12');
     expect(g).toMatchObject({ balance: 9000, asOf: '2026-11-12' });
+  });
+
+  it("keeps the paydays since the balance was last updated: only what's spent comes off", () => {
+    // On 25 Nov the fund has the $100 saved and the 19 Nov payday's $100 in it.
+    const { b, g } = setup();
+    expect(savedToday(b, g, '2026-11-25')).toBe(20000);
+    spendFromGoal(b, g, { id: 's', amount: 5000, date: '2026-11-25' }, { costId: 'c' }, '2026-11-25');
+    expect(g).toMatchObject({ balance: 15000, asOf: '2026-11-25' });
+    expect(projectedAt(b, g, '2026-12-20', '2026-11-25').amount).toBe(25000); // and 18 Dec's on top
+    removeSpend(b, g, 'c', 's', true, '2026-11-25');
+    expect(savedToday(b, g, '2026-11-25')).toBe(20000);
+  });
+
+  it('money in or out keeps them too', () => {
+    const { b, g } = setup();
+    saveGift(b, 'g', { id: 'x', amount: 2500, date: '2026-11-25', received: true }, undefined, '2026-11-25');
+    expect(g).toMatchObject({ balance: 22500, asOf: '2026-11-25' });
   });
 });

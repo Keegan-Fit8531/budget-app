@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { endHeld, heldNow, resumeHeld } from './held';
-import { billTxns, billsBudget } from '../../../testing/fixtures';
-import { billChecks } from '../../accounts/logic/billCheck';
-import type { Budget } from '../../../core/types';
+import { billTxns, billsBudget } from '../../../../testing/fixtures';
+import { billChecks } from '../../../accounts/logic/billCheck';
+import type { Budget } from '../../../../core/types';
 
 const { out } = billTxns;
 

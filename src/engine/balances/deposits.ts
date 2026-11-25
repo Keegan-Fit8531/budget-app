@@ -25,15 +25,16 @@ export function depositFor(b: Budget, accountId: string, p: Period, today: ISODa
     // A one-pay adjustment (e.g. from Balance this pay) replaces the usual amount for that pay.
     if (override !== undefined && !isHoldDisplayAccount(b, accountId)) return override;
   }
-  return liveDepositFor(b, accountId, p, today);
+  return liveDepositFor(b, accountId, p, today, opts);
 }
 
 /** Live (unfrozen) deposit amount — used to build the freeze snapshot and for unlocked pays. */
-export function liveDepositFor(b: Budget, accountId: string, p: Period, today: ISODate): Cents {
+export function liveDepositFor(b: Budget, accountId: string, p: Period, today: ISODate, opts: { usual?: boolean } = {}): Cents {
   // Debt card whose money is held elsewhere (e.g. Gem → Misc bills): always show this pay's send amount
-  // on the debt card. One-pay adjustments apply to the hold account (where the money actually sits), not here.
+  // on the debt card. The money is in the hold account's send (a one-pay amount on the debt card, like
+  // Optimise's extra, goes out from there too: `debtPaymentsIn`), so the totals leave this card out.
   if (isHoldDisplayAccount(b, accountId)) {
-    return heldDebtPaymentsIn(b, accountId, p.start, p.end).reduce((t, x) => t + x.amount, 0);
+    return heldDebtPaymentsIn(b, accountId, p.start, p.end, opts).reduce((t, x) => t + x.amount, 0);
   }
   // A pay before the budget started (already split): what it actually sent.
   const sentEarlier = sentBeforeBudget(b, accountId, p);

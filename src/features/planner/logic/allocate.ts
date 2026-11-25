@@ -5,6 +5,7 @@ import { itemDates } from '../../../engine/occurrences';
 import { planFor } from '../../../engine/plan';
 import { type Period } from '../../../engine/periods';
 import type { Budget, Cents, SplitLine } from '../../../core/types';
+import { keepSplitChange } from '../../../engine/balances/freeze';
 
 /** Somewhere the money left over can go. */
 export interface AllocTarget {
@@ -126,6 +127,7 @@ export function undoAllocation(b: Budget, u: AllocationUndo): void {
     const sent = b.splitSent?.[u.periodStart];
     if (sent && undone !== undefined && sent[id] === undone) {
       if (prev === null) delete sent[id]; else sent[id] = prev;
+      keepSplitChange(b, u.periodStart);
     }
   }
   for (const [id, prev] of Object.entries(u.split)) {

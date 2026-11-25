@@ -2,9 +2,9 @@ import { nextColor } from '../../core/colors';
 import { fmtDay, fmtShort, fmtSpan, monthName, type ISODate } from '../../core/dates';
 import { applyPayment, fitPlansToBalance, settleDue } from '../../features/debts/logic/payments';
 import { debtPay, exactForFirstPlan, owed, recordHistory } from '../../features/debts/logic/amounts';
-import { planEnds } from '../../features/debts/logic/gem';
+import { planEnds } from '../../features/debts/logic/gem/gem';
 import { recordPayslip } from './documents';
-import { pendingPlans } from '../../features/debts/logic/cardPlans';
+import { pendingPlans } from '../../features/debts/logic/gem/cardPlans';
 import { paydayFor, periodContaining, recordPayday } from '../../engine/periods';
 import { planFor } from '../../engine/plan';
 import { cash } from '../../core/money';
@@ -21,7 +21,7 @@ import type { Proposal } from './check/draft';
 // ---------------------------------------------------------------------------------------------
 
 export function applyProposal(b: Budget, p: Proposal, today: ISODate): Budget {
-  // A document about a card or Afterpay: note the day, so its card shows when it was last brought up to date.
+  // A card or Afterpay document: note the day, so its card shows when it was last updated.
   const debtId = p.kind === 'statement' || p.kind === 'afterpay' ? p.debtId : p.kind === 'transactions' && p.target.type === 'debt' ? p.target.id : undefined;
   if (debtId) {
     const run = applyProposalInner(b, p, today);

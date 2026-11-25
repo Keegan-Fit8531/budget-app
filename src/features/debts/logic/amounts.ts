@@ -1,7 +1,6 @@
 import { type ISODate } from '../../../core/dates';
 import type { Budget, Cents, Debt, PaidPayment, PlanType, Settings } from '../../../core/types';
 import { type PerPay, debtSchedules } from './schedule';
-import { fundingAccountId } from './funding';
 
 /** What payday sends to a debt: its fixed amount, or undefined when it's set to pay what's needed. */
 export function debtPerPay(b: Budget, debt: Debt): Cents | undefined {
@@ -18,16 +17,19 @@ export function debtPerPay(b: Budget, debt: Debt): Cents | undefined {
 /**
  * What payday sends a debt, with any one-pay amounts (Optimise's "this pay only" extra, or an amount
  * changed for one pay): use this for forecasts, so extra paid in a pay comes off what's owed.
- * When the payment is stored in another account until statement day, one-pay amounts are on that account.
+ * A one-pay amount is always on the debt's own card. When the payment is stored in another account until
+ * statement day (Gem in Misc bills), that account's one-pay amount is its whole send, which pays its own
+ * bills too, so it's never this debt's; the debt's own one goes out from there (`funding.ts` → `debtPaymentsIn`).
  */
 export function debtPay(b: Budget, debt: Debt): PerPay {
   const usual = debtPerPay(b, debt);
   if (debt.payroll) return usual;
-  const fundId = fundingAccountId(debt);
   const byPeriod: Record<ISODate, Cents> = {};
   for (const [start, o] of Object.entries(b.overrides ?? {})) {
-    const v = o?.[fundId] ?? (fundId !== debt.accountId ? o?.[debt.accountId] : undefined);
-    if (v !== undefined) byPeriod[start] = v;
+    const v = o?.[debt.accountId];
+    // Held in another account: a $0 older versions left on the card would stop that pay's payment, though
+    // the money for it is held all the same, so it's left out.
+    if (v !== undefined && !(debt.holdAccountId && v <= 0)) byPeriod[start] = v;
   }
   return Object.keys(byPeriod).length ? { usual, byPeriod } : usual;
 }

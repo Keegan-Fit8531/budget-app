@@ -1,8 +1,8 @@
-import { addDays, addMonths, diffDays, gemCycleEndOnOrAfter, monthName, type ISODate } from '../../../core/dates';
-import type { Cents, Debt, DebtPlan } from '../../../core/types';
-import { cleanDescription } from '../../insights/logic/spending';
+import { addDays, addMonths, diffDays, gemCycleEndOnOrAfter, monthName, type ISODate } from '../../../../core/dates';
+import type { Cents, Debt, DebtPlan } from '../../../../core/types';
+import { cleanDescription } from '../../../insights/logic/spending';
 import { gemPlanEnds } from './gem';
-import { fitPlansToBalance } from './payments';
+import { fitPlansToBalance } from '../payments';
 
 // ---------------------------------------------------------------------------------------------
 // Plans read from a card's own transactions (Gem Visa through the bank connection). Gem moves a
