@@ -36,3 +36,13 @@ describe('Misc bills sends only what each pay needs, and doesn’t build up', ()
     expect(after).toBe(6000);
   });
 });
+
+describe('pays far ahead', () => {
+  it('beyond the 40th pay, each pay still sends what it needs (it used to repeat the 40th’s amount)', () => {
+    const b = misc(25000, true);
+    b.items.push({ id: 'rego', name: 'Rego', amount: 30000, frequency: 'yearly', start: '2027-04-25', accountId: 'bills' });
+    const e = ends(b, 60);
+    expect(Math.min(...e)).toBeGreaterThanOrEqual(0);
+    expect(e[59]).toBe(6000); // still just Haircut's $60 at the end
+  });
+});

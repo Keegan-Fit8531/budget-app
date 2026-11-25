@@ -25,6 +25,7 @@ What payday sends each account, and what's in each account over time. An account
 - These functions call each other a lot (deposits ↔ outflows ↔ steady ↔ projection). When you add one, put it in the file whose job it matches and import it directly from there.
 - The run cache relies on the store cloning the budget for each change. Don't mutate a budget in place and then expect fresh figures from the same object in the same render.
 - A steady account's buffer is a running balance, not each pay's own gap: 4-payment pays' spare covers a 5-payment pay after them, but several 5-payment pays close together can need more than one pay's gap (`buffer.test.ts`).
+- A run covers 40 pays; a pay further out gets a longer run to the end of its year (`runLength`'s `until`), never the 40th's amount repeated.
 - Runs (`steady.ts` → `runStart`: Steady, Build up, exact top-ups) start from the balance less envelope money still unspent and money put aside up to its max (Haircut $60): counted as a cushion, the next pay sends too little.
 - `today` is a parameter almost everywhere (default `todayISO()`), so tests can fix the date. Keep passing it through.
 

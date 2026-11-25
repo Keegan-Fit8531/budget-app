@@ -111,12 +111,20 @@ export function runStart(b: Budget, accountId: string, today: ISODate, useBalanc
   return { pay, bal: priorLeftover(b, accountId, today), cursor: addDays(pay.start, -1) };
 }
 
-/** How many pays a run covers: 40, and always at least up to the pay after today. */
-export function runLength(pay: Period, today: ISODate, s: Budget['settings']): number {
+/**
+ * How many pays a run covers: 40, and always at least up to the pay after today, or past `until` (a pay
+ * further out being looked at). Without that, every pay after the 40th sent the 40th's amount and later
+ * pays came up short.
+ */
+export function runLength(pay: Period, today: ISODate, s: Budget['settings'], until?: ISODate): number {
+  const to = until && until > today ? until : today;
   let n = RUN_PAYS;
-  for (let p = shiftPeriod(pay, RUN_PAYS - 1, s); p.start <= today; p = shiftPeriod(p, 1, s)) n++;
+  for (let p = shiftPeriod(pay, RUN_PAYS - 1, s); p.start <= to; p = shiftPeriod(p, 1, s)) n++;
   return n;
 }
+
+/** A run reaching a far pay is worked out to the end of that pay's year, so the pays of one year share it. */
+export const runUntil = (p: Period): ISODate => `${p.start.slice(0, 4)}-12-31`;
 
 export interface Run { first: string; amounts: Map<string, Cents> }
 const runCache = new WeakMap<Budget, Map<string, Run>>();
@@ -140,11 +148,11 @@ export const runKey = (b: Budget, kind: string, accountId: string, today: ISODat
  * projected to be left in the account just before it (so money left over, or a pay that sent more or
  * less than usual, carries into the next pay's amount). Cached per budget and the inputs that matter.
  */
-function steadyRun(b: Budget, accountId: string, today: ISODate, useBalance = true): Run {
-  return cached(b, runKey(b, 'steady', accountId, today, useBalance), () => {
+function steadyRun(b: Budget, accountId: string, today: ISODate, useBalance = true, until?: ISODate): Run {
+  return cached(b, runKey(b, 'steady', accountId, today, useBalance) + (until ?? ''), () => {
     const s = b.settings;
     const start = runStart(b, accountId, today, useBalance);
-    const count = runLength(start.pay, today, s);
+    const count = runLength(start.pay, today, s, until);
     const usual = usualSteady(b, accountId);
     const { slots, out } = window(b, accountId, start.pay, count + HORIZON);
     // Payments between the balance date and the first payday come off first.
@@ -187,13 +195,17 @@ export function steadyFor(b: Budget, accountId: string, p: Period, today: ISODat
 /**
  * A pay's amount from a run: from the balance you entered; for a pay before that balance (e.g. the
  * pay you're in, already split) the amount the budget worked out for it without the balance; before
- * the budget, `before()`. Far beyond the run: its last amount.
+ * the budget, `before()`. Beyond the run: a longer run that reaches it.
  */
 export function fromRun(b: Budget, accountId: string, p: Period, today: ISODate,
-  run: (b: Budget, id: string, today: ISODate, useBalance?: boolean) => Run, before: () => Cents): Cents {
+  run: (b: Budget, id: string, today: ISODate, useBalance?: boolean, until?: ISODate) => Run, before: () => Cents): Cents {
   const r = run(b, accountId, today);
   const hit = r.amounts.get(p.start);
   if (hit !== undefined) return hit;
+  if (p.start > r.first) {
+    const far = run(b, accountId, today, true, runUntil(p)).amounts.get(p.start);
+    if (far !== undefined) return far;
+  }
   if (p.start < r.first) {
     if (b.balances?.[accountId]) {
       const plain = run(b, accountId, today, false).amounts.get(p.start);
