@@ -13,7 +13,12 @@
 //   --only <selector> pictures just that element (one card) instead of the whole page.
 // Saves the picture outside the repo (it shows the owner's money) and prints where. Needs Playwright
 // (installed in Claude's cloud sessions; elsewhere `npm i -D playwright` and `npx playwright install chromium`).
-// The page has no sync set up, so nothing is written back to the repo.
+// The page has no sync set up, so nothing is written back to the repo. What shows only with the bank
+// connection (Debts cards' sync buttons) doesn't appear: for that, use a throwaway script that also sets
+// localStorage['paydays.bank'] to { url: 'http://localhost:1/none', key: 'test-key-123456', lastSync: <now> }.
+// For what this can't do (drag, type, check a pop-up stays open), write a throwaway Playwright script in your
+// scratchpad set up the same way (budget in localStorage, timezoneId: 'Pacific/Auckland', page.clock.setFixedTime),
+// loading Playwright with createRequire(import.meta.url)('playwright').
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
