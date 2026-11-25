@@ -3,6 +3,7 @@ import { firstBudgetPay, periodContaining, shiftPeriod, type Period } from '../p
 import type { Budget, Cents } from '../../core/types';
 import { depositFor, depositPending } from './deposits';
 import { outflows } from './outflows';
+import { bankFed, checkKey, matchBills, outflowId } from '../billMatch';
 import { leftoverBeforeBudget } from './topUps';
 import { envelopeHeld } from '../envelope';
 import { envelopeOn, isEnvelope } from '../setAside';
@@ -22,7 +23,25 @@ export function estimateBalance(b: Budget, accountId: string, date: ISODate, tod
     p = shiftPeriod(p, 1, b.settings);
     bal += depositFor(b, accountId, p, today);
   }
-  return bal - outflows(b, accountId, addDays(entry.asOf, 1), date).reduce((t, o) => t + o.amount, 0);
+  // Bills up to the balance's day the bank hasn't shown yet are still to come in that pay (the tracker
+  // lists them): by the end of that pay they're out too.
+  const late = date >= periodContaining(entry.asOf, b.settings).end ? unpaidByBalanceDay(b, accountId, entry.asOf, today) : 0;
+  return bal - late - outflows(b, accountId, addDays(entry.asOf, 1), date).reduce((t, o) => t + o.amount, 0);
+}
+
+/**
+ * Bills dated up to the balance's day that the bank hasn't shown leaving yet (bank-connected accounts):
+ * their money is still in the balance, as the bill tracker says, so they still come off it. A bill due on
+ * the day of a synced balance (a subscription not taken yet) was counted as already out, and the next pay
+ * sent that much too little.
+ */
+export function unpaidByBalanceDay(b: Budget, accountId: string, asOf: ISODate, today: ISODate): Cents {
+  if (!bankFed(b, accountId)) return 0;
+  const start = periodContaining(asOf, b.settings).start;
+  const matches = matchBills(b, accountId, start, asOf, today);
+  return outflows(b, accountId, start, asOf)
+    .filter((o, i) => !matches[i]?.how && !b.billChecks?.[checkKey('paid', outflowId(o), o.date)])
+    .reduce((t, o) => t + o.amount, 0);
 }
 
 /**

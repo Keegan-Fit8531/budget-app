@@ -1,5 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { forecastBalances } from './estimate';
+import { billTracker } from './billTracker';
+import { depositFor } from './deposits';
+import { exactNeed } from './outflows';
+import { shiftPeriod } from '../periods';
 import { heldGemBudget } from '../../testing/fixtures';
 
 const TODAY = '2026-11-25';
@@ -30,7 +34,7 @@ describe('Misc bills sends only what each pay needs, and doesn’t build up', ()
   });
 
   it('the next pay sends this pay’s leftover less: with less left than a pay needs, it ends at Haircut’s $60', () => {
-    const [now, next, after] = ends(misc(25000, true), 3);
+    const [now, next, after] = ends(misc(35000, true), 3);
     expect(now).toBeGreaterThan(6000);
     expect(next).toBe(6000);
     expect(after).toBe(6000);
@@ -44,5 +48,17 @@ describe('pays far ahead', () => {
     const e = ends(b, 60);
     expect(Math.min(...e)).toBeGreaterThanOrEqual(0);
     expect(e[59]).toBe(6000); // still just Haircut's $60 at the end
+  });
+});
+
+describe('the next pay counts the same leftover the Accounts card shows', () => {
+  it('a bill due on the balance’s day that the bank hasn’t shown yet is still to come', () => {
+    // Balance synced today; today's $100 bill hasn't left yet (no transaction), so the card lists it to come.
+    const b = misc(25000, true);
+    const t = billTracker(b, 'bills', TODAY);
+    expect(t.rows.some((r) => r.date === TODAY && r.status !== 'paid')).toBe(true);
+    const next = shiftPeriod(t.period, 1, b.settings);
+    const spare = t.spare - 6000; // less Haircut's $60, which stays
+    expect(depositFor(b, 'bills', next, TODAY)).toBe(exactNeed(b, 'bills', next) - spare);
   });
 });
