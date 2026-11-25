@@ -3,7 +3,9 @@ import { buildAt } from './build';
 import { depositFor } from './deposits';
 import { balanceOn } from './estimate';
 import { periodContaining, shiftPeriod } from '../periods';
-import { budget } from '../../testing/fixtures';
+import { budget, foodGasBudget } from '../../testing/fixtures';
+import { envelopeHeld } from '../envelope';
+import { exactNeed } from './outflows';
 
 const TODAY = '2026-11-25';
 
@@ -54,4 +56,19 @@ describe('Build up mode pay by pay', () => {
       ['2027-03-19', 173000, 0], // 5 Fridays: $2,000 − $270
     ]);
   });
+});
+
+describe('envelope money already in the account is spoken for', () => {
+  // Food and gas ($1,250 on 22 Nov, nothing spent yet): this pay's food weeks and gas will be spent before
+  // the next payday, so the next pay can't count that money as already there.
+  for (const mode of ['exact', 'smooth', 'build'] as const) {
+    it(`${mode}: the next pay still funds its own envelopes`, () => {
+      const b = foodGasBudget();
+      b.split.find((l) => l.accountId === 'food')!.mode = mode;
+      const today = '2026-11-22';
+      const next = shiftPeriod(periodContaining(today, b.settings), 1, b.settings);
+      const short = Math.max(0, envelopeHeld(b, 'food', today) - 125000);
+      expect(depositFor(b, 'food', next, today)).toBeGreaterThanOrEqual(exactNeed(b, 'food', next) + short - 25000);
+    });
+  }
 });

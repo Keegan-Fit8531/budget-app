@@ -7,6 +7,7 @@ import { type Outflow, fundedOut } from './outflows';
 import { depositSansBalance, depositPending } from './deposits';
 import { priorLeftover } from './topUps';
 import { balanceOn } from './estimate';
+import { envelopeHeld } from '../envelope';
 
 /**
  * A pay sent less than its usual amount (e.g. paused while pay is short): whatever it's short of what the
@@ -98,7 +99,10 @@ export function runStart(b: Budget, accountId: string, today: ISODate, useBalanc
     // Payday morning before the split lands: count the deposit so later pays aren't topped up for a false short.
     const p = periodContaining(known.asOf, b.settings);
     const pending = depositPending(b, accountId, known) ? depositSansBalance(b, accountId, p) : 0;
-    return { pay: shiftPeriod(p, 1, b.settings), bal: known.amount + pending, cursor: known.asOf };
+    // Envelope money still unspent (Food shop's later weeks, this month's gas) will be spent before the
+    // next payday: it's spoken for, not a cushion. Counted as spare, Food and gas's next pay sent $100, not $1,100.
+    const held = envelopeHeld(b, accountId, known.asOf);
+    return { pay: shiftPeriod(p, 1, b.settings), bal: known.amount + pending - held, cursor: known.asOf };
   }
   const pay = firstBudgetPay(b, today);
   return { pay, bal: priorLeftover(b, accountId, today), cursor: addDays(pay.start, -1) };

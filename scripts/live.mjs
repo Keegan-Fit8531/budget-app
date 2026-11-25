@@ -2,7 +2,7 @@
 //   npm run live -- parts-tip            once: found or not
 //   npm run live -- parts-tip --wait     after merging to main: checks every 10s for up to 8 minutes
 // Search for a CSS class you added, or a string built in a .ts file. Text written in JSX is split up when
-// built, so a sentence from a page usually isn't found. Exits 1 if it isn't there (yet).
+// built, so a sentence from a page usually isn't found. Case matters: copy the text exactly. Exits 1 if it isn't there (yet).
 const SITE = 'https://keegan-fit8531.github.io/budget-app/';
 const args = process.argv.slice(2);
 const wait = args.includes('--wait');
