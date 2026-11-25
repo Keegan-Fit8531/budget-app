@@ -11,7 +11,7 @@ Plain functions for accounts (no React).
 - `asideSpends.ts`: what money put aside was spent on (Car maintenance → $200 to Weekly allowance → NZ Transport there): `unsortedAsideSpends` (money out this pay to ask about; not money that came back within a week, and only on an account with no bills), `asideSpends` (your answers, `budget.asideSpends`), `asideSpentSince`, `asideShopMatch` (rego → NZ Transport / VTNZ, maintenance → tyres, mechanics).
 - `asideSpends.test.ts`: the above.
 - `moneyFlow.ts`: `lastMonthFlow`, money out and in over 30 days for a card that isn't planned around (the pay account's): Spent leaves out money moved to your own accounts (`engine/transfers.ts`). `moneyFlow.test.ts`.
-- `paydayModes.ts`: the labels and hints for the payday-amount choice (fixed / exact / steady): `PAYDAY_MODE_LABEL`, `PAYDAY_MODE_HINT`.
+- `paydayModes.ts`: the labels and hints for the payday-amount choice (fixed / exact / steady / build up): `PAYDAY_MODE_LABEL`, `PAYDAY_MODE_HINT`.
 
 ## Watch out for
 - `matchBills` is cached per budget object: in a test, change a `structuredClone` of the budget (as the store does), not the one you already checked, or you get the old answer.

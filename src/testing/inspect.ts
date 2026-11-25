@@ -3,7 +3,7 @@ import { cash } from '../core/money';
 import type { Budget } from '../core/types';
 import { billTracker } from '../engine/balances/billTracker';
 import { depositFor } from '../engine/balances/deposits';
-import { accountMode, fundedOut } from '../engine/balances/outflows';
+import { accountMode, fundedOut, keepsBuffer } from '../engine/balances/outflows';
 import { bufferLine, potBuffer } from '../engine/balances/buffer';
 import {
   accountEnvelopes, envelopeHeld, guessTransfer, isTransferOut, transferKey, unsortedTransfers,
@@ -99,7 +99,7 @@ export function inspectAccount(b: Budget, which: string, today: ISODate = todayI
     const need = fundedOut(b, a.id, p.start, p.end).reduce((s, o) => s + o.amount, 0);
     out.push(`  ${span(p.start, p.end)}: ${cash(need)} / ${cash(depositFor(b, a.id, p, today))}`);
   }
-  if (accountMode(b, a.id) === 'smooth') out.push(`  Steady buffer (running balance, next 12 pays): ${bufferLine(potBuffer(b, a.id, t.period, t.spare, 12, today))}.`);
+  if (keepsBuffer(b, a.id)) out.push(`  Steady buffer (running balance, next 12 pays): ${bufferLine(potBuffer(b, a.id, t.period, t.spare, 12, today))}.`);
 
   // Recent transactions, with what each one counted as.
   out.push('', 'Last 14 days of transactions (category → envelope):');

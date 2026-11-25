@@ -1,4 +1,4 @@
-import { accountMode } from './balances/outflows';
+import { accountMode, keepsBuffer } from './balances/outflows';
 import { levelAmount } from './balances/steady';
 import { paySplitLocked } from './balances/freeze';
 import { spareInfo } from './balances/projection';
@@ -171,7 +171,7 @@ export function balancePay(input: Budget, period: Period, today: ISODate = today
           continue;
         }
         // Steady accounts (e.g. rent) build a buffer for pays with an extra week: that money is spoken for.
-        if (accountMode(b, id) === 'smooth') { notSpare.push({ accountId: id, name, reason: `Its balance is the buffer for pays with an extra week (e.g. 5 rent Mondays). Over the next 12 pays it drops to ${fmt(info.low)} (${fmtShort(info.lowAt)}), so none of it is spare.` }); continue; }
+        if (keepsBuffer(b, id)) { notSpare.push({ accountId: id, name, reason: `Its balance is the buffer for pays with an extra week (e.g. 5 rent Mondays). Over the next 12 pays it drops to ${fmt(info.low)} (${fmtShort(info.lowAt)}), so none of it is spare.` }); continue; }
         notSpare.push({ accountId: id, name, reason: `Its lowest point over the next 12 pays is ${fmt(info.low)} (${fmtShort(info.lowAt)}), which isn't more than the ${fmt(info.reserve)} it keeps in reserve.` });
         continue;
       }

@@ -104,11 +104,13 @@ export interface SplitLine {
    * fixed: Set amount — you choose the figure
    * smooth: Level amount — same every payday; 4-week pays buffer the 5th week
    * exact: This pay's costs — sends exactly what this period needs
+   * build: Build up — shares what's due up to the next bigger (5-week) pay evenly over the paydays before it,
+   *   less what's in the account, so it's back to about $0 after each one (`engine/balances/build.ts`)
    */
   mode?: PaydayMode;
 }
 
-export type PaydayMode = 'fixed' | 'exact' | 'smooth';
+export type PaydayMode = 'fixed' | 'exact' | 'smooth' | 'build';
 
 export interface BalanceEntry {
   amount: Cents;

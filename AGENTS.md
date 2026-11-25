@@ -45,7 +45,7 @@ Each row names the folder or file to start in; its README has the detail.
 | When a cost falls (weekly, monthly, skip near payday) | `engine/occurrences.ts` |
 | Money put aside (WOF), envelopes (Gas, Food) and what counts against one | `engine/setAside.ts`, `engine/envelope.ts`, `engine/envelopeMatch.ts` |
 | Which bank transaction paid a bill; the Accounts Bill check pop-up | `engine/billMatch.ts`, `features/accounts/logic/billCheck.ts` |
-| What payday sends each account (fixed / exact / steady), "allocated this pay", a Steady account's Buffer | `engine/balances/` |
+| What payday sends each account (fixed / exact / steady / build up), "allocated this pay", a Steady account's Buffer | `engine/balances/` |
 | A pay's plan: totals, leftover, what each account needs | `engine/plan.ts` → `planFor()` |
 | Automatic balancing, "Balance this pay", rounding, an odd one-pay amount | `engine/rebalance.ts` (`budget.autoBalanced[pay]` says what set it and why) |
 | Planner page, Optimise the leftover | `features/planner/` |

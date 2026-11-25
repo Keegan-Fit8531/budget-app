@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { accountMode } from '../../engine/balances/outflows';
+import { keepsBuffer } from '../../engine/balances/outflows';
 import { balanceOn } from '../../engine/balances/estimate';
 import { billTracker } from '../../engine/balances/billTracker';
 import { payProjection } from '../../engine/balances/projection';
@@ -56,7 +56,7 @@ export function MonthTracker({ budget, account, today = todayISO(), open, toggle
   // unless every set-aside has a max (Haircut $60) and the account is already over it.
   const aside = hasSetAsides(budget, account.id);
   const paysBills = budget.items.some((i) => i.accountId === account.id && !isHeldInAccount(i));
-  const steady = !aside && accountMode(budget, account.id) === 'smooth';
+  const steady = !aside && keepsBuffer(budget, account.id);
   const names = aside ? asideNames(budget, account.id) : '';
   const maxAside = aside ? asideMaxSaved(budget, account.id) : undefined;
   const spareAmt = Math.max(0, afterReserved);
@@ -311,7 +311,7 @@ export function PayProjectionView({ budget, account, period, day, today = todayI
   const left = onDay !== undefined ? onDay - toCome : undefined;
   const showAfter = pr.rows.some((r) => r.after !== undefined);
   const kind = pr.depositKind === 'set' ? 'set amount' : pr.depositKind === 'adjusted' ? 'adjusted for this pay' : 'estimated';
-  const steady = accountMode(budget, account.id) === 'smooth';
+  const steady = keepsBuffer(budget, account.id);
   const row = (r: (typeof pr.rows)[number], i: number, done: boolean) => (
     <div className={`list-row small${done ? ' muted' : ''}`} key={`${r.date}-${r.name}-${i}`}>
       <span style={{ flex: '0 0 84px' }}>{fmtDay(r.date)}</span>
