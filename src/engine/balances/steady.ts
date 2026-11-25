@@ -1,5 +1,5 @@
 import { addDays, todayISO, type ISODate } from '../../core/dates';
-import { hasSetAsides, envelopeOn, setAsideOn } from '../setAside';
+import { asideMaxSaved, asideSpareNow, hasSetAsides, envelopeOn, setAsideOn } from '../setAside';
 import { averageNeed } from '../plan';
 import { firstBudgetPay, periodContaining, shiftPeriod, type Period } from '../periods';
 import type { Budget, Cents } from '../../core/types';
@@ -93,15 +93,18 @@ export function between(out: Outflow[], from: ISODate, to: ISODate, idx: { i: nu
 export function runStart(b: Budget, accountId: string, today: ISODate, useBalance: boolean): { pay: Period; bal: Cents; cursor: ISODate } {
   const entry = b.balances?.[accountId];
   // An account that keeps money put aside (a car fund): its balance is mostly that money, which isn't
-  // there to pay the bills, so its amounts are worked out from the budget's start instead.
-  const known = useBalance && entry && entry.asOf <= today && !hasSetAsides(b, accountId) ? entry : undefined;
+  // there to pay the bills, so its amounts are worked out from the budget's start instead. When every
+  // set-aside has a max (Haircut, up to $60), only up to the max is kept: the rest is spare for the bills.
+  const capped = asideMaxSaved(b, accountId);
+  const known = useBalance && entry && entry.asOf <= today && (!hasSetAsides(b, accountId) || capped !== undefined) ? entry : undefined;
   if (known) {
     // Payday morning before the split lands: count the deposit so later pays aren't topped up for a false short.
     const p = periodContaining(known.asOf, b.settings);
     const pending = depositPending(b, accountId, known) ? depositSansBalance(b, accountId, p) : 0;
     // Envelope money still unspent (Food shop's later weeks, this month's gas) will be spent before the
     // next payday: it's spoken for, not a cushion. Counted as spare, Food and gas's next pay sent $100, not $1,100.
-    const held = envelopeHeld(b, accountId, known.asOf);
+    const held = envelopeHeld(b, accountId, known.asOf)
+      + (capped !== undefined ? Math.min(capped, asideSpareNow(b, accountId, known.asOf) ?? 0) : 0);
     return { pay: shiftPeriod(p, 1, b.settings), bal: known.amount + pending - held, cursor: known.asOf };
   }
   const pay = firstBudgetPay(b, today);
