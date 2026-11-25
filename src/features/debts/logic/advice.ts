@@ -3,7 +3,7 @@ import { type Period } from '../../../engine/periods';
 import type { Budget, Cents, Debt } from '../../../core/types';
 import { debtPerPay, owed, unplanned } from './amounts';
 import { type PerPay, debtSchedules, fmt } from './schedule';
-import { gemPlan } from './gem';
+import { gemPlan } from './gem/gem';
 
 // ---------------------------------------------------------------------------------------------
 // Recommended payment per debt, for one pay period — each debt by the logic that suits it.

@@ -50,7 +50,8 @@ Each row names the folder or file to start in; its README has the detail.
 | Automatic balancing, "Balance this pay", rounding, an odd one-pay amount | `engine/rebalance.ts` (`budget.autoBalanced[pay]` says what set it and why) |
 | Planner page, Optimise the leftover | `features/planner/` |
 | Accounts page, Deposits pop-up, balances, account history | `features/accounts/` |
-| Debts: schedules, Gem rules, payments, held debts (Gem in Misc bills), Plan check | `features/debts/logic/` (bank-linked card: then `services/bank/`) |
+| Debts: schedules, payments, advice | `features/debts/logic/` (UI: `features/debts/`) |
+| Gem Visa's rules, its plans, Plan check; a debt held in Misc bills | `features/debts/logic/gem/`, `features/debts/logic/held/`; a bank-linked card: `services/bank/` |
 | Savings goals, goal costs, gifts, KiwiSaver | `features/savings/` |
 | Insights, spending categories, monthly review | `features/insights/` |
 | Settings page, export to spreadsheet | `features/settings/` |
@@ -72,7 +73,8 @@ each account is for). `scripts/README.md` has the how-to and gotchas:
   `npm run crawl -- planner` clicks every button and pop-up on a page and reports crashes and broken text. Don't edit code while either runs.
 - For a card's plans, the card's own app is the truth: ask the owner for a screenshot and compare plan by plan.
 
-That output is private: never put it in commits, PRs, code, fixtures or notes. Tests use made-up amounts (`testing/fixtures.ts`).
+That output is private: never put it in commits, PRs, code, fixtures or notes. Tests use made-up amounts (`testing/fixtures.ts`:
+`foodGasBudget()` and `heldGemBudget()` are shaped like the real Food and gas and Misc bills accounts).
 
 ## Rules the code relies on
 
@@ -115,6 +117,7 @@ A rule that matters gets a test; a rule only written here drifts. When you find 
    finish; GitHub runs them on every PR and before every deploy.
 2. Every folder you touched has its README updated: new, renamed, moved or deleted files, and changed purposes.
 3. Fix the notes in the same change (see **Keeping the notes short**), and tell the owner in a line what you changed in them and why.
+   If you shortened a note, say what it lost.
 
 ## Keeping the notes short (required)
 
@@ -128,22 +131,12 @@ The notes only save time if they're true and quick to read: every agent reads al
 - **Adding means editing.** Before you add a note, find the one it overlaps and rewrite that. A new bullet must earn its place: something
   that cost you time and isn't obvious from the code. Delete what's wrong, out of date, or said elsewhere.
 - **Write the rule as it is now, not its history.** No "since", "used to", "was missing" or dates: git keeps the history.
-- **When a size limit fails, cut; don't raise it** (unless the owner agrees): shorten the longest lines, drop export lists.
-- New folder README:
-
-```md
-# <folder>/
-
-One or two sentences: what this folder is for and when you'd come here.
-
-## Files
-- `file.ts`: what it does (key exports).
-
-## Watch out for
-- The non-obvious rules, gotchas and links to related folders.
-
-Keep this README current: update it in the same change when you add, remove, rename or repurpose a file here (see AGENTS.md).
-```
+- **When a note doesn't fit, in this order:** (1) delete notes that are wrong, out of date, said twice, or enforced by a test
+  (its failure message explains them); (2) move a note most tasks don't need down a level: AGENTS.md → a folder README → a comment
+  by the code; (3) split a folder whose README is full by purpose (`features/debts/logic/gem/`, `held/`), each with its own README;
+  (4) only then tighten wording. A note always keeps its rule, when it applies, and why (the consequence or one example):
+  a rule with no reason gets ignored or misapplied. Raise a limit only if the owner agrees.
+- A new folder needs a README: `notes.test.ts` shows the shape when it's missing.
 
 ## Commands
 
@@ -173,4 +166,4 @@ Several chats merge often. Before you edit a shared file (`ui/`, `engine/`), and
 
 The owner asks for changes "live" (or "push live"): push the session branch, open a PR into `main`, wait for its Checks
 (never merge a red ✗) and merge it. `pages.yml` checks again and publishes in 2–3 minutes. Check it with
-`npm run live -- <text> --wait` in the background (`scripts/README.md`), then tell the owner to refresh (a phone may need a reopen).
+`npm run live -- <text> --wait` in the background (`scripts/README.md`), then tell the owner to refresh (a phone can need a reopen: `public/sw.js`).

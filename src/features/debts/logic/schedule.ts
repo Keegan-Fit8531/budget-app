@@ -1,7 +1,7 @@
 import { addDays, addMonths, fmtDay, todayISO, type ISODate } from '../../../core/dates';
 import { periodContaining, shiftPeriod, type Period } from '../../../engine/periods';
 import type { Cents, Debt, DebtPlan, PlanType, Settings } from '../../../core/types';
-import { planEnds, gemPlan } from './gem';
+import { planEnds, gemPlan } from './gem/gem';
 import { unplanned } from './amounts';
 
 /** $1,234.56, for the warnings and reasons written in the debt files. */

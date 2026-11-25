@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { addMonths, fmtShort, todayISO } from '../../../core/dates';
 import { owed } from '../../../features/debts/logic/amounts';
-import { planEnds } from '../../../features/debts/logic/gem';
+import { planEnds } from '../../../features/debts/logic/gem/gem';
 import { cash } from '../../../core/money';
 import { fingerprint, preview } from '../apply';
 import { NEW_DEBT, NOT_MINE, type Draft, type DraftFig } from '../check/draft';

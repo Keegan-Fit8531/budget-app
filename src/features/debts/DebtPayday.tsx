@@ -6,7 +6,7 @@ import type { AccountPlan } from '../../engine/plan';
 import type { Period } from '../../engine/periods';
 import { PaydayControl } from '../../shared/PaydayControl';
 import { useBudget } from '../../state/store';
-import { endHeld, heldNow, resumeHeld } from './logic/held';
+import { endHeld, heldNow, resumeHeld } from './logic/held/held';
 
 /**
  * A debt card's Payday section: what payday sends it, and for a debt held in a bank account (Gem in Misc

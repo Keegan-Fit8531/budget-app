@@ -18,10 +18,9 @@ What payday sends each account, and what's in each account over time. An account
 - `balances.test.ts`: frozen splits, payday morning before the deposit lands, the bill tracker.
 
 ## Watch out for
+- A debt held in another account (Gem in Misc bills) is handled across several files here: `features/debts/logic/held/README.md` says how.
 - These functions call each other a lot (deposits ↔ outflows ↔ steady ↔ projection). When you add one, put it in the file whose job it matches and import it directly from there.
 - The run cache relies on the store cloning the budget for each change. Don't mutate a budget in place and then expect fresh figures from the same object in the same render.
-- A part payment of a held debt never pays a whole plan; it counts in `toMove` only once the bill check's "Yes, that paid it" is answered.
 - `today` is a parameter almost everywhere (default `todayISO()`), so tests can fix the date. Keep passing it through.
-- `outflows` tops a held debt (Gem in Misc bills) up to its recommended amount only in the pay holding `from`: over several pays (a balance projection) it's the plans' own payments, so a one-pay extra that pays Gem off early leaves Misc bills' later sends looking spare until it's paid.
 
 Keep this README current: update it in the same change when you add, remove, rename or repurpose a file here (see AGENTS.md).

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { debtBudget, debt } from '../../../testing/fixtures';
+import { debtBudget, debt } from '../../../../testing/fixtures';
 import { answerPlan, planAnswers, planQuestions, undoPlanAnswer } from './planCheck';
 
 describe('Plan check: big Gem purchases the bank can’t say the plan of', () => {

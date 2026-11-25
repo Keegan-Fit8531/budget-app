@@ -9,7 +9,7 @@ import { newTransactions } from '../reader/check/transactions';
 import type { BankConfig } from './bankConfig';
 import { nextColor } from '../../core/colors';
 import { debtLinked, debtNamed, recordCardPayments, type SeenPayment } from './cardPayments';
-import { syncCardPlans } from '../../features/debts/logic/cardPlans';
+import { syncCardPlans } from '../../features/debts/logic/gem/cardPlans';
 import type { Budget, Txn } from '../../core/types';
 
 // ---------------------------------------------------------------------------------------------

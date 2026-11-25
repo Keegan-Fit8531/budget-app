@@ -5,8 +5,8 @@ import { SYNCED } from '../../services/bank/BankCard';
 import { useBudget } from '../../state/store';
 import { Icon } from '../../ui/Icon';
 import { Modal } from '../../ui/components';
-import { GEM_PLAN_MONTHS } from './logic/gem';
-import { answerPlan, planAnswers, planQuestions, undoPlanAnswer, type PlanQuestion } from './logic/planCheck';
+import { GEM_PLAN_MONTHS } from './logic/gem/gem';
+import { answerPlan, planAnswers, planQuestions, undoPlanAnswer, type PlanQuestion } from './logic/gem/planCheck';
 
 // Plan check: the Debts page's pop-up for big card purchases the bank can't say the plan of (a special
 // deal, or an older 6-month plan). Opens by itself when a sync turns up one you haven't been shown, like

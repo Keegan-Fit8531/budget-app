@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Icon } from '../../ui/Icon';
 import { fmtShort, todayISO } from '../../core/dates';
-import { GEM_PLAN_MONTHS, gemPlanEnds, gemPlanType } from './logic/gem';
+import { GEM_PLAN_MONTHS, gemPlanEnds, gemPlanType } from './logic/gem/gem';
 import { exactForFirstPlan, recordHistory, suggestPlan } from './logic/amounts';
 import { PLAN_LABEL, planSchedule } from './logic/schedule';
 import { periodContaining } from '../../engine/periods';

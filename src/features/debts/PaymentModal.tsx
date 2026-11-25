@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Icon } from '../../ui/Icon';
 import { addDays, fmtShort, ordinal, todayISO } from '../../core/dates';
 import { applyPayment } from './logic/payments';
-import { beforeStatement } from './logic/gem';
+import { beforeStatement } from './logic/gem/gem';
 import { debtPay, owed } from './logic/amounts';
 import { debtSchedules } from './logic/schedule';
 import { cash, centsToInput, parseMoney } from '../../core/money';

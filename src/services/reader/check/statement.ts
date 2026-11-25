@@ -1,5 +1,5 @@
 import { addDays, addMonths, fmtShort, type ISODate } from '../../../core/dates';
-import { gemPlanEnds, gemPlanType, planEnds } from '../../../features/debts/logic/gem';
+import { gemPlanEnds, gemPlanType, planEnds } from '../../../features/debts/logic/gem/gem';
 import { owed } from '../../../features/debts/logic/amounts';
 import { cash } from '../../../core/money';
 import type { Budget, Cents, DebtPlan, StatementDue } from '../../../core/types';
