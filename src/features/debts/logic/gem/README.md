@@ -18,7 +18,7 @@ Plan check, or a card linked to the bank (then `services/bank/README.md`).
 - Don't ask the owner for a figure the app can work out: the plans add up to the balance and payments go in Gem's order, so a plan's length is enough and what's left follows (it can be a few dollars out between plans).
 - Compare plan logic plan by plan with a screenshot of Gem's own app ("My plans") before shipping; ask the owner. The bank data alone isn't enough, and a wrong guess moves money between plans on every sync.
 - When the plans add up to more than the balance, what's over comes off our guesses (`card-` plans) first, never off a pending purchase's plan: Gem's payment order would otherwise move money between plans on every sync.
-- The recommended payment is worked out per statement (each instalment, other purchases in full, each interest-free plan over its statements left), so it drops as plans finish ($245 now, $82 once only instalments are left), not one level amount.
+- The recommended payment is worked out per statement (each instalment, other purchases in full, each interest-free plan over its statements left), so it drops as plans finish (to just the instalments once the interest-free plans are clear), not one level amount.
 - Gem's split can't be directed at one plan; `gem.ts` reproduces Latitude's order. Keep it in line with the clause quoted at the top of that file.
 - Check a change here with two syncs and a reload of a copy of the real budget (`scripts/README.md`): if the plans move between syncs, they'll drift every hour.
 

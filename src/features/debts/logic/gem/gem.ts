@@ -81,7 +81,7 @@ function gemBucketsForRecommend(debt: Debt, start: ISODate): Bucket[] {
  * What a statement on `date` needs so no plan is charged interest (as Latitude works it out): each equal-payment
  * plan's instalment, other purchases in full (they're charged interest), and each interest-free plan's balance
  * spread over the statements left before it ends. Never less than Gem's minimum (`minimum`, else 3% / $20).
- * Whole dollars, rounded up. It drops as plans are paid off: Gem at $245 now is $82 once only instalments are left.
+ * Whole dollars, rounded up. Worked out from the plans and balance at that statement, so it drops as plans are paid off.
  */
 function gemDue(buckets: Bucket[], date: ISODate, statements: ISODate[], minimum?: Cents): Cents {
   let due = 0;

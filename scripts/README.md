@@ -23,7 +23,7 @@ code or test fixtures (make up the numbers there, as `src/testing/fixtures.ts` d
   One field across the last saves: `for c in $(git -C ../budget-data log --format=%h -20); do git -C ../budget-data show $c:budget.json | jq -c .billChecks; done`.
 - A synced balance already has pending transactions out (don't take them off again), and can be ahead of its transactions (`services/bank/README.md`). A card is the other way round: the bank leaves pending purchases out, and the app adds `Debt.pending` back.
 - `inspect -- gem` shows a debt's payday account, not its plans: query them with `jq '.debts[]|select(.id=="gem")|{balance,plans,pending,t:.transactions[-20:]}' ../budget-data/budget.json`, or as the app loads it with `_try.ts` (below).
-- A jump in one pay (Gem $1,633 in March) is often a one-pay amount, not the rules: `jq .overrides`. The owner resets it in that pay's "What's different this pay". The clone is shallow: `fetch --unshallow` before searching old saves.
+- A jump in one pay (a debt's amount in one month) is often a one-pay amount, not the rules: `jq .overrides`. The owner resets it in that pay's "What's different this pay". The clone is shallow: `fetch --unshallow` before searching old saves.
 - To see a state the real budget isn't in yet (a card newly linked, a pending payment), make a changed copy in your scratchpad with `jq` and pass it with `--file`.
 
 ## Screenshot options

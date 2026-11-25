@@ -16,7 +16,7 @@ function readDismissed(): string[] {
 }
 
 /**
- * "Gem Visa needs $182 more this 29-day period." Dismissable: it stays away for this pay until what's
+ * "Gem Visa needs $50 more this 29-day period." Dismissable: it stays away for this pay until what's
  * short changes. Accounts the bank already shows paid enough aren't passed in (`shortAccounts`).
  */
 export function ShortAlert({ budget, shorts, period }: { budget: Budget; shorts: AccountPlan[]; period: Period }) {
