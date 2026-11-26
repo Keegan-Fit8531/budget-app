@@ -23,6 +23,7 @@ export function PlanModal({ debt, plan, prefill, onClose, embedded }: { debt: De
   const [remaining, setRemaining] = useState(plan ? centsToInput(plan.remaining) : '');
   const [payment, setPayment] = useState(plan?.payment ? centsToInput(plan.payment) : '');
   const [ends, setEnds] = useState(plan?.ends ?? '');
+  const [startsOn, setStartsOn] = useState(plan?.startsOn ?? '');
   const [err, setErr] = useState('');
   const isPerson = debt.kind === 'person' || debt.kind === 'loan';
 
@@ -56,6 +57,7 @@ export function PlanModal({ debt, plan, prefill, onClose, embedded }: { debt: De
     months: type === 'interest-free' || type === 'equal' ? Number(months) : undefined,
     payment: type === 'balance' ? (parseMoney(payment) ?? undefined) : undefined,
     ends: (type === 'interest-free' || type === 'equal') && ends ? ends : undefined,
+    startsOn: (type === 'balance' || type === 'equal') && startsOn ? startsOn : undefined,
     instalments: plan?.instalments && remaining.trim() === centsToInput(plan.remaining) ? plan.instalments : undefined,
   } : null;
   const preview = draft ? planSchedule(debt, draft, budget.settings) : null;
@@ -125,6 +127,11 @@ export function PlanModal({ debt, plan, prefill, onClose, embedded }: { debt: De
         {type === 'balance' && (
           <label className="field">Pay each payday
             <input inputMode="decimal" value={payment} onChange={(e) => setPayment(e.target.value)} placeholder="200.00" />
+          </label>
+        )}
+        {(type === 'balance' || type === 'equal') && (
+          <label className="field">First payment (to pause it)
+            <input type="date" value={startsOn} min={today} onChange={(e) => setStartsOn(e.target.value)} />
           </label>
         )}
       </div>

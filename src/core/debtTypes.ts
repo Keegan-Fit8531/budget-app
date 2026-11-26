@@ -33,6 +33,8 @@ export interface DebtPlan {
   instalments?: { date: ISODate; amount: Cents; label?: string }[];
   /** When the interest-free period ends, if known exactly (otherwise purchase date + months). */
   ends?: ISODate;
+  /** 'balance' and 'equal' plans: no payments before this day (paused); the first is on the first payday on or after it. */
+  startsOn?: ISODate;
 }
 
 export interface Debt {

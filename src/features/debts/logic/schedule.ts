@@ -78,6 +78,9 @@ function periodsFrom(from: ISODate, s: Settings, keep: (p: Period, i: number) =>
   return out;
 }
 
+/** The latest of some dates (unset ones ignored). */
+const latest = (...ds: (ISODate | undefined)[]): ISODate => ds.filter((d): d is ISODate => !!d).sort().pop()!;
+
 export function last<T>(xs: T[]): T | undefined {
   return xs[xs.length - 1];
 }
@@ -123,8 +126,8 @@ export function planSchedule(debt: Debt, plan: DebtPlan, s: Settings): PlanSched
     const months = plan.months ?? 12;
     const each = Math.round(plan.original / months);
     const n = Math.max(1, Math.ceil(rem / each - 0.0001));
-    const first = addMonths(plan.purchaseDate, 1);
-    const periods = periodsFrom(first > plan.asOf ? first : plan.asOf, s, (_, i) => i < n);
+    const first = latest(addMonths(plan.purchaseDate, 1), plan.asOf, plan.startsOn);
+    const periods = periodsFrom(first, s, (_, i) => i < n);
     const payments = withAfter(periods.map((p, i) => pay(p.start, i === n - 1 ? rem - each * (n - 1) : each)));
     return { plan, payments, paidOffBy: last(payments)?.date, deadline: plan.ends ?? addMonths(plan.purchaseDate, months), interest: 0 };
   }
@@ -150,7 +153,7 @@ export function planSchedule(debt: Debt, plan: DebtPlan, s: Settings): PlanSched
   let left = rem;
   let interest = 0;
   const payments: Payment[] = [];
-  let p = firstPeriodFrom(plan.asOf > plan.purchaseDate ? plan.asOf : plan.purchaseDate, s);
+  let p = firstPeriodFrom(latest(plan.asOf, plan.purchaseDate, plan.startsOn), s);
   for (let n = 0; n < HORIZON && left > 0; n++, p = shiftPeriod(p, 1, s)) {
     const i = Math.round(left * monthlyRate);
     interest += i;
