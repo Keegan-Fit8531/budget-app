@@ -14,7 +14,7 @@ day (Gem in Misc bills) is in `held/`. Read those READMEs only when your change 
 - `activity.ts`: what a card shows of its activity: `planProgress` (paid of total, months left), `planAt` (a plan at a later pay), `monthsUntil`, `paymentRows` (each payment Pending or Received, matched to the card's own credit of the same amount within a week), `paydayHistory` (what payday sent it, pays already sent).
 - `gem/`: Gem Visa's payment rules, its 6-month plans built from the card's transactions, and Plan check (its own README).
 - `held/`: a debt whose payday money waits in another account until statement day (its own README).
-- Tests: `activity.test.ts`, and `debts.test.ts` (schedules, payments, Gem held until statement day, one-pay amounts on a held debt).
+- Tests: `activity.test.ts`, `schedule.test.ts` (a paused plan), and `debts.test.ts` (schedules, payments, Gem held until statement day, one-pay amounts on a held debt).
 
 ## Watch out for
 - These files import each other (schedule ↔ gem ↔ amounts). Add a function to the file whose job it matches.
