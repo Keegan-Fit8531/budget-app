@@ -1,9 +1,9 @@
-import { addDays, todayISO, type ISODate } from '../../core/dates';
+import { todayISO, type ISODate } from '../../core/dates';
 import { periodContaining, shiftPeriod, type Period } from '../periods';
 import type { Budget, Cents } from '../../core/types';
 import { type Outflow, outflows } from './outflows';
-import { depositFor, depositSansBalance, depositPending } from './deposits';
-import { estimateBalance, balanceToday } from './estimate';
+import { depositFor, depositSansBalance } from './deposits';
+import { balanceToday, billKey, outByBalance } from './estimate';
 import { bankFed, checkKey, matchBills, otherMoves, outflowId, sameAmount, type BillMatch } from '../billMatch';
 import type { Account, Txn } from '../../core/types';
 
@@ -105,14 +105,10 @@ function todaysBillsAlreadyOut(b: Budget, accountId: string, today: ISODate, tod
     const sent = b.splitSent?.[period.start]?.[accountId]
       ?? b.overrides?.[period.start]?.[accountId]
       ?? depositSansBalance(b, accountId, period);
-    if (Math.abs(entry.amount + todayOut - sent) <= 100) return true;
+    return Math.abs(entry.amount + todayOut - sent) <= 100;
   }
-  const prior = estimateBalance(b, accountId, addDays(today, -1), today);
-  if (prior === undefined) return false;
-  const dep = today === period.start && !depositPending(b, accountId, entry) ? depositSansBalance(b, accountId, period) : 0;
-  const beforeBills = prior + dep;
-  // Balance matches "deposit in, today's bills out" (within $1), not the pre-bill figure.
-  return entry.amount <= beforeBills - todayOut + 100 && entry.amount < beforeBills - 100;
+  // Other days, a bank-connected account's balance is compared with the one before it (`outByBalance`).
+  return false;
 }
 
 export function billTracker(b: Budget, accountId: string, today: ISODate = todayISO()): BillTracker {
@@ -128,11 +124,12 @@ export function billTracker(b: Budget, accountId: string, today: ISODate = today
     // The bank says what's been paid, up to when it was last seen: a bill it shows is paid (even early, or
     // on another account's card); one it doesn't is still to come, as its money is still in the account.
     const matches = matchBills(b, accountId, period.start, period.end, today);
+    const out = outByBalance(b, accountId, today);
     rows.forEach((r, i) => {
       const m = matches[i];
       if (m?.how) { r.match = m; r.status = 'paid'; return; }
       if (r.date > entry.asOf) return;
-      if (b.billChecks?.[checkKey('paid', outflowId(r), r.date)]) { r.status = 'paid'; return; }
+      if (b.billChecks?.[checkKey('paid', outflowId(r), r.date)] || out.has(billKey(r))) { r.status = 'paid'; return; }
       r.status = r.days === 0 ? 'today' : 'due';
       r.late = r.days < 0;
     });
