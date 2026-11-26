@@ -2,7 +2,8 @@ import { addDays, todayISO, type ISODate } from '../../core/dates';
 import { firstBudgetPay, periodContaining, shiftPeriod, type Period } from '../periods';
 import type { Budget, Cents } from '../../core/types';
 import { depositFor, depositPending } from './deposits';
-import { outflows } from './outflows';
+import { outflows, type Outflow } from './outflows';
+import { txnsIn } from '../envelopeMatch';
 import { bankFed, checkKey, matchBills, outflowId } from '../billMatch';
 import { leftoverBeforeBudget } from './topUps';
 import { envelopeHeld } from '../envelope';
@@ -39,9 +40,36 @@ export function unpaidByBalanceDay(b: Budget, accountId: string, asOf: ISODate, 
   if (!bankFed(b, accountId)) return 0;
   const start = periodContaining(asOf, b.settings).start;
   const matches = matchBills(b, accountId, start, asOf, today);
+  const out = outByBalance(b, accountId, today);
   return outflows(b, accountId, start, asOf)
-    .filter((o, i) => !matches[i]?.how && !b.billChecks?.[checkKey('paid', outflowId(o), o.date)])
+    .filter((o, i) => !matches[i]?.how && !b.billChecks?.[checkKey('paid', outflowId(o), o.date)] && !out.has(billKey(o)))
     .reduce((t, o) => t + o.amount, 0);
+}
+
+export const billKey = (o: Outflow): string => `${outflowId(o)}|${o.date}`;
+
+/**
+ * Bills (bank-connected accounts) the synced balance already has out though no transaction shows them yet:
+ * the bank's balance arrives before its lines (rent out on the 27th, balance $415 lower, newest line the 20th).
+ * Since the last balance before this one, the balance fell by more than the lines seen since explain; unseen
+ * bills dated in between count as out, oldest first, while that drop covers them (within $1). Keys: `billKey`.
+ * Without it the bill is still "to come", the card says short by it, and the next pay sends it again.
+ */
+export function outByBalance(b: Budget, accountId: string, today: ISODate): Set<string> {
+  const out = new Set<string>();
+  const entry = b.balances?.[accountId];
+  if (!entry || !bankFed(b, accountId)) return out;
+  const prev = (b.accountHistory?.[accountId] ?? []).filter((e) => e.kind === 'balance' && e.date < entry.asOf).pop();
+  if (!prev || entry.asOf > addDays(prev.date, 14)) return out;
+  const from = addDays(prev.date, 1);
+  let drop = prev.amount + txnsIn(b, accountId, from, entry.asOf).reduce((t, x) => t + x.amount, 0) - entry.amount;
+  const matches = matchBills(b, accountId, from, entry.asOf, today);
+  outflows(b, accountId, from, entry.asOf).forEach((o, i) => {
+    if (matches[i]?.how || b.billChecks?.[checkKey('paid', outflowId(o), o.date)] || drop + 100 < o.amount) return;
+    out.add(billKey(o));
+    drop -= o.amount;
+  });
+  return out;
 }
 
 /**

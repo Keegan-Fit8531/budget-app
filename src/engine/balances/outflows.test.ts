@@ -61,4 +61,19 @@ describe('the next pay counts the same leftover the Accounts card shows', () => 
     const spare = t.spare - 6000; // less Haircut's $60, which stays
     expect(depositFor(b, 'bills', next, TODAY)).toBe(exactNeed(b, 'bills', next) - spare);
   });
+
+  it('but one the balance already has out (it fell by the bill, no line yet) is paid, and not sent again', () => {
+    const before = misc(25000, true);
+    const b = misc(25000, true);
+    // Synced on the 22nd at $350; today $250, and the bank hasn't listed today's $100 bill yet.
+    b.accountHistory = { bills: [{ id: 'a', date: '2026-11-22', kind: 'balance', amount: 35000 }, { id: 'b', date: TODAY, kind: 'balance', amount: 25000 }] };
+    const t = billTracker(b, 'bills', TODAY);
+    expect(t.rows.find((r) => r.date === TODAY)?.status).toBe('paid');
+    expect(t.spare).toBe(billTracker(before, 'bills', TODAY).spare + 10000);
+    const next = shiftPeriod(t.period, 1, b.settings);
+    expect(depositFor(b, 'bills', next, TODAY)).toBe(exactNeed(b, 'bills', next) - (t.spare - 6000));
+    // Only $40 of the drop unexplained (a $60 card purchase seen): not enough for the bill, so it's still to come.
+    b.accountTransactions!.bills.push({ date: TODAY, amount: -6000, description: 'Countdown Glen Eden' });
+    expect(billTracker(structuredClone(b), 'bills', TODAY).rows.find((r) => r.date === TODAY)?.status).not.toBe('paid');
+  });
 });
